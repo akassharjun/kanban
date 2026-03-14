@@ -197,19 +197,6 @@ function App() {
                 />
               )}
 
-              {selectedIssueId && (
-                <IssueDetailPanel
-                  issueId={selectedIssueId}
-                  statuses={statuses}
-                  members={members}
-                  projectLabels={labels}
-                  onClose={() => setSelectedIssueId(null)}
-                  onUpdate={async (id, input) => { await updateIssue(id, input); }}
-                  onDelete={async (id) => { await deleteIssue(id); setSelectedIssueId(null); }}
-                  onDuplicate={async (id) => { await duplicateIssue(id); }}
-                  onClickIssue={(issue) => setSelectedIssueId(issue.id)}
-                />
-              )}
             </div>
           </>
         )}
@@ -252,6 +239,20 @@ function App() {
           </div>
         )}
       </div>
+
+      {selectedIssueId && (
+        <IssueDetailPanel
+          issueId={selectedIssueId}
+          statuses={statuses}
+          members={members}
+          projectLabels={labels}
+          onClose={() => setSelectedIssueId(null)}
+          onUpdate={async (id, input) => { await updateIssue(id, input); }}
+          onDelete={async (id) => { await deleteIssue(id); setSelectedIssueId(null); }}
+          onDuplicate={async (id) => { await duplicateIssue(id); }}
+          onClickIssue={(issue) => setSelectedIssueId(issue.id)}
+        />
+      )}
 
       {/* Modals */}
       {showCreateProject && (
