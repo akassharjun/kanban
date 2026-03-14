@@ -77,7 +77,12 @@ export function BoardView({
       const columnIssues = (issuesByStatus.get(overIssue.status_id) || [])
         .filter(i => i.id !== draggedIssue.id);
       const overIndex = columnIssues.findIndex(i => i.id === overIssue.id);
-      if (overIndex <= 0) {
+      if (overIndex === -1) {
+        // Over-issue not in filtered column; append to end
+        targetPosition = columnIssues.length > 0
+          ? columnIssues[columnIssues.length - 1].position + 1
+          : 0;
+      } else if (overIndex === 0) {
         targetPosition = overIssue.position - 0.5;
       } else {
         targetPosition = (columnIssues[overIndex - 1].position + overIssue.position) / 2;
