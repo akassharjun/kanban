@@ -165,36 +165,47 @@ pub fn get_issue_by_identifier(state: State<AppState>, identifier: String) -> Re
 #[tauri::command]
 pub fn list_issues(state: State<AppState>, filter: ListIssuesFilter) -> Result<Vec<Issue>, String> {
     state.rt.block_on(async {
-        let mut query = String::from("SELECT i.* FROM issues i");
-        let mut conditions: Vec<String> = vec![format!("i.project_id = {}", filter.project_id)];
+        let mut qb: sqlx::QueryBuilder<sqlx::Sqlite> = sqlx::QueryBuilder::new("SELECT i.* FROM issues i");
 
         if filter.label_id.is_some() {
-            query.push_str(" JOIN issue_labels il ON i.id = il.issue_id");
+            qb.push(" JOIN issue_labels il ON i.id = il.issue_id");
         }
+
+        qb.push(" WHERE i.project_id = ");
+        qb.push_bind(filter.project_id);
 
         if let Some(status_id) = filter.status_id {
-            conditions.push(format!("i.status_id = {}", status_id));
+            qb.push(" AND i.status_id = ");
+            qb.push_bind(status_id);
         }
         if let Some(ref priority) = filter.priority {
-            conditions.push(format!("i.priority = '{}'", priority));
+            qb.push(" AND i.priority = ");
+            qb.push_bind(priority.clone());
         }
         if let Some(assignee_id) = filter.assignee_id {
-            conditions.push(format!("i.assignee_id = {}", assignee_id));
+            qb.push(" AND i.assignee_id = ");
+            qb.push_bind(assignee_id);
         }
         if let Some(label_id) = filter.label_id {
-            conditions.push(format!("il.label_id = {}", label_id));
+            qb.push(" AND il.label_id = ");
+            qb.push_bind(label_id);
         }
         if let Some(parent_id) = filter.parent_id {
-            conditions.push(format!("i.parent_id = {}", parent_id));
+            qb.push(" AND i.parent_id = ");
+            qb.push_bind(parent_id);
         }
         if let Some(ref search) = filter.search {
-            conditions.push(format!("(i.title LIKE '%{}%' OR i.description LIKE '%{}%')", search, search));
+            let pattern = format!("%{}%", search);
+            qb.push(" AND (i.title LIKE ");
+            qb.push_bind(pattern.clone());
+            qb.push(" OR i.description LIKE ");
+            qb.push_bind(pattern);
+            qb.push(")");
         }
 
-        query.push_str(&format!(" WHERE {}", conditions.join(" AND ")));
-        query.push_str(" ORDER BY i.position");
+        qb.push(" ORDER BY i.position");
 
-        sqlx::query_as::<_, Issue>(&query)
+        qb.build_query_as::<Issue>()
             .fetch_all(&state.pool)
             .await
     }).map_err(|e| e.to_string())
