@@ -50,6 +50,7 @@ export function IssueDetailPanel({
   const [showLabelsMenu, setShowLabelsMenu] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
+  const [estimateValue, setEstimateValue] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
 
@@ -63,6 +64,7 @@ export function IssueDetailPanel({
       setIssue(data);
       setTitle(data.title);
       setDesc(data.description || "");
+      setEstimateValue(data.estimate != null ? String(data.estimate) : "");
       const acts = await api.getActivityLog(issueId);
       setActivity(acts);
       const subs = await api.getSubIssues(issueId);
@@ -326,11 +328,23 @@ export function IssueDetailPanel({
             <input
               type="number"
               min="0"
-              value={issue.estimate ?? ""}
-              onChange={async (e) => {
-                const val = e.target.value === "" ? -1 : parseFloat(e.target.value);
-                await onUpdate(issueId, { estimate: val });
-                await loadIssue();
+              value={estimateValue}
+              onChange={(e) => setEstimateValue(e.target.value)}
+              onBlur={async () => {
+                const parsed = estimateValue === "" ? -1 : parseFloat(estimateValue);
+                const current = issue.estimate ?? -1;
+                if (parsed !== current) {
+                  await onUpdate(issueId, { estimate: parsed });
+                  await loadIssue();
+                }
+              }}
+              onKeyDown={async (e) => {
+                if (e.key === "Enter") {
+                  (e.target as HTMLElement).blur();
+                }
+                if (e.key === "Escape") {
+                  setEstimateValue(issue.estimate != null ? String(issue.estimate) : "");
+                }
               }}
               placeholder="Points"
               className="w-20 rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
