@@ -46,7 +46,7 @@ function App() {
     document.documentElement.classList.toggle("light", next === "light");
   };
 
-  const { projects, create: createProject, update: updateProject, remove: _removeProject } = useProjects();
+  const { projects, refresh: refreshProjects, create: createProject, update: updateProject, remove: _removeProject } = useProjects();
   const { issues, refresh: refreshIssues, create: createIssue, update: updateIssue, remove: deleteIssue, duplicate: duplicateIssue } = useIssues(selectedProjectId);
   const { members, create: createMember, update: updateMember, remove: deleteMember } = useMembers();
   const { statuses, refresh: refreshStatuses } = useStatuses(selectedProjectId);
@@ -112,16 +112,16 @@ function App() {
       // Undo/Redo
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
-        api.undo().then(() => { refreshIssues(); });
+        api.undo().then(() => { refreshIssues(); refreshStatuses(); refreshProjects(); });
       }
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
         e.preventDefault();
-        api.redo().then(() => { refreshIssues(); });
+        api.redo().then(() => { refreshIssues(); refreshStatuses(); refreshProjects(); });
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selectedIssueId, showSearch, showCreateIssue, showCreateProject, showNotifications, refreshIssues]);
+  }, [selectedIssueId, showSearch, showCreateIssue, showCreateProject, showNotifications, refreshIssues, refreshStatuses, refreshProjects]);
 
   const handleQuickCreate = async (statusId: number, title: string) => {
     if (!selectedProjectId) return;
