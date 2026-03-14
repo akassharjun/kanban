@@ -112,22 +112,29 @@ pub fn update_project(state: State<AppState>, id: i64, input: UpdateProjectInput
             .await?;
         let old_snapshot = serde_json::to_string(&old_project).unwrap_or_default();
 
+        let mut qb = sqlx::QueryBuilder::new("UPDATE projects SET updated_at = ");
+        qb.push_bind(&now);
+
         if let Some(name) = &input.name {
-            sqlx::query("UPDATE projects SET name = ?, updated_at = ? WHERE id = ?")
-                .bind(name).bind(&now).bind(id).execute(&state.pool).await?;
+            qb.push(", name = ");
+            qb.push_bind(name);
         }
         if let Some(desc) = &input.description {
-            sqlx::query("UPDATE projects SET description = ?, updated_at = ? WHERE id = ?")
-                .bind(desc).bind(&now).bind(id).execute(&state.pool).await?;
+            qb.push(", description = ");
+            qb.push_bind(desc);
         }
         if let Some(icon) = &input.icon {
-            sqlx::query("UPDATE projects SET icon = ?, updated_at = ? WHERE id = ?")
-                .bind(icon).bind(&now).bind(id).execute(&state.pool).await?;
+            qb.push(", icon = ");
+            qb.push_bind(icon);
         }
         if let Some(status) = &input.status {
-            sqlx::query("UPDATE projects SET status = ?, updated_at = ? WHERE id = ?")
-                .bind(status).bind(&now).bind(id).execute(&state.pool).await?;
+            qb.push(", status = ");
+            qb.push_bind(status);
         }
+
+        qb.push(" WHERE id = ");
+        qb.push_bind(id);
+        qb.build().execute(&state.pool).await?;
 
         let updated = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
             .bind(id).fetch_one(&state.pool).await?;
