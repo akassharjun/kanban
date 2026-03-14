@@ -1,0 +1,170 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(rename_all = "lowercase")]
+pub enum Priority {
+    None,
+    Urgent,
+    High,
+    Medium,
+    Low,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(rename_all = "lowercase")]
+pub enum StatusCategory {
+    Unstarted,
+    Started,
+    Blocked,
+    Completed,
+    Discarded,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(rename_all = "lowercase")]
+pub enum ProjectStatus {
+    Active,
+    Paused,
+    Completed,
+    Archived,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[sqlx(rename_all = "snake_case")]
+pub enum RelationType {
+    Related,
+    Blocks,
+    BlockedBy,
+    Duplicate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Project {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    pub status: String,
+    pub prefix: String,
+    pub issue_counter: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Status {
+    pub id: i64,
+    pub project_id: i64,
+    pub name: String,
+    pub category: String,
+    pub color: Option<String>,
+    pub icon: Option<String>,
+    pub position: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Issue {
+    pub id: i64,
+    pub project_id: i64,
+    pub identifier: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub status_id: i64,
+    pub priority: String,
+    pub assignee_id: Option<i64>,
+    pub parent_id: Option<i64>,
+    pub position: f64,
+    pub estimate: Option<f64>,
+    pub due_date: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Label {
+    pub id: i64,
+    pub project_id: i64,
+    pub name: String,
+    pub color: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Member {
+    pub id: i64,
+    pub name: String,
+    pub display_name: Option<String>,
+    pub email: Option<String>,
+    pub avatar_color: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct IssueRelation {
+    pub id: i64,
+    pub source_issue_id: i64,
+    pub target_issue_id: i64,
+    pub relation_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct IssueTemplate {
+    pub id: i64,
+    pub project_id: i64,
+    pub name: String,
+    pub description_template: Option<String>,
+    pub default_status_id: Option<i64>,
+    pub default_priority: String,
+    pub default_label_ids: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ActivityLogEntry {
+    pub id: i64,
+    pub issue_id: i64,
+    pub field_changed: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct UndoLogEntry {
+    pub id: i64,
+    pub operation_type: String,
+    pub entity_type: String,
+    pub entity_id: i64,
+    pub snapshot_before: Option<String>,
+    pub snapshot_after: Option<String>,
+    pub undone: bool,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Notification {
+    pub id: i64,
+    pub r#type: String,
+    pub issue_id: Option<i64>,
+    pub message: String,
+    pub read: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Hook {
+    pub id: i64,
+    pub project_id: i64,
+    pub event_type: String,
+    pub command: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Comment {
+    pub id: i64,
+    pub issue_id: i64,
+    pub member_id: Option<i64>,
+    pub content: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
