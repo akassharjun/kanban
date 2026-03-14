@@ -391,6 +391,11 @@ pub fn bulk_update_issues(state: State<AppState>, input: BulkUpdateInput) -> Res
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         for issue_id in &input.issue_ids {
+            // Fetch old state before updating
+            let old_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+                .bind(issue_id).fetch_one(&state.pool).await?;
+            let old_snapshot = serde_json::to_string(&old_issue).unwrap_or_default();
+
             if let Some(status_id) = input.status_id {
                 sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
                     .bind(status_id).bind(&now).bind(issue_id).execute(&state.pool).await?;
@@ -409,6 +414,30 @@ pub fn bulk_update_issues(state: State<AppState>, input: BulkUpdateInput) -> Res
                         .bind(&now).bind(issue_id).execute(&state.pool).await?;
                 }
             }
+
+            // Fetch new state after updating
+            let updated_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+                .bind(issue_id).fetch_one(&state.pool).await?;
+            let new_snapshot = serde_json::to_string(&updated_issue).unwrap_or_default();
+
+            // Log activity for each changed field
+            if let Some(status_id) = input.status_id {
+                if status_id != old_issue.status_id {
+                    log_activity(&state.pool, *issue_id, "status_id", Some(old_issue.status_id.to_string()), Some(status_id.to_string())).await?;
+                }
+            }
+            if let Some(ref priority) = input.priority {
+                if priority != &old_issue.priority {
+                    log_activity(&state.pool, *issue_id, "priority", Some(old_issue.priority.clone()), Some(priority.clone())).await?;
+                }
+            }
+            if let Some(assignee_id) = input.assignee_id {
+                let val = if assignee_id <= 0 { None } else { Some(assignee_id) };
+                log_activity(&state.pool, *issue_id, "assignee_id", old_issue.assignee_id.map(|v| v.to_string()), val.map(|v| v.to_string())).await?;
+            }
+
+            // Log undo entry with before/after snapshots
+            log_undo(&state.pool, "update", "issue", *issue_id, Some(old_snapshot), Some(new_snapshot)).await?;
         }
 
         // Fetch updated issues
