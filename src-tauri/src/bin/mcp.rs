@@ -242,27 +242,25 @@ async fn handle_tool_call(
             let parent_id = args.get("parent_id").and_then(|v| v.as_i64());
 
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
-            let proj =
-                sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
-                    .bind(project_id)
-                    .fetch_one(pool)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            let counter = proj.issue_counter + 1;
-            let identifier = format!("{}-{}", proj.prefix, counter);
-            sqlx::query("UPDATE projects SET issue_counter = ? WHERE id = ?")
-                .bind(counter)
-                .bind(project_id)
-                .execute(pool)
-                .await
-                .map_err(|e| e.to_string())?;
+
+            let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+            // Atomically increment counter and get new value + prefix
+            let (counter, prefix): (i64, String) = sqlx::query_as(
+                "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix"
+            )
+            .bind(project_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+            let identifier = format!("{}-{}", prefix, counter);
 
             let max_pos: Option<f64> = sqlx::query_scalar(
                 "SELECT MAX(position) FROM issues WHERE project_id = ? AND status_id = ?",
             )
             .bind(project_id)
             .bind(status_id)
-            .fetch_one(pool)
+            .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
             let position = max_pos.unwrap_or(-1.0) + 1.0;
@@ -281,16 +279,18 @@ async fn handle_tool_call(
             .bind(position)
             .bind(&now)
             .bind(&now)
-            .execute(pool)
+            .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
 
             let issue =
                 sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
                     .bind(result.last_insert_rowid())
-                    .fetch_one(pool)
+                    .fetch_one(&mut *tx)
                     .await
                     .map_err(|e| e.to_string())?;
+
+            tx.commit().await.map_err(|e| e.to_string())?;
             Ok(json!(issue))
         }
         "update_issue" => {
