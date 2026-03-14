@@ -444,24 +444,24 @@ async fn handle_issue(
         } => {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
             let prio = priority.unwrap_or_else(|| "none".to_string());
-            let proj = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
-                .bind(project)
-                .fetch_one(pool)
-                .await?;
-            let counter = proj.issue_counter + 1;
-            let identifier = format!("{}-{}", proj.prefix, counter);
-            sqlx::query("UPDATE projects SET issue_counter = ? WHERE id = ?")
-                .bind(counter)
-                .bind(project)
-                .execute(pool)
-                .await?;
+
+            let mut tx = pool.begin().await?;
+
+            // Atomically increment counter and get new value + prefix
+            let (counter, prefix): (i64, String) = sqlx::query_as(
+                "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix"
+            )
+            .bind(project)
+            .fetch_one(&mut *tx)
+            .await?;
+            let identifier = format!("{}-{}", prefix, counter);
 
             let max_pos: Option<f64> = sqlx::query_scalar(
                 "SELECT MAX(position) FROM issues WHERE project_id = ? AND status_id = ?",
             )
             .bind(project)
             .bind(status)
-            .fetch_one(pool)
+            .fetch_one(&mut *tx)
             .await?;
             let position = max_pos.unwrap_or(-1.0) + 1.0;
 
@@ -479,13 +479,15 @@ async fn handle_issue(
             .bind(position)
             .bind(&now)
             .bind(&now)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
 
             let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
                 .bind(result.last_insert_rowid())
-                .fetch_one(pool)
+                .fetch_one(&mut *tx)
                 .await?;
+
+            tx.commit().await?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&issue)?);
             } else {

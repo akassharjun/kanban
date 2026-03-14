@@ -83,20 +83,18 @@ pub fn create_issue(state: State<AppState>, input: CreateIssueInput) -> Result<I
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let priority = input.priority.unwrap_or_else(|| "none".to_string());
 
-        // Get next identifier
-        let project = sqlx::query_as::<_, crate::models::Project>("SELECT * FROM projects WHERE id = ?")
-            .bind(input.project_id).fetch_one(&state.pool).await?;
-        let counter = project.issue_counter + 1;
-        let identifier = format!("{}-{}", project.prefix, counter);
+        let mut tx = state.pool.begin().await?;
 
-        // Update counter
-        sqlx::query("UPDATE projects SET issue_counter = ? WHERE id = ?")
-            .bind(counter).bind(input.project_id).execute(&state.pool).await?;
+        // Atomically increment counter and get new value + prefix
+        let (counter, prefix): (i64, String) = sqlx::query_as(
+            "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix"
+        ).bind(input.project_id).fetch_one(&mut *tx).await?;
+        let identifier = format!("{}-{}", prefix, counter);
 
         // Get max position for this status
         let max_pos: Option<f64> = sqlx::query_scalar("SELECT MAX(position) FROM issues WHERE project_id = ? AND status_id = ?")
             .bind(input.project_id).bind(input.status_id)
-            .fetch_one(&state.pool).await?;
+            .fetch_one(&mut *tx).await?;
         let position = max_pos.unwrap_or(-1.0) + 1.0;
 
         let result = sqlx::query(
@@ -115,7 +113,7 @@ pub fn create_issue(state: State<AppState>, input: CreateIssueInput) -> Result<I
         .bind(&input.due_date)
         .bind(&now)
         .bind(&now)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
 
         let issue_id = result.last_insert_rowid();
@@ -124,15 +122,26 @@ pub fn create_issue(state: State<AppState>, input: CreateIssueInput) -> Result<I
         if let Some(label_ids) = &input.label_ids {
             for label_id in label_ids {
                 sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES (?, ?)")
-                    .bind(issue_id).bind(label_id).execute(&state.pool).await?;
+                    .bind(issue_id).bind(label_id).execute(&mut *tx).await?;
             }
         }
 
         let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
-            .bind(issue_id).fetch_one(&state.pool).await?;
+            .bind(issue_id).fetch_one(&mut *tx).await?;
 
         let snapshot = serde_json::to_string(&issue).unwrap_or_default();
-        log_undo(&state.pool, "create", "issue", issue_id, None, Some(snapshot)).await?;
+
+        // Clear redo stack
+        sqlx::query("DELETE FROM undo_log WHERE undone = 1")
+            .execute(&mut *tx).await?;
+        // Insert undo entry
+        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES (?, ?, ?, ?, ?, ?)")
+            .bind("create").bind("issue").bind(issue_id)
+            .bind(Option::<String>::None).bind(Some(&snapshot))
+            .bind(&now)
+            .execute(&mut *tx).await?;
+
+        tx.commit().await?;
 
         Ok(issue)
     }).map_err(|e: sqlx::Error| e.to_string())
@@ -369,13 +378,13 @@ pub fn duplicate_issue(state: State<AppState>, id: i64) -> Result<Issue, String>
 
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-        // Get next identifier
-        let project = sqlx::query_as::<_, crate::models::Project>("SELECT * FROM projects WHERE id = ?")
-            .bind(original.project_id).fetch_one(&state.pool).await?;
-        let counter = project.issue_counter + 1;
-        let identifier = format!("{}-{}", project.prefix, counter);
-        sqlx::query("UPDATE projects SET issue_counter = ? WHERE id = ?")
-            .bind(counter).bind(original.project_id).execute(&state.pool).await?;
+        let mut tx = state.pool.begin().await?;
+
+        // Atomically increment counter and get new value + prefix
+        let (counter, prefix): (i64, String) = sqlx::query_as(
+            "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix"
+        ).bind(original.project_id).fetch_one(&mut *tx).await?;
+        let identifier = format!("{}-{}", prefix, counter);
 
         let result = sqlx::query(
             "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -393,21 +402,35 @@ pub fn duplicate_issue(state: State<AppState>, id: i64) -> Result<Issue, String>
         .bind(&original.due_date)
         .bind(&now)
         .bind(&now)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
 
         let new_id = result.last_insert_rowid();
 
         // Copy labels
         let labels = sqlx::query_scalar::<_, i64>("SELECT label_id FROM issue_labels WHERE issue_id = ?")
-            .bind(id).fetch_all(&state.pool).await?;
+            .bind(id).fetch_all(&mut *tx).await?;
         for label_id in labels {
             sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES (?, ?)")
-                .bind(new_id).bind(label_id).execute(&state.pool).await?;
+                .bind(new_id).bind(label_id).execute(&mut *tx).await?;
         }
 
         let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
-            .bind(new_id).fetch_one(&state.pool).await?;
+            .bind(new_id).fetch_one(&mut *tx).await?;
+
+        let snapshot = serde_json::to_string(&issue).unwrap_or_default();
+
+        // Clear redo stack
+        sqlx::query("DELETE FROM undo_log WHERE undone = 1")
+            .execute(&mut *tx).await?;
+        // Insert undo entry
+        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES (?, ?, ?, ?, ?, ?)")
+            .bind("create").bind("issue").bind(new_id)
+            .bind(Option::<String>::None).bind(Some(&snapshot))
+            .bind(&now)
+            .execute(&mut *tx).await?;
+
+        tx.commit().await?;
 
         Ok(issue)
     }).map_err(|e: sqlx::Error| e.to_string())
