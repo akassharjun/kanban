@@ -38,6 +38,18 @@ pub fn undo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
                         .bind(issue.position).bind(issue.estimate).bind(&issue.due_date)
                         .bind(&issue.created_at).bind(&issue.updated_at)
                         .execute(&state.pool).await.map_err(|e| e.to_string())?;
+
+                    // Restore labels if present in snapshot
+                    let snapshot_val: serde_json::Value = serde_json::from_str(before).unwrap_or_default();
+                    if let Some(label_ids) = snapshot_val.get("label_ids").and_then(|v| v.as_array()) {
+                        for label_val in label_ids {
+                            if let Some(label_id) = label_val.as_i64() {
+                                sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES (?, ?)")
+                                    .bind(issue.id).bind(label_id)
+                                    .execute(&state.pool).await.map_err(|e| e.to_string())?;
+                            }
+                        }
+                    }
                 }
             }
             ("create", "project") => {
