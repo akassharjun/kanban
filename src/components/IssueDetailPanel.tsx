@@ -136,7 +136,7 @@ export function IssueDetailPanel({
           <button onClick={() => onDuplicate(issueId)} className="rounded p-1 hover:bg-accent" title="Duplicate">
             <Copy className="h-4 w-4 text-muted-foreground" />
           </button>
-          <button onClick={() => { onDelete(issueId); onClose(); }} className="rounded p-1 hover:bg-destructive/20" title="Delete">
+          <button onClick={async () => { await onDelete(issueId); onClose(); }} className="rounded p-1 hover:bg-destructive/20" title="Delete">
             <Trash2 className="h-4 w-4 text-muted-foreground" />
           </button>
           <button onClick={onClose} className="rounded p-1 hover:bg-accent" title="Close (Esc)">
