@@ -316,9 +316,20 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
                         ).bind(parent_id).fetch_optional(&state.pool).await?;
 
                         if let Some(done) = done_status {
+                            let parent_before = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+                                .bind(parent_id).fetch_one(&state.pool).await?;
+                            let parent_old_snapshot = serde_json::to_string(&parent_before).unwrap_or_default();
+                            let parent_old_status_id = parent_before.status_id;
+
                             sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
                                 .bind(done.id).bind(&now).bind(parent_id).execute(&state.pool).await?;
-                            log_activity(&state.pool, parent_id, "status_id", None, Some(done.id.to_string())).await?;
+
+                            let parent_after = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+                                .bind(parent_id).fetch_one(&state.pool).await?;
+                            let parent_new_snapshot = serde_json::to_string(&parent_after).unwrap_or_default();
+
+                            log_activity(&state.pool, parent_id, "status_id", Some(parent_old_status_id.to_string()), Some(done.id.to_string())).await?;
+                            log_undo(&state.pool, "update", "issue", parent_id, Some(parent_old_snapshot), Some(parent_new_snapshot)).await?;
                         }
                     }
                 }
