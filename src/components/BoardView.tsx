@@ -74,7 +74,14 @@ export function BoardView({
     const overIssue = issues.find((i) => i.id === over.id);
     if (overIssue) {
       targetStatusId = overIssue.status_id;
-      targetPosition = overIssue.position;
+      const columnIssues = (issuesByStatus.get(overIssue.status_id) || [])
+        .filter(i => i.id !== draggedIssue.id);
+      const overIndex = columnIssues.findIndex(i => i.id === overIssue.id);
+      if (overIndex <= 0) {
+        targetPosition = overIssue.position - 0.5;
+      } else {
+        targetPosition = (columnIssues[overIndex - 1].position + overIssue.position) / 2;
+      }
     } else {
       // Dropped on a column
       targetStatusId = over.id as number;
