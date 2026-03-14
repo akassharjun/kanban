@@ -30,7 +30,7 @@ export function IssueDetailPanel({
   issueId,
   statuses,
   members,
-  projectLabels: _projectLabels,
+  projectLabels,
   onClose,
   onUpdate,
   onDelete,
@@ -47,6 +47,7 @@ export function IssueDetailPanel({
   const [showPriorityMenu, setShowPriorityMenu] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showAssigneeMenu, setShowAssigneeMenu] = useState(false);
+  const [showLabelsMenu, setShowLabelsMenu] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
@@ -270,15 +271,41 @@ export function IssueDetailPanel({
           </div>
 
           {/* Labels */}
-          <div className="flex items-start gap-3 text-sm">
+          <div className="flex items-start gap-3 text-sm relative">
             <span className="w-20 pt-1 text-muted-foreground">Labels</span>
-            <div className="flex flex-wrap gap-1">
-              {issue.labels.map(l => (
-                <span key={l.id} className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: l.color + "20", color: l.color }}>
-                  {l.name}
-                </span>
-              ))}
-              {issue.labels.length === 0 && <span className="text-muted-foreground">None</span>}
+            <div>
+              <button onClick={() => setShowLabelsMenu(!showLabelsMenu)} className="flex flex-wrap gap-1 rounded px-2 py-1 hover:bg-accent">
+                {issue.labels.length > 0 ? issue.labels.map(l => (
+                  <span key={l.id} className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: l.color + "20", color: l.color }}>
+                    {l.name}
+                  </span>
+                )) : <span className="text-muted-foreground">None</span>}
+              </button>
+              {showLabelsMenu && (
+                <div className="absolute left-20 top-8 z-50 rounded-md border border-border bg-popover p-1 shadow-lg">
+                  {projectLabels.map(l => {
+                    const isSelected = issue.labels.some(il => il.id === l.id);
+                    return (
+                      <button
+                        key={l.id}
+                        onClick={async () => {
+                          const newIds = isSelected
+                            ? issue.labels.filter(il => il.id !== l.id).map(il => il.id)
+                            : [...issue.labels.map(il => il.id), l.id];
+                          await api.setIssueLabels(issueId, newIds);
+                          await loadIssue();
+                        }}
+                        className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-accent"
+                      >
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: l.color }} />
+                        <span>{l.name}</span>
+                        {isSelected && <span className="ml-auto text-xs">✓</span>}
+                      </button>
+                    );
+                  })}
+                  {projectLabels.length === 0 && <span className="px-3 py-1.5 text-xs text-muted-foreground">No labels</span>}
+                </div>
+              )}
             </div>
           </div>
 
