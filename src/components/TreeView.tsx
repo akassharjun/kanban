@@ -20,14 +20,14 @@ const priorityConfig: Record<string, { icon: React.ElementType; color: string }>
 
 function TreeNode({
   issue,
-  children,
+  childrenMap,
   statuses,
   members,
   depth,
   onClickIssue,
 }: {
   issue: Issue;
-  children: Issue[];
+  childrenMap: Map<number, Issue[]>;
   statuses: Status[];
   members: Member[];
   depth: number;
@@ -38,6 +38,7 @@ function TreeNode({
   const member = members.find(m => m.id === issue.assignee_id);
   const p = priorityConfig[issue.priority] || priorityConfig.none;
   const PIcon = p.icon;
+  const children = childrenMap.get(issue.id) || [];
   const hasChildren = children.length > 0;
 
   return (
@@ -69,50 +70,16 @@ function TreeNode({
       {expanded && hasChildren && (
         <div>
           {children.map(child => (
-            <TreeNodeWrapper key={child.id} issue={child} allIssues={[...children]} statuses={statuses} members={members} depth={depth + 1} onClickIssue={onClickIssue} />
+            <TreeNode
+              key={child.id}
+              issue={child}
+              childrenMap={childrenMap}
+              statuses={statuses}
+              members={members}
+              depth={depth + 1}
+              onClickIssue={onClickIssue}
+            />
           ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TreeNodeWrapper({
-  issue,
-  allIssues: _allIssues,
-  statuses,
-  members,
-  depth,
-  onClickIssue,
-}: {
-  issue: Issue;
-  allIssues: Issue[];
-  statuses: Status[];
-  members: Member[];
-  depth: number;
-  onClickIssue: (issue: Issue) => void;
-}) {
-  const status = statuses.find(s => s.id === issue.status_id);
-  const member = members.find(m => m.id === issue.assignee_id);
-  const p = priorityConfig[issue.priority] || priorityConfig.none;
-  const PIcon = p.icon;
-
-  return (
-    <div
-      className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/30 cursor-pointer transition-colors"
-      style={{ paddingLeft: `${depth * 24 + 8 + 18}px` }}
-      onClick={() => onClickIssue(issue)}
-    >
-      <PIcon className={cn("h-3.5 w-3.5 flex-shrink-0", p.color)} />
-      <span className="text-xs text-muted-foreground flex-shrink-0">{issue.identifier}</span>
-      <span className="text-sm truncate flex-1">{issue.title}</span>
-      <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: status?.color || "#6b7280" }} />
-      {member && (
-        <div
-          className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white"
-          style={{ backgroundColor: member.avatar_color }}
-        >
-          {(member.display_name || member.name).charAt(0).toUpperCase()}
         </div>
       )}
     </div>
@@ -152,7 +119,7 @@ export function TreeView({ issues, statuses, members, onClickIssue }: TreeViewPr
             <TreeNode
               key={issue.id}
               issue={issue}
-              children={childrenMap.get(issue.id) || []}
+              childrenMap={childrenMap}
               statuses={statuses}
               members={members}
               depth={0}
