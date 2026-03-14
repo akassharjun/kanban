@@ -128,7 +128,11 @@ export function IssueDetailPanel({
   const currentPriority = priorities.find(p => p.value === issue.priority) || priorities[4];
 
   return (
-    <div className="flex h-full w-[480px] flex-col border-l border-border bg-card">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="flex h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-border bg-card shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <span className="text-sm text-muted-foreground">{issue.identifier}</span>
@@ -495,6 +499,7 @@ export function IssueDetailPanel({
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
