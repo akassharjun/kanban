@@ -58,7 +58,7 @@ pub struct IssueWithLabels {
 
 // Helper to log activity
 async fn log_activity(pool: &sqlx::SqlitePool, issue_id: i64, field: &str, old_val: Option<String>, new_val: Option<String>) -> Result<(), sqlx::Error> {
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
     sqlx::query("INSERT INTO activity_log (issue_id, field_changed, old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?)")
         .bind(issue_id).bind(field).bind(old_val).bind(new_val).bind(&now)
         .execute(pool).await?;
@@ -67,7 +67,7 @@ async fn log_activity(pool: &sqlx::SqlitePool, issue_id: i64, field: &str, old_v
 
 // Helper to log undo
 async fn log_undo(pool: &sqlx::SqlitePool, op_type: &str, entity_type: &str, entity_id: i64, before: Option<String>, after: Option<String>) -> Result<(), sqlx::Error> {
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
     // Clear any undone entries after the current position (new operation invalidates redo stack)
     sqlx::query("DELETE FROM undo_log WHERE undone = 1")
         .execute(pool).await?;
@@ -80,7 +80,7 @@ async fn log_undo(pool: &sqlx::SqlitePool, op_type: &str, entity_type: &str, ent
 #[tauri::command]
 pub fn create_issue(state: State<AppState>, input: CreateIssueInput) -> Result<Issue, String> {
     state.rt.block_on(async {
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
         let priority = input.priority.unwrap_or_else(|| "none".to_string());
 
         let mut tx = state.pool.begin().await?;
@@ -223,7 +223,7 @@ pub fn list_issues(state: State<AppState>, filter: ListIssuesFilter) -> Result<V
 #[tauri::command]
 pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) -> Result<Issue, String> {
     state.rt.block_on(async {
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
         let old_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
             .bind(id).fetch_one(&state.pool).await?;
         let old_snapshot = serde_json::to_string(&old_issue).unwrap_or_default();
@@ -376,7 +376,7 @@ pub fn duplicate_issue(state: State<AppState>, id: i64) -> Result<Issue, String>
         let original = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
             .bind(id).fetch_one(&state.pool).await?;
 
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
         let mut tx = state.pool.begin().await?;
 
@@ -439,7 +439,7 @@ pub fn duplicate_issue(state: State<AppState>, id: i64) -> Result<Issue, String>
 #[tauri::command]
 pub fn bulk_update_issues(state: State<AppState>, input: BulkUpdateInput) -> Result<Vec<Issue>, String> {
     state.rt.block_on(async {
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
         for issue_id in &input.issue_ids {
             // Fetch old state before updating
