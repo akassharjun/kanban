@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { Plus } from "lucide-react";
@@ -19,10 +19,17 @@ export function BoardColumn({ status, issues, members, labels, onClickIssue, onQ
   const [isAdding, setIsAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [collapsed, setCollapsed] = useState(false);
+  const escapePressedRef = useRef(false);
 
   const { setNodeRef, isOver } = useDroppable({ id: status.id });
 
   const handleSubmit = async () => {
+    if (escapePressedRef.current) {
+      escapePressedRef.current = false;
+      setIsAdding(false);
+      setNewTitle("");
+      return;
+    }
     if (!newTitle.trim()) { setIsAdding(false); return; }
     await onQuickCreate(newTitle.trim());
     setNewTitle("");
@@ -78,7 +85,11 @@ export function BoardColumn({ status, issues, members, labels, onClickIssue, onQ
                 onChange={(e) => setNewTitle(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSubmit();
-                  if (e.key === "Escape") { setIsAdding(false); setNewTitle(""); }
+                  if (e.key === "Escape") {
+                    escapePressedRef.current = true;
+                    setIsAdding(false);
+                    setNewTitle("");
+                  }
                 }}
                 onBlur={handleSubmit}
                 placeholder="Issue title..."
