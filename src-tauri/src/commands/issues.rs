@@ -129,10 +129,19 @@ pub fn create_issue(state: State<AppState>, input: CreateIssueInput) -> Result<I
         let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
             .bind(issue_id).fetch_one(&mut *tx).await?;
 
-        tx.commit().await?;
-
         let snapshot = serde_json::to_string(&issue).unwrap_or_default();
-        log_undo(&state.pool, "create", "issue", issue_id, None, Some(snapshot)).await?;
+
+        // Clear redo stack
+        sqlx::query("DELETE FROM undo_log WHERE undone = 1")
+            .execute(&mut *tx).await?;
+        // Insert undo entry
+        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES (?, ?, ?, ?, ?, ?)")
+            .bind("create").bind("issue").bind(issue_id)
+            .bind(Option::<String>::None).bind(Some(&snapshot))
+            .bind(&now)
+            .execute(&mut *tx).await?;
+
+        tx.commit().await?;
 
         Ok(issue)
     }).map_err(|e: sqlx::Error| e.to_string())
@@ -380,6 +389,18 @@ pub fn duplicate_issue(state: State<AppState>, id: i64) -> Result<Issue, String>
 
         let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
             .bind(new_id).fetch_one(&mut *tx).await?;
+
+        let snapshot = serde_json::to_string(&issue).unwrap_or_default();
+
+        // Clear redo stack
+        sqlx::query("DELETE FROM undo_log WHERE undone = 1")
+            .execute(&mut *tx).await?;
+        // Insert undo entry
+        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES (?, ?, ?, ?, ?, ?)")
+            .bind("create").bind("issue").bind(new_id)
+            .bind(Option::<String>::None).bind(Some(&snapshot))
+            .bind(&now)
+            .execute(&mut *tx).await?;
 
         tx.commit().await?;
 
