@@ -659,16 +659,6 @@ pub fn fail_task(
             }
             let context_str = serde_json::to_string(&context).unwrap_or_else(|_| "{}".to_string());
 
-            // Update task_contracts: requeue, clear claimed_by/claimed_at, update attempt_count and context
-            sqlx::query(
-                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = $1, context = $2 WHERE issue_id = $3",
-            )
-            .bind(new_attempt_count)
-            .bind(&context_str)
-            .bind(issue_id)
-            .execute(&state.pool)
-            .await?;
-
             // Check escalation: if attempt_count >= max_attempts, block instead of requeue
             let config = sqlx::query_as::<_, ProjectAgentConfig>(
                 "SELECT * FROM project_agent_config WHERE project_id = $1",
@@ -679,13 +669,25 @@ pub fn fail_task(
 
             let max_attempts = config.as_ref().map(|c| c.max_attempts).unwrap_or(3);
 
-            if new_attempt_count >= max_attempts {
-                // Escalate: block the task instead of requeuing
-                sqlx::query("UPDATE task_contracts SET task_state = 'blocked' WHERE issue_id = $1")
-                    .bind(issue_id)
-                    .execute(&state.pool)
-                    .await?;
+            // Atomic update: requeue or block in a single UPDATE
+            sqlx::query(
+                "UPDATE task_contracts SET task_state = CASE WHEN attempt_count + 1 >= $1 THEN 'blocked' ELSE 'queued' END, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1, context = $2::jsonb WHERE issue_id = $3",
+            )
+            .bind(max_attempts)
+            .bind(&context_str)
+            .bind(issue_id)
+            .execute(&state.pool)
+            .await?;
 
+            // Read back the new state to decide status sync
+            let new_state_str: String = sqlx::query_scalar(
+                "SELECT task_state FROM task_contracts WHERE issue_id = $1",
+            )
+            .bind(issue_id)
+            .fetch_one(&state.pool)
+            .await?;
+
+            if new_state_str == "blocked" {
                 // Sync to blocked status
                 let blocked_status: Option<i64> = sqlx::query_scalar(
                     "SELECT id FROM statuses WHERE project_id = $1 AND category = 'blocked' ORDER BY position LIMIT 1",
@@ -736,8 +738,10 @@ pub fn fail_task(
             .execute(&state.pool)
             .await?;
 
-            // Sync issues.status_id to 'unstarted' category
-            sync_issue_status(&state.pool, issue_id, TaskState::Queued, &now).await?;
+            // Sync issues.status_id to 'unstarted' category (only if not already blocked above)
+            if new_state_str != "blocked" {
+                sync_issue_status(&state.pool, issue_id, TaskState::Queued, &now).await?;
+            }
 
             let _ = auto_comment(&state.pool, issue_id, &agent_id, &format!("\u{274C} Task failed: {}", reason)).await;
 
@@ -840,8 +844,8 @@ pub fn approve_task(state: State<AppState>, identifier: String) -> Result<(), St
                 )));
             }
 
-            // Update task_state to 'completed'
-            sqlx::query("UPDATE task_contracts SET task_state = 'completed' WHERE issue_id = $1")
+            // Update task_state to 'completed', clear stale claimed_by/claimed_at
+            sqlx::query("UPDATE task_contracts SET task_state = 'completed', claimed_by = NULL, claimed_at = NULL WHERE issue_id = $1")
                 .bind(issue_id)
                 .execute(&state.pool)
                 .await?;

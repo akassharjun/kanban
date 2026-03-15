@@ -6,7 +6,7 @@ struct TimedOutTask {
     issue_id: i64,
     claimed_by: Option<String>,
     attempt_count: i64,
-    context: String,
+    context: serde_json::Value,
 }
 
 /// Row type for offline agent queries.
@@ -51,8 +51,7 @@ pub async fn reclaim_timed_out_tasks(pool: &PgPool) -> Result<Vec<i64>, sqlx::Er
         let agent_id = task.claimed_by.as_deref().unwrap_or("unknown");
 
         // Parse context JSON, append to prior_attempts
-        let mut context: serde_json::Value =
-            serde_json::from_str(&task.context).unwrap_or_else(|_| serde_json::json!({}));
+        let mut context: serde_json::Value = task.context.clone();
         let attempt_entry = serde_json::json!({
             "agent": agent_id,
             "attempt_number": new_attempt_count,
@@ -91,7 +90,7 @@ pub async fn reclaim_timed_out_tasks(pool: &PgPool) -> Result<Vec<i64>, sqlx::Er
 
         // Update task_contracts: requeue or block, clear claimed_by/claimed_at
         sqlx::query(
-            "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3 WHERE issue_id = $4",
+            "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3::jsonb WHERE issue_id = $4",
         )
         .bind(new_state)
         .bind(new_attempt_count)
@@ -186,8 +185,7 @@ pub async fn reclaim_offline_agents(pool: &PgPool) -> Result<Vec<String>, sqlx::
             let new_attempt_count = task.attempt_count + 1;
 
             // Parse context JSON, append to prior_attempts
-            let mut context: serde_json::Value =
-                serde_json::from_str(&task.context).unwrap_or_else(|_| serde_json::json!({}));
+            let mut context: serde_json::Value = task.context.clone();
             let attempt_entry = serde_json::json!({
                 "agent": agent.id,
                 "attempt_number": new_attempt_count,
@@ -226,7 +224,7 @@ pub async fn reclaim_offline_agents(pool: &PgPool) -> Result<Vec<String>, sqlx::
 
             // Update task_contracts
             sqlx::query(
-                "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3 WHERE issue_id = $4",
+                "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3::jsonb WHERE issue_id = $4",
             )
             .bind(new_state)
             .bind(new_attempt_count)
