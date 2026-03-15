@@ -1,3 +1,4 @@
+pub mod cascade;
 pub mod decomposition;
 pub mod dependency;
 pub mod metrics;

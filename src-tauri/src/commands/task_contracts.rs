@@ -365,6 +365,72 @@ pub fn complete_task(
             let auto_accept = config.as_ref().map(|c| c.auto_accept_threshold).unwrap_or(0.85);
             let human_review = config.as_ref().map(|c| c.human_review_threshold).unwrap_or(0.50);
 
+            // Run validation pipeline if task has runnable success criteria
+            if crate::orchestration::validation::has_runnable_criteria(&contract.success_criteria) {
+                let validation = crate::orchestration::validation::run_validation_pipeline(&state.pool, issue_id).await
+                    .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+
+                if !validation.all_passed {
+                    // Validation failed — treat as task failure regardless of confidence
+                    let new_attempt = contract.attempt_count + 1;
+                    let validation_summary = validation.checks.iter()
+                        .map(|c| format!("{}: {}", c.name, if c.passed { "PASS" } else { "FAIL" }))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    // Append to prior_attempts
+                    let mut context: serde_json::Value = serde_json::from_str(&contract.context).unwrap_or(serde_json::json!({}));
+                    let attempt_entry = serde_json::json!({
+                        "agent": &input.agent_id,
+                        "attempt_number": new_attempt,
+                        "result": "validation_failed",
+                        "reason": format!("Validation pipeline failed: {}", validation_summary),
+                        "validation_checks": validation.checks
+                    });
+                    if let Some(arr) = context.get_mut("prior_attempts").and_then(|v| v.as_array_mut()) {
+                        arr.push(attempt_entry);
+                    } else {
+                        context["prior_attempts"] = serde_json::json!([attempt_entry]);
+                    }
+
+                    // Requeue
+                    sqlx::query(
+                        "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = ?, context = ?, result = ? WHERE issue_id = ?"
+                    ).bind(new_attempt).bind(context.to_string()).bind(serde_json::json!({"validation": validation.checks}).to_string()).bind(issue_id)
+                    .execute(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+
+                    // Sync status to unstarted
+                    let unstarted_category = crate::orchestration::state_machine::task_state_to_status_category(TaskState::Queued);
+                    if let Some(sid) = sqlx::query_scalar::<_, i64>(
+                        "SELECT id FROM statuses WHERE project_id = ? AND category = ? ORDER BY position LIMIT 1"
+                    ).bind(issue.project_id).bind(unstarted_category).fetch_optional(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))? {
+                        sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
+                            .bind(sid).bind(&now).bind(issue_id).execute(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+                    }
+
+                    // Log validation failure
+                    sqlx::query(
+                        "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES (?, ?, ?, 'result', ?, ?, ?)"
+                    ).bind(issue_id).bind(&input.agent_id).bind(new_attempt)
+                    .bind(format!("Validation failed: {}", validation_summary))
+                    .bind(serde_json::json!({"validation": validation.checks}).to_string())
+                    .bind(&now)
+                    .execute(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+
+                    // Update agent stats
+                    sqlx::query("UPDATE agent_stats SET tasks_failed = tasks_failed + 1 WHERE agent_id = ?")
+                        .bind(&input.agent_id).execute(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+
+                    return Ok(serde_json::json!({
+                        "accepted": false,
+                        "new_state": "queued",
+                        "reason": "validation_failed",
+                        "validation": validation.checks
+                    }));
+                }
+                // If all passed, continue with normal confidence gating
+            }
+
             // Build result JSON
             let result_json = serde_json::json!({
                 "confidence": input.confidence,
