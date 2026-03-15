@@ -1154,7 +1154,7 @@ async fn handle_agent(
                 .unwrap_or_else(|| "[]".to_string());
 
             sqlx::query(
-                "INSERT INTO agents (id, name, skills, task_types, max_concurrent, max_complexity, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4, $5, $6, 'online', $7, $8)",
+                "INSERT INTO agents (id, name, skills, task_types, max_concurrent, max_complexity, status, registered_at, last_heartbeat) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, 'online', $7, $8)",
             )
             .bind(&id)
             .bind(&name)
@@ -1168,7 +1168,7 @@ async fn handle_agent(
             .await?;
 
             sqlx::query(
-                "INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES ($1, 0, 0, 0.0, 0, '{}')",
+                "INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES ($1, 0, 0, 0.0, 0, '{}'::jsonb)",
             )
             .bind(&id)
             .execute(pool)
@@ -1307,7 +1307,7 @@ async fn handle_task(
             let skill_list: Vec<String> = if let Some(ref s) = skills {
                 s.split(',').map(|s| s.trim().to_string()).collect()
             } else {
-                serde_json::from_str(&agent_row.skills).unwrap_or_default()
+                serde_json::from_value(agent_row.skills.clone()).unwrap_or_default()
             };
             let result = orchestration::routing::next_task(
                 pool,
@@ -1411,13 +1411,13 @@ async fn handle_task(
 
             if new_state == "queued" {
                 // Auto-reject: requeue with cleared claim
-                sqlx::query("UPDATE task_contracts SET task_state = 'queued', result = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $2")
+                sqlx::query("UPDATE task_contracts SET task_state = 'queued', result = $1::jsonb, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $2")
                     .bind(result_json.to_string())
                     .bind(issue.id)
                     .execute(pool)
                     .await?;
             } else {
-                sqlx::query("UPDATE task_contracts SET task_state = $1, result = $2 WHERE issue_id = $3")
+                sqlx::query("UPDATE task_contracts SET task_state = $1, result = $2::jsonb WHERE issue_id = $3")
                     .bind(new_state)
                     .bind(result_json.to_string())
                     .bind(issue.id)
@@ -1478,7 +1478,7 @@ async fn handle_task(
             let now = chrono::Utc::now().to_rfc3339();
 
             // Append to prior_attempts in context
-            let mut context: serde_json::Value = serde_json::from_str(&tc.context).unwrap_or(serde_json::json!({}));
+            let mut context: serde_json::Value = tc.context.clone();
             if let Some(obj) = context.as_object_mut() {
                 let arr = obj.entry("prior_attempts").or_insert(serde_json::json!([]));
                 if let Some(a) = arr.as_array_mut() {
@@ -1493,7 +1493,7 @@ async fn handle_task(
 
             // Requeue
             sqlx::query(
-                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1, context = $1 WHERE issue_id = $2",
+                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1, context = $1::jsonb WHERE issue_id = $2",
             )
             .bind(context.to_string())
             .bind(issue.id)
@@ -1574,7 +1574,7 @@ async fn handle_task(
             .await?;
             let now = chrono::Utc::now().to_rfc3339();
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)",
             )
             .bind(issue.id)
             .bind(&agent)
@@ -1674,7 +1674,7 @@ async fn handle_task(
             }
 
             sqlx::query(
-                "INSERT INTO task_contracts (issue_id, agent_type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4, $5, $6, $7, $8, $9, 0)",
+                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, 0)",
             )
             .bind(issue_id)
             .bind(&tt)
@@ -1758,7 +1758,6 @@ async fn handle_task(
                 println!("{}: {}", identifier, issue.title);
                 if let Some(ref c) = contract {
                     let confidence = c.result.as_ref()
-                        .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
                         .and_then(|v| v.get("confidence").and_then(|c| c.as_f64()));
                     println!("State: {} | Attempts: {}{}", c.task_state, c.attempt_count,
                         confidence.map(|c| format!(" | Confidence: {:.2}", c)).unwrap_or_default());
@@ -1791,7 +1790,7 @@ async fn handle_task(
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
-            let context: serde_json::Value = serde_json::from_str(&tc.context).unwrap_or(serde_json::json!({}));
+            let context: serde_json::Value = tc.context.clone();
             let attempts = context.get("prior_attempts").cloned().unwrap_or(serde_json::json!([]));
             if json {
                 println!("{}", serde_json::to_string_pretty(&serde_json::json!({
@@ -2074,7 +2073,7 @@ async fn handle_task(
                 let skills_json = serde_json::to_string(
                     &s.split(',').map(|s| s.trim()).collect::<Vec<_>>(),
                 )?;
-                sqlx::query("UPDATE task_contracts SET required_skills = $1 WHERE issue_id = $2")
+                sqlx::query("UPDATE task_contracts SET required_skills = $1::jsonb WHERE issue_id = $2")
                     .bind(&skills_json)
                     .bind(issue.id)
                     .execute(pool)

@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 pub struct Agent {
     pub id: String,
     pub name: String,
-    pub r#type: Option<String>,
-    pub skills: String,
-    pub task_types: String,
+    pub agent_type: Option<String>,
+    pub skills: serde_json::Value,
+    pub task_types: serde_json::Value,
     pub max_concurrent: i64,
     pub max_complexity: String,
     pub status: String,
@@ -21,24 +21,25 @@ pub struct AgentStats {
     pub tasks_failed: i64,
     pub total_confidence: f64,
     pub total_completion_time_seconds: i64,
-    pub skills_breakdown: String,
+    pub skills_breakdown: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct TaskContract {
     pub issue_id: i64,
+    #[sqlx(rename = "type")]
     pub r#type: String,
     pub task_state: String,
     pub objective: String,
-    pub context: String,
-    pub constraints: String,
-    pub success_criteria: String,
-    pub required_skills: String,
+    pub context: serde_json::Value,
+    pub constraints: serde_json::Value,
+    pub success_criteria: serde_json::Value,
+    pub required_skills: serde_json::Value,
     pub estimated_complexity: Option<String>,
     pub claimed_by: Option<String>,
     pub claimed_at: Option<String>,
     pub timeout_minutes: i64,
-    pub result: Option<String>,
+    pub result: Option<serde_json::Value>,
     pub attempt_count: i64,
 }
 
@@ -50,7 +51,7 @@ pub struct ExecutionLog {
     pub attempt_number: i64,
     pub entry_type: String,
     pub message: String,
-    pub metadata: Option<String>,
+    pub metadata: Option<serde_json::Value>,
     pub timestamp: String,
 }
 

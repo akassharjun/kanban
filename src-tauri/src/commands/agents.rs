@@ -26,7 +26,7 @@ pub fn register_agent(state: State<AppState>, input: RegisterAgentInput) -> Resu
         let mut tx = state.pool.begin().await?;
 
         sqlx::query(
-            "INSERT INTO agents (id, name, agent_type, skills, task_types, max_concurrent, max_complexity, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4, $5, $6, $7, 'idle', $8, $9)"
+            "INSERT INTO agents (id, name, agent_type, skills, task_types, max_concurrent, max_complexity, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, 'idle', $8, $9)"
         )
         .bind(&id)
         .bind(&input.name)
@@ -41,7 +41,7 @@ pub fn register_agent(state: State<AppState>, input: RegisterAgentInput) -> Resu
         .await?;
 
         sqlx::query(
-            "INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES ($1, 0, 0, 0.0, 0, '{}')"
+            "INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES ($1, 0, 0, 0.0, 0, '{}'::jsonb)"
         )
         .bind(&id)
         .execute(&mut *tx)

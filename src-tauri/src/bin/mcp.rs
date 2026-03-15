@@ -826,14 +826,14 @@ async fn handle_tool_call(
 
             let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
             sqlx::query(
-                "INSERT INTO agents (id, name, skills, task_types, max_concurrent, max_complexity, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4, $5, $6, 'idle', $7, $8)"
+                "INSERT INTO agents (id, name, skills, task_types, max_concurrent, max_complexity, status, registered_at, last_heartbeat) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, 'idle', $7, $8)"
             )
             .bind(&agent_id).bind(name).bind(&skills).bind(&task_types)
             .bind(max_concurrent).bind(max_complexity).bind(&now).bind(&now)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
             sqlx::query(
-                "INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES ($1, 0, 0, 0.0, 0, '{}')"
+                "INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES ($1, 0, 0, 0.0, 0, '{}'::jsonb)"
             )
             .bind(&agent_id)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -896,7 +896,7 @@ async fn handle_tool_call(
             let skills: Vec<String> = if let Some(overrides) = args.get("skills_override").and_then(|v| v.as_array()) {
                 overrides.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
             } else {
-                serde_json::from_str(&agent.skills).unwrap_or_default()
+                serde_json::from_value(agent.skills.clone()).unwrap_or_default()
             };
 
             let contract = orchestration::routing::next_task(
@@ -984,7 +984,7 @@ async fn handle_tool_call(
                 "validating"
             };
 
-            sqlx::query("UPDATE task_contracts SET task_state = $1, result = $2 WHERE issue_id = $3")
+            sqlx::query("UPDATE task_contracts SET task_state = $1, result = $2::jsonb WHERE issue_id = $3")
                 .bind(new_state).bind(&result_json).bind(issue.id)
                 .execute(pool).await.map_err(|e| e.to_string())?;
 
@@ -1037,7 +1037,7 @@ async fn handle_tool_call(
             }
 
             // Append to prior_attempts in context
-            let mut context: Value = serde_json::from_str(&contract.context).unwrap_or(json!({}));
+            let mut context: Value = contract.context.clone();
             let attempt_record = json!({
                 "attempt": contract.attempt_count,
                 "agent_id": agent_id,
@@ -1059,7 +1059,7 @@ async fn handle_tool_call(
             let new_state = if new_attempt >= max_attempts { "blocked" } else { "queued" };
 
             sqlx::query(
-                "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3 WHERE issue_id = $4"
+                "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3::jsonb WHERE issue_id = $4"
             ).bind(new_state).bind(new_attempt).bind(serde_json::to_string(&context).unwrap_or_default()).bind(issue.id)
             .execute(pool).await.map_err(|e| e.to_string())?;
 
@@ -1209,7 +1209,7 @@ async fn handle_tool_call(
             ).bind(issue.id).fetch_one(pool).await.map_err(|e| e.to_string())?;
 
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)"
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)"
             ).bind(issue.id).bind(agent_id).bind(attempt_count.0).bind(entry_type).bind(message).bind(metadata).bind(&now)
             .execute(pool).await.map_err(|e| e.to_string())?;
 
@@ -1268,7 +1268,7 @@ async fn handle_tool_call(
             // Create task contract
             let context = json!({"files": serde_json::from_str::<Value>(&context_files).unwrap_or(json!([]))});
             sqlx::query(
-                "INSERT INTO task_contracts (issue_id, agent_type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4, '[]', '[]', $5, $6, $7, 0)"
+                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4::jsonb, '[]'::jsonb, '[]'::jsonb, $5::jsonb, $6, $7, 0)"
             ).bind(issue_id).bind(task_type).bind(objective)
             .bind(serde_json::to_string(&context).unwrap_or_default())
             .bind(&skills).bind(complexity).bind(timeout_minutes)
@@ -1327,7 +1327,7 @@ async fn handle_tool_call(
                 .bind(identifier).fetch_one(pool).await.map_err(|e| e.to_string())?;
             let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = $1")
                 .bind(issue.id).fetch_one(pool).await.map_err(|e| e.to_string())?;
-            let context: Value = serde_json::from_str(&contract.context).unwrap_or(json!({}));
+            let context: Value = contract.context.clone();
             let prior_attempts = context.get("prior_attempts").cloned().unwrap_or(json!([]));
             Ok(json!({
                 "identifier": identifier,

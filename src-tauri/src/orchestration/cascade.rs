@@ -28,7 +28,7 @@ pub async fn invalidate_task(pool: &PgPool, issue_id: i64, reason: &str) -> Resu
 
     // Requeue the invalidated task
     let new_attempt = contract.attempt_count + 1;
-    let mut context: serde_json::Value = serde_json::from_str(&contract.context).unwrap_or(serde_json::json!({}));
+    let mut context: serde_json::Value = contract.context.clone();
     let entry = serde_json::json!({
         "agent": contract.claimed_by,
         "attempt_number": new_attempt,

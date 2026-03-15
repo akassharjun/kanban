@@ -6,8 +6,9 @@ services:
       POSTGRES_DB: kanban
       POSTGRES_USER: kanban
       POSTGRES_PASSWORD: kanban
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - kanban_pgdata:/var/lib/postgresql/data
     healthcheck:

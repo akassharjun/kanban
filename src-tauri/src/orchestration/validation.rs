@@ -29,8 +29,7 @@ pub async fn run_validation_pipeline(
     .fetch_one(pool)
     .await?;
 
-    let criteria: serde_json::Value =
-        serde_json::from_str(&contract.success_criteria).unwrap_or(serde_json::json!([]));
+    let criteria: serde_json::Value = contract.success_criteria.clone();
 
     let criteria_arr = match criteria.as_array() {
         Some(arr) => arr.clone(),
@@ -132,10 +131,8 @@ pub async fn run_validation_pipeline(
 }
 
 /// Check if a task has runnable validation criteria (has "command" fields).
-pub fn has_runnable_criteria(success_criteria_json: &str) -> bool {
-    let criteria: serde_json::Value =
-        serde_json::from_str(success_criteria_json).unwrap_or(serde_json::json!([]));
-    criteria
+pub fn has_runnable_criteria(success_criteria: &serde_json::Value) -> bool {
+    success_criteria
         .as_array()
         .map(|arr| arr.iter().any(|c| c.get("command").is_some()))
         .unwrap_or(false)

@@ -134,7 +134,7 @@ pub fn create_task_contract(
                 serde_json::to_string(&context).unwrap_or_else(|_| "{}".to_string());
 
             sqlx::query(
-                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4, $5, $6, $7, $8, $9, 0)",
+                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, 0)",
             )
             .bind(issue_id)
             .bind(&task_type)
@@ -218,7 +218,7 @@ pub fn next_task(
             let skills: Vec<String> = if let Some(override_skills) = skills_override {
                 override_skills
             } else {
-                serde_json::from_str(&agent.skills).unwrap_or_default()
+                serde_json::from_value(agent.skills.clone()).unwrap_or_default()
             };
 
             crate::orchestration::routing::next_task(
@@ -378,7 +378,7 @@ pub fn complete_task(
                         .join(", ");
 
                     // Append to prior_attempts
-                    let mut context: serde_json::Value = serde_json::from_str(&contract.context).unwrap_or(serde_json::json!({}));
+                    let mut context: serde_json::Value = contract.context.clone();
                     let attempt_entry = serde_json::json!({
                         "agent": &input.agent_id,
                         "attempt_number": new_attempt,
@@ -394,7 +394,7 @@ pub fn complete_task(
 
                     // Requeue
                     sqlx::query(
-                        "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = $1, context = $2, result = $3 WHERE issue_id = $4"
+                        "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = $1, context = $2::jsonb, result = $3::jsonb WHERE issue_id = $4"
                     ).bind(new_attempt).bind(context.to_string()).bind(serde_json::json!({"validation": validation.checks}).to_string()).bind(issue_id)
                     .execute(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
 
@@ -409,7 +409,7 @@ pub fn complete_task(
 
                     // Log validation failure
                     sqlx::query(
-                        "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, 'result', $4, $5, $6)"
+                        "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, 'result', $4, $5::jsonb, $6)"
                     ).bind(issue_id).bind(&input.agent_id).bind(new_attempt)
                     .bind(format!("Validation failed: {}", validation_summary))
                     .bind(serde_json::json!({"validation": validation.checks}).to_string())
@@ -453,7 +453,7 @@ pub fn complete_task(
             if new_state == TaskState::Queued {
                 // Auto-reject: clear claimed_by/claimed_at, increment attempt_count
                 sqlx::query(
-                    "UPDATE task_contracts SET task_state = 'queued', result = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $2",
+                    "UPDATE task_contracts SET task_state = 'queued', result = $1::jsonb, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $2",
                 )
                 .bind(&result_str)
                 .bind(issue_id)
@@ -461,7 +461,7 @@ pub fn complete_task(
                 .await?;
             } else {
                 sqlx::query(
-                    "UPDATE task_contracts SET task_state = $1, result = $2 WHERE issue_id = $3",
+                    "UPDATE task_contracts SET task_state = $1, result = $2::jsonb WHERE issue_id = $3",
                 )
                 .bind(new_state_str)
                 .bind(&result_str)
@@ -527,7 +527,7 @@ pub fn complete_task(
 
                 // Create review task contract
                 sqlx::query(
-                    "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, required_skills, estimated_complexity, timeout_minutes) VALUES ($1, 'review', 'queued', $2, $3, '[\"review\"]', 'small', 30)",
+                    "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, required_skills, estimated_complexity, timeout_minutes) VALUES ($1, 'review', 'queued', $2, $3::jsonb, '[\"review\"]'::jsonb, 'small', 30)",
                 )
                 .bind(review_issue_id)
                 .bind(&review_objective)
@@ -551,7 +551,7 @@ pub fn complete_task(
 
             // Log result in execution_logs
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, 'complete', $4, $5, $6)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, 'complete', $4, $5::jsonb, $6)",
             )
             .bind(issue_id)
             .bind(&input.agent_id)
@@ -616,8 +616,7 @@ pub fn fail_task(
             let new_attempt_count = contract.attempt_count + 1;
 
             // Parse context JSON, append to prior_attempts
-            let mut context: serde_json::Value =
-                serde_json::from_str(&contract.context).unwrap_or_else(|_| serde_json::json!({}));
+            let mut context: serde_json::Value = contract.context.clone();
             let attempt_entry = serde_json::json!({
                 "agent": agent_id,
                 "attempt_number": new_attempt_count,

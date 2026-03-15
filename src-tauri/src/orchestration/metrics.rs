@@ -36,56 +36,56 @@ pub async fn project_metrics(
     project_id: i64,
 ) -> Result<ProjectMetrics, sqlx::Error> {
     let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1",
+        "SELECT COUNT(*)::bigint FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let completed: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'completed'",
+        "SELECT COUNT(*)::bigint FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'completed'",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let queued: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'queued'",
+        "SELECT COUNT(*)::bigint FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'queued'",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let in_progress: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state IN ('claimed', 'executing')",
+        "SELECT COUNT(*)::bigint FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state IN ('claimed', 'executing')",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let blocked: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'blocked'",
+        "SELECT COUNT(*)::bigint FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'blocked'",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let validating: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'validating'",
+        "SELECT COUNT(*)::bigint FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'validating'",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let failed_attempts: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(tc.attempt_count), 0) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.attempt_count > 0",
+        "SELECT COALESCE(SUM(tc.attempt_count), 0)::bigint FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.attempt_count > 0",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let agents_online: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM agents WHERE status != 'offline'")
+        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM agents WHERE status != 'offline'")
             .fetch_one(pool)
             .await?;
 
@@ -97,14 +97,14 @@ pub async fn project_metrics(
     .await?;
 
     let tasks_completed_24h: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM execution_logs el JOIN issues i ON el.issue_id = i.id WHERE i.project_id = $1 AND el.entry_type IN ('result', 'complete') AND el.timestamp::timestamptz > NOW() - interval '24 hours'",
+        "SELECT COUNT(*)::bigint FROM execution_logs el JOIN issues i ON el.issue_id = i.id WHERE i.project_id = $1 AND el.entry_type IN ('result', 'complete') AND el.timestamp::timestamptz > NOW() - interval '24 hours'",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let type_rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT tc.type, COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 GROUP BY tc.type",
+        "SELECT tc.type, COUNT(*)::bigint FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 GROUP BY tc.type",
     )
     .bind(project_id)
     .fetch_all(pool)
@@ -172,8 +172,7 @@ pub async fn agent_metrics(
     .fetch_all(pool)
     .await?;
 
-    let skills_breakdown: serde_json::Value =
-        serde_json::from_str(&stats.skills_breakdown).unwrap_or(serde_json::json!({}));
+    let skills_breakdown: serde_json::Value = stats.skills_breakdown.clone();
 
     Ok(AgentMetrics {
         agent_id: agent.id,
