@@ -1,4 +1,5 @@
 use crate::models::agent::{ExecutionLog, TaskContract};
+use crate::orchestration::timeout::update_agent_activity;
 use crate::state::AppState;
 use serde::Deserialize;
 use tauri::State;
@@ -18,6 +19,8 @@ pub fn log_task_activity(state: State<AppState>, input: LogEntryInput) -> Result
         .rt
         .block_on(async {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+            update_agent_activity(&state.pool, &input.agent_id).await;
 
             // Resolve identifier to issue_id
             let issue_id: i64 =

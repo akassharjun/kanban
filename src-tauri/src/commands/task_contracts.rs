@@ -1,6 +1,7 @@
 use crate::models::agent::{Agent, ProjectAgentConfig, TaskContract};
 use crate::orchestration::routing::{build_full_contract, FullTaskContract};
 use crate::orchestration::state_machine::{task_state_to_status_category, TaskState};
+use crate::orchestration::timeout::update_agent_activity;
 use crate::state::AppState;
 use serde::Deserialize;
 use std::collections::{HashSet, VecDeque};
@@ -228,6 +229,8 @@ pub fn next_task(
                 .await?
                 .ok_or_else(|| sqlx::Error::Protocol("AGENT_NOT_REGISTERED".to_string()))?;
 
+            update_agent_activity(&state.pool, &agent_id).await;
+
             let skills: Vec<String> = if let Some(override_skills) = skills_override {
                 override_skills
             } else {
@@ -262,6 +265,8 @@ pub fn start_task(
         .rt
         .block_on(async {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+            update_agent_activity(&state.pool, &agent_id).await;
 
             let issue_id: i64 =
                 sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
@@ -325,10 +330,15 @@ pub fn complete_task(
     state: State<AppState>,
     input: CompleteTaskInput,
 ) -> Result<serde_json::Value, String> {
+    if input.confidence < 0.0 || input.confidence > 1.0 {
+        return Err("Confidence must be between 0.0 and 1.0".to_string());
+    }
     state
         .rt
         .block_on(async {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+            update_agent_activity(&state.pool, &input.agent_id).await;
 
             let issue_id: i64 =
                 sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
@@ -626,6 +636,8 @@ pub fn fail_task(
         .block_on(async {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
+            update_agent_activity(&state.pool, &agent_id).await;
+
             let issue = sqlx::query_as::<_, crate::models::Issue>(
                 "SELECT * FROM issues WHERE identifier = $1",
             )
@@ -763,6 +775,8 @@ pub fn unclaim_task(
         .rt
         .block_on(async {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+            update_agent_activity(&state.pool, &agent_id).await;
 
             let issue_id: i64 =
                 sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")

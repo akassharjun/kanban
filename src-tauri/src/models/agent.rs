@@ -13,6 +13,7 @@ pub struct Agent {
     pub status: String,
     pub registered_at: String,
     pub last_heartbeat: String,
+    pub last_activity_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

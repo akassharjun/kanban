@@ -15,8 +15,22 @@ struct OfflineAgentRow {
     id: String,
 }
 
-/// Default threshold in seconds for considering an agent offline (heartbeat_interval * missed_heartbeats).
-const DEFAULT_OFFLINE_THRESHOLD_SECONDS: i64 = 180;
+/// Default threshold in seconds for considering an agent offline based on activity.
+/// 10 minutes of inactivity = offline.
+const DEFAULT_OFFLINE_THRESHOLD_SECONDS: i64 = 600;
+
+/// Update agent's last_activity_at timestamp based on task activity.
+/// Also sets the agent back to 'online' if it was previously 'offline'.
+pub async fn update_agent_activity(pool: &PgPool, agent_id: &str) {
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+    let _ = sqlx::query(
+        "UPDATE agents SET last_activity_at = $1, status = CASE WHEN status = 'offline' THEN 'online' ELSE status END WHERE id = $2",
+    )
+    .bind(&now)
+    .bind(agent_id)
+    .execute(pool)
+    .await;
+}
 
 /// Reclaim tasks that have timed out (claimed_at + timeout_minutes has elapsed).
 ///
@@ -146,13 +160,14 @@ pub async fn reclaim_offline_agents(pool: &PgPool) -> Result<Vec<String>, sqlx::
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
     // Use default threshold; no per-agent config since agents are global
+    // Detect offline agents based on last_activity_at (activity-based monitoring)
     let offline_agents: Vec<OfflineAgentRow> = sqlx::query_as(
         r#"
         SELECT a.id
         FROM agents a
         WHERE a.status != 'offline'
-          AND a.last_heartbeat IS NOT NULL
-          AND a.last_heartbeat::timestamptz + ($1 * interval '1 second') < NOW()
+          AND a.last_activity_at IS NOT NULL
+          AND a.last_activity_at::timestamptz + ($1 * interval '1 second') < NOW()
         "#,
     )
     .bind(DEFAULT_OFFLINE_THRESHOLD_SECONDS)
