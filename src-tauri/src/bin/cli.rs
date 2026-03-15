@@ -1423,6 +1423,9 @@ async fn handle_task(
             summary,
             artifacts,
         } => {
+            if confidence < 0.0 || confidence > 1.0 {
+                return Err("Confidence must be between 0.0 and 1.0".into());
+            }
             let issue = resolve_issue(pool, &identifier).await?;
             let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = $1")
                 .bind(issue.id)

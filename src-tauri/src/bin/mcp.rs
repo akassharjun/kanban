@@ -991,6 +991,9 @@ async fn handle_tool_call(
             let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
             let identifier = args["identifier"].as_str().ok_or("identifier required")?;
             let confidence = args["confidence"].as_f64().ok_or("confidence required")?;
+            if confidence < 0.0 || confidence > 1.0 {
+                return Err("Confidence must be between 0.0 and 1.0".to_string());
+            }
             let summary = args["summary"].as_str().ok_or("summary required")?;
             let artifacts = args.get("artifacts").cloned().unwrap_or(json!({}));
             let now = chrono::Utc::now().to_rfc3339();
