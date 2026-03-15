@@ -159,6 +159,7 @@ pub fn run() {
             commands::execution_logs::log_task_activity,
             commands::execution_logs::task_replay,
             commands::execution_logs::task_attempts,
+            commands::execution_logs::recent_activity,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

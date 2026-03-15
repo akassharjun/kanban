@@ -122,3 +122,24 @@ pub fn task_attempts(
         })
         .map_err(|e: sqlx::Error| e.to_string())
 }
+
+#[tauri::command]
+pub fn recent_activity(
+    state: State<AppState>,
+    project_id: i64,
+    limit: Option<i64>,
+) -> Result<Vec<ExecutionLog>, String> {
+    state
+        .rt
+        .block_on(async {
+            let lim = limit.unwrap_or(50);
+            sqlx::query_as::<_, ExecutionLog>(
+                "SELECT el.* FROM execution_logs el JOIN issues i ON el.issue_id = i.id WHERE i.project_id = $1 ORDER BY el.timestamp DESC LIMIT $2",
+            )
+            .bind(project_id)
+            .bind(lim)
+            .fetch_all(&state.pool)
+            .await
+        })
+        .map_err(|e: sqlx::Error| e.to_string())
+}

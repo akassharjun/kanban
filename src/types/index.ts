@@ -152,11 +152,12 @@ export type AgentStatus = "idle" | "busy" | "offline" | "online";
 export interface Agent {
   id: string;
   name: string;
-  type: string | null;
-  skills: string; // JSON array
-  task_types: string; // JSON array
+  agent_type: string | null;
+  skills: string[]; // JSONB array from Postgres
+  task_types: string[]; // JSONB array from Postgres
   max_concurrent: number;
   max_complexity: string;
+  member_id: number | null;
   status: AgentStatus;
   registered_at: string;
   last_heartbeat: string;
