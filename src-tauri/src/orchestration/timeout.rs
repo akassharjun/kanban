@@ -74,7 +74,7 @@ pub async fn reclaim_timed_out_tasks(pool: &PgPool) -> Result<Vec<i64>, sqlx::Er
         let max_attempts: Option<i64> = sqlx::query_scalar(
             r#"
             SELECT pac.max_attempts
-            FROM project_agent_configs pac
+            FROM project_agent_config pac
             JOIN issues i ON i.project_id = pac.project_id
             WHERE i.id = $1
             "#,
@@ -209,7 +209,7 @@ pub async fn reclaim_offline_agents(pool: &PgPool) -> Result<Vec<String>, sqlx::
             let max_attempts: Option<i64> = sqlx::query_scalar(
                 r#"
                 SELECT pac.max_attempts
-                FROM project_agent_configs pac
+                FROM project_agent_config pac
                 JOIN issues i ON i.project_id = pac.project_id
                 WHERE i.id = $1
                 "#,

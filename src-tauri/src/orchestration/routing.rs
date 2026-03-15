@@ -28,7 +28,7 @@ struct CandidateRow {
     issue_id: i64,
     identifier: String,
     priority: String,
-    required_skills: String,
+    required_skills: serde_json::Value,
     estimated_complexity: Option<String>,
 }
 
@@ -44,10 +44,10 @@ struct FullContractRow {
     r#type: String,
     task_state: String,
     objective: String,
-    context: String,
-    constraints: String,
-    success_criteria: String,
-    required_skills: String,
+    context: serde_json::Value,
+    constraints: serde_json::Value,
+    success_criteria: serde_json::Value,
+    required_skills: serde_json::Value,
     estimated_complexity: Option<String>,
     timeout_minutes: i64,
     attempt_count: i64,
@@ -118,7 +118,7 @@ pub async fn next_task(
         }
 
         // 3. Filter: skills subset check
-        let task_skills: Vec<String> = serde_json::from_str(&candidate.required_skills)
+        let task_skills: Vec<String> = serde_json::from_value(candidate.required_skills.clone())
             .unwrap_or_default();
         let all_skills_met = task_skills.iter().all(|s| agent_skills.contains(s));
         if !all_skills_met {
@@ -219,10 +219,10 @@ pub async fn build_full_contract(
         r#type: r.r#type,
         task_state: r.task_state,
         objective: r.objective,
-        context: serde_json::from_str(&r.context).unwrap_or(serde_json::Value::Object(Default::default())),
-        constraints: serde_json::from_str(&r.constraints).unwrap_or(serde_json::Value::Array(Default::default())),
-        success_criteria: serde_json::from_str(&r.success_criteria).unwrap_or(serde_json::Value::Array(Default::default())),
-        required_skills: serde_json::from_str(&r.required_skills).unwrap_or(serde_json::Value::Array(Default::default())),
+        context: r.context,
+        constraints: r.constraints,
+        success_criteria: r.success_criteria,
+        required_skills: r.required_skills,
         estimated_complexity: r.estimated_complexity,
         timeout_minutes: r.timeout_minutes,
         attempt_count: r.attempt_count,

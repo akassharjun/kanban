@@ -1386,7 +1386,7 @@ async fn handle_task(
 
             // Get project config thresholds
             let config = sqlx::query_as::<_, ProjectAgentConfig>(
-                "SELECT * FROM project_agent_configs WHERE project_id = $1",
+                "SELECT * FROM project_agent_config WHERE project_id = $1",
             )
             .bind(issue.project_id)
             .fetch_optional(pool)
