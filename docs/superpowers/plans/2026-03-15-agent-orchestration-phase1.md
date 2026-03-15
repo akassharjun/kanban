@@ -18,7 +18,7 @@
 
 | File | Responsibility |
 |------|---------------|
-| `src-tauri/migrations/20240104000000_agent_orchestration.sql` | Schema for 5 new tables |
+| `src-tauri/migrations/20260315000000_agent_orchestration.sql` | Schema for 5 new tables |
 | `src-tauri/src/models/agent.rs` | Agent, AgentStats, TaskContract, ExecutionLog, ProjectAgentConfig structs |
 | `src-tauri/src/orchestration/mod.rs` | Module root |
 | `src-tauri/src/orchestration/state_machine.rs` | TaskState enum, valid transitions |
@@ -45,7 +45,7 @@
 ### Task 1: Database Migration
 
 **Files:**
-- Create: `src-tauri/migrations/20240104000000_agent_orchestration.sql`
+- Create: `src-tauri/migrations/20260315000000_agent_orchestration.sql`
 
 - [ ] **Step 1: Write the migration SQL**
 
@@ -129,7 +129,7 @@ Expected: compiles successfully (sqlx will pick up migration at runtime)
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src-tauri/migrations/20240104000000_agent_orchestration.sql
+git add src-tauri/migrations/20260315000000_agent_orchestration.sql
 git commit -m "feat: add agent orchestration migration (5 new tables)"
 ```
 
@@ -326,7 +326,7 @@ impl TaskState {
             TaskState::Queued => &[TaskState::Claimed, TaskState::Blocked, TaskState::Cancelled],
             TaskState::Claimed => &[TaskState::Executing, TaskState::Queued, TaskState::Blocked, TaskState::Cancelled],
             TaskState::Executing => &[TaskState::Validating, TaskState::Queued, TaskState::Blocked, TaskState::Cancelled],
-            TaskState::Validating => &[TaskState::Completed, TaskState::Queued, TaskState::Cancelled],
+            TaskState::Validating => &[TaskState::Completed, TaskState::Queued, TaskState::Blocked, TaskState::Cancelled],
             TaskState::Completed => &[TaskState::Queued, TaskState::Cancelled], // re-queue via invalidate
             TaskState::Blocked => &[TaskState::Queued, TaskState::Cancelled],
             TaskState::Cancelled => &[], // terminal
@@ -1119,6 +1119,64 @@ pub fn unclaim_task(state: State<AppState>, agent_id: String, identifier: String
 }
 ```
 
+- [ ] **Step 1b: Add approve_task and reject_task to task_contracts.rs**
+
+Append to the same file:
+
+```rust
+#[tauri::command]
+pub fn approve_task(state: State<AppState>, identifier: String) -> Result<(), String> {
+    state.rt.block_on(async {
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+        let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+            .bind(&identifier).fetch_one(&state.pool).await.map_err(|e| e.to_string())?;
+        let issue = sqlx::query_as::<_, crate::models::Issue>("SELECT * FROM issues WHERE id = ?")
+            .bind(issue_id).fetch_one(&state.pool).await.map_err(|e| e.to_string())?;
+        let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?")
+            .bind(issue_id).fetch_one(&state.pool).await.map_err(|e| e.to_string())?;
+        if contract.task_state != "validating" { return Err("TASK_WRONG_STATE: not in validating state".into()); }
+
+        sqlx::query("UPDATE task_contracts SET task_state = 'completed' WHERE issue_id = ?")
+            .bind(issue_id).execute(&state.pool).await.map_err(|e| e.to_string())?;
+        let completed_sid: Option<i64> = sqlx::query_scalar("SELECT id FROM statuses WHERE project_id = ? AND category = 'completed' ORDER BY position LIMIT 1")
+            .bind(issue.project_id).fetch_optional(&state.pool).await.map_err(|e| e.to_string())?;
+        if let Some(sid) = completed_sid {
+            sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
+                .bind(sid).bind(&now).bind(issue_id).execute(&state.pool).await.map_err(|e| e.to_string())?;
+        }
+        if let Some(agent_id) = &contract.claimed_by {
+            sqlx::query("UPDATE agent_stats SET tasks_completed = tasks_completed + 1 WHERE agent_id = ?")
+                .bind(agent_id).execute(&state.pool).await.map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn reject_task(state: State<AppState>, identifier: String) -> Result<(), String> {
+    state.rt.block_on(async {
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+        let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+            .bind(&identifier).fetch_one(&state.pool).await.map_err(|e| e.to_string())?;
+        let issue = sqlx::query_as::<_, crate::models::Issue>("SELECT * FROM issues WHERE id = ?")
+            .bind(issue_id).fetch_one(&state.pool).await.map_err(|e| e.to_string())?;
+        let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?")
+            .bind(issue_id).fetch_one(&state.pool).await.map_err(|e| e.to_string())?;
+        if contract.task_state != "validating" { return Err("TASK_WRONG_STATE: not in validating state".into()); }
+
+        sqlx::query("UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = ?")
+            .bind(issue_id).execute(&state.pool).await.map_err(|e| e.to_string())?;
+        let unstarted_sid: Option<i64> = sqlx::query_scalar("SELECT id FROM statuses WHERE project_id = ? AND category = 'unstarted' ORDER BY position LIMIT 1")
+            .bind(issue.project_id).fetch_optional(&state.pool).await.map_err(|e| e.to_string())?;
+        if let Some(sid) = unstarted_sid {
+            sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
+                .bind(sid).bind(&now).bind(issue_id).execute(&state.pool).await.map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })
+}
+```
+
 - [ ] **Step 2: Register task contract commands in lib.rs**
 
 Add to the `invoke_handler` in `src-tauri/src/lib.rs`:
@@ -1131,6 +1189,8 @@ commands::task_contracts::start_task,
 commands::task_contracts::complete_task,
 commands::task_contracts::fail_task,
 commands::task_contracts::unclaim_task,
+commands::task_contracts::approve_task,
+commands::task_contracts::reject_task,
 ```
 
 - [ ] **Step 3: Verify it compiles**
@@ -1418,7 +1478,7 @@ enum TaskAction {
     /// Show prior attempts
     Attempts { identifier: String },
     /// List task contracts
-    TaskList {
+    List {
         #[arg(long)]
         project: i64,
         #[arg(long)]
@@ -1430,6 +1490,34 @@ enum TaskAction {
     },
     /// Show task children
     Children { identifier: String },
+    /// Approve a validating task (human)
+    Approve { identifier: String },
+    /// Reject a validating task (human)
+    Reject { identifier: String },
+    /// Invalidate a completed task
+    Invalidate {
+        identifier: String,
+        #[arg(long)]
+        reason: String,
+    },
+    /// Search task contracts
+    Search {
+        #[arg(long)]
+        project: i64,
+        query: String,
+    },
+    /// Update a task contract
+    Update {
+        identifier: String,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        priority: Option<String>,
+        #[arg(long)]
+        complexity: Option<String>,
+        #[arg(long, value_delimiter = ',')]
+        skills: Option<Vec<String>>,
+    },
 }
 ```
 
@@ -1590,6 +1678,7 @@ Commands::Task { action } => match action {
     TaskAction::Fail { identifier, agent, reason } => {
         let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?").bind(&identifier).fetch_one(&pool).await?;
         let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?").bind(issue_id).fetch_one(&pool).await?;
+        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?").bind(issue_id).fetch_one(&pool).await?;
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
         let new_attempt = contract.attempt_count + 1;
 
@@ -1601,6 +1690,11 @@ Commands::Task { action } => match action {
         sqlx::query("INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'result', ?, ?)").bind(issue_id).bind(&agent).bind(new_attempt).bind(&reason).bind(&now).execute(&pool).await?;
         sqlx::query("UPDATE agent_stats SET tasks_failed = tasks_failed + 1 WHERE agent_id = ?").bind(&agent).execute(&pool).await?;
 
+        // Sync issue status back to unstarted
+        if let Some(sid) = sqlx::query_scalar::<_, i64>("SELECT id FROM statuses WHERE project_id = ? AND category = 'unstarted' ORDER BY position LIMIT 1").bind(issue.project_id).fetch_optional(&pool).await? {
+            sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?").bind(sid).bind(&now).bind(issue_id).execute(&pool).await?;
+        }
+
         if cli.json {
             println!("{}", serde_json::json!({"success": true, "data": {"requeued": true, "attempt_number": new_attempt}}));
         } else {
@@ -1609,8 +1703,13 @@ Commands::Task { action } => match action {
     }
     TaskAction::Unclaim { identifier, agent } => {
         let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?").bind(&identifier).fetch_one(&pool).await?;
+        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?").bind(issue_id).fetch_one(&pool).await?;
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
         sqlx::query("UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL WHERE issue_id = ?").bind(issue_id).execute(&pool).await?;
+        // Sync issue status back to unstarted
+        if let Some(sid) = sqlx::query_scalar::<_, i64>("SELECT id FROM statuses WHERE project_id = ? AND category = 'unstarted' ORDER BY position LIMIT 1").bind(issue.project_id).fetch_optional(&pool).await? {
+            sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?").bind(sid).bind(&now).bind(issue_id).execute(&pool).await?;
+        }
         sqlx::query("INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, (SELECT attempt_count + 1 FROM task_contracts WHERE issue_id = ?), 'checkpoint', 'Task unclaimed', ?)").bind(issue_id).bind(&agent).bind(issue_id).bind(&now).execute(&pool).await?;
         if cli.json { println!("{}", serde_json::json!({"success": true})); } else { println!("Task {} unclaimed", identifier); }
     }
@@ -1724,19 +1823,17 @@ Commands::Task { action } => match action {
             }
         }
     }
-    TaskAction::TaskList { project, status, agent, available } => {
-        let mut query = String::from("SELECT tc.*, i.identifier, i.title FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ?");
-        if available { query.push_str(" AND tc.task_state = 'queued'"); }
-        if let Some(ref s) = status { query.push_str(&format!(" AND tc.task_state = '{}'", s)); }
-        if let Some(ref a) = agent { query.push_str(&format!(" AND tc.claimed_by = '{}'", a)); }
-        query.push_str(" ORDER BY i.created_at");
+    TaskAction::List { project, status, agent, available } => {
+        let mut qb: sqlx::QueryBuilder<sqlx::Sqlite> = sqlx::QueryBuilder::new(
+            "SELECT tc.* FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = "
+        );
+        qb.push_bind(project);
+        if available { qb.push(" AND tc.task_state = 'queued'"); }
+        if let Some(ref s) = status { qb.push(" AND tc.task_state = "); qb.push_bind(s.clone()); }
+        if let Some(ref a) = agent { qb.push(" AND tc.claimed_by = "); qb.push_bind(a.clone()); }
+        qb.push(" ORDER BY i.created_at");
 
-        // Use a simpler approach - query task_contracts and join
-        let contracts = sqlx::query_as::<_, TaskContract>(&format!("SELECT tc.* FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ?{}{}{} ORDER BY i.created_at",
-            if available { " AND tc.task_state = 'queued'" } else { "" },
-            status.as_ref().map(|s| format!(" AND tc.task_state = '{}'", s)).unwrap_or_default(),
-            agent.as_ref().map(|a| format!(" AND tc.claimed_by = '{}'", a)).unwrap_or_default(),
-        )).bind(project).fetch_all(&pool).await?;
+        let contracts = qb.build_query_as::<TaskContract>().fetch_all(&pool).await?;
 
         if cli.json {
             println!("{}", serde_json::json!({"success": true, "data": contracts}));
@@ -1759,6 +1856,76 @@ Commands::Task { action } => match action {
                 println!("  {} | {} | {}", c.identifier, state, c.title);
             }
         }
+    }
+},
+    TaskAction::Approve { identifier } => {
+        let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?").bind(&identifier).fetch_one(&pool).await?;
+        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?").bind(issue_id).fetch_one(&pool).await?;
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+        let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?").bind(issue_id).fetch_one(&pool).await?;
+        if contract.task_state != "validating" { eprintln!("Error: task is not in validating state"); std::process::exit(1); }
+        sqlx::query("UPDATE task_contracts SET task_state = 'completed' WHERE issue_id = ?").bind(issue_id).execute(&pool).await?;
+        if let Some(sid) = sqlx::query_scalar::<_, i64>("SELECT id FROM statuses WHERE project_id = ? AND category = 'completed' ORDER BY position LIMIT 1").bind(issue.project_id).fetch_optional(&pool).await? {
+            sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?").bind(sid).bind(&now).bind(issue_id).execute(&pool).await?;
+        }
+        sqlx::query("INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, 'human', ?, 'result', 'Task approved by human', ?)").bind(issue_id).bind(contract.attempt_count + 1).bind(&now).execute(&pool).await?;
+        if let Some(agent_id) = &contract.claimed_by {
+            sqlx::query("UPDATE agent_stats SET tasks_completed = tasks_completed + 1 WHERE agent_id = ?").bind(agent_id).execute(&pool).await?;
+        }
+        if cli.json { println!("{}", serde_json::json!({"success": true})); } else { println!("Task {} approved", identifier); }
+    }
+    TaskAction::Reject { identifier } => {
+        let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?").bind(&identifier).fetch_one(&pool).await?;
+        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?").bind(issue_id).fetch_one(&pool).await?;
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+        let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?").bind(issue_id).fetch_one(&pool).await?;
+        if contract.task_state != "validating" { eprintln!("Error: task is not in validating state"); std::process::exit(1); }
+        let new_attempt = contract.attempt_count + 1;
+        sqlx::query("UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = ? WHERE issue_id = ?").bind(new_attempt).bind(issue_id).execute(&pool).await?;
+        if let Some(sid) = sqlx::query_scalar::<_, i64>("SELECT id FROM statuses WHERE project_id = ? AND category = 'unstarted' ORDER BY position LIMIT 1").bind(issue.project_id).fetch_optional(&pool).await? {
+            sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?").bind(sid).bind(&now).bind(issue_id).execute(&pool).await?;
+        }
+        sqlx::query("INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, 'human', ?, 'result', 'Task rejected by human', ?)").bind(issue_id).bind(new_attempt).bind(&now).execute(&pool).await?;
+        if cli.json { println!("{}", serde_json::json!({"success": true, "data": {"requeued": true}})); } else { println!("Task {} rejected, re-queued", identifier); }
+    }
+    TaskAction::Invalidate { identifier, reason } => {
+        let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?").bind(&identifier).fetch_one(&pool).await?;
+        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?").bind(issue_id).fetch_one(&pool).await?;
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+        // Re-queue the task
+        sqlx::query("UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = ?").bind(issue_id).execute(&pool).await?;
+        // Block downstream tasks
+        let downstream: Vec<i64> = sqlx::query_scalar("SELECT target_issue_id FROM issue_relations WHERE source_issue_id = ? AND relation_type = 'blocks'").bind(issue_id).fetch_all(&pool).await?;
+        for dep_id in &downstream {
+            sqlx::query("UPDATE task_contracts SET task_state = 'blocked' WHERE issue_id = ? AND task_state IN ('queued', 'claimed', 'blocked')").bind(dep_id).execute(&pool).await?;
+        }
+        if let Some(sid) = sqlx::query_scalar::<_, i64>("SELECT id FROM statuses WHERE project_id = ? AND category = 'unstarted' ORDER BY position LIMIT 1").bind(issue.project_id).fetch_optional(&pool).await? {
+            sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?").bind(sid).bind(&now).bind(issue_id).execute(&pool).await?;
+        }
+        sqlx::query("INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, 'system', 1, 'error', ?, ?)").bind(issue_id).bind(format!("Invalidated: {}", reason)).bind(&now).execute(&pool).await?;
+        if cli.json { println!("{}", serde_json::json!({"success": true, "data": {"tasks_blocked": downstream}})); } else { println!("Task {} invalidated, {} downstream tasks blocked", identifier, downstream.len()); }
+    }
+    TaskAction::Search { project, query } => {
+        let pattern = format!("%{}%", query);
+        let results = sqlx::query_as::<_, TaskContract>("SELECT tc.* FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND (i.title LIKE ? OR tc.objective LIKE ? OR i.identifier LIKE ?) ORDER BY i.updated_at DESC")
+            .bind(project).bind(&pattern).bind(&pattern).bind(&pattern).fetch_all(&pool).await?;
+        if cli.json {
+            println!("{}", serde_json::json!({"success": true, "data": results}));
+        } else {
+            for c in &results {
+                let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?").bind(c.issue_id).fetch_one(&pool).await?;
+                println!("{} | {} | {}", issue.identifier, c.task_state, issue.title);
+            }
+        }
+    }
+    TaskAction::Update { identifier, title, priority, complexity, skills } => {
+        let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?").bind(&identifier).fetch_one(&pool).await?;
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+        if let Some(ref t) = title { sqlx::query("UPDATE issues SET title = ?, updated_at = ? WHERE id = ?").bind(t).bind(&now).bind(issue_id).execute(&pool).await?; }
+        if let Some(ref p) = priority { sqlx::query("UPDATE issues SET priority = ?, updated_at = ? WHERE id = ?").bind(p).bind(&now).bind(issue_id).execute(&pool).await?; }
+        if let Some(ref c) = complexity { sqlx::query("UPDATE task_contracts SET estimated_complexity = ? WHERE issue_id = ?").bind(c).bind(issue_id).execute(&pool).await?; }
+        if let Some(ref s) = skills { let j = serde_json::to_string(s).unwrap(); sqlx::query("UPDATE task_contracts SET required_skills = ? WHERE issue_id = ?").bind(&j).bind(issue_id).execute(&pool).await?; }
+        if cli.json { println!("{}", serde_json::json!({"success": true})); } else { println!("Task {} updated", identifier); }
     }
 },
 Commands::Metrics { project, agent: agent_id } => {
@@ -1896,7 +2063,7 @@ Key handler pattern (example for `register_agent`):
 }
 ```
 
-Follow this pattern for all tools. Each maps directly to the CLI handler logic.
+Implement ALL remaining tools (`agent_heartbeat`, `deregister_agent`, `start_task`, `complete_task`, `fail_task`, `unclaim_task`, `log_task_activity`, `create_task`, `get_task`, `task_replay`, `agent_stats`, `approve_task`, `reject_task`) following this same pattern. Each maps directly to the CLI handler logic — extract params from JSON, execute SQL, return JSON result. Ensure every MCP tool has a complete handler, not just a tool definition.
 
 - [ ] **Step 3: Add required imports**
 
@@ -1983,6 +2150,6 @@ git commit --allow-empty -m "feat: phase 1 agent orchestration complete - solo a
 | 3 | 6 | Agent Tauri commands |
 | 4 | 7 | Task contract Tauri commands |
 | 5 | 8 | Execution log Tauri commands |
-| 6 | 9 | CLI extensions (agent + task) |
+| 6 | 9 | CLI extensions (agent + task + approve/reject/invalidate/search/update) |
 | 7 | 10 | MCP extensions |
 | 8 | 11 | Integration test & build verification |
