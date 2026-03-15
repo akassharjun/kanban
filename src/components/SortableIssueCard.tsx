@@ -7,10 +7,11 @@ interface Props {
   issue: Issue;
   member?: Member;
   labels: Label[];
+  issues?: Issue[];
   onClick: () => void;
 }
 
-export function SortableIssueCard({ issue, member, labels, onClick }: Props) {
+export function SortableIssueCard({ issue, member, labels, issues, onClick }: Props) {
   const {
     attributes,
     listeners,
@@ -32,6 +33,7 @@ export function SortableIssueCard({ issue, member, labels, onClick }: Props) {
         issue={issue}
         member={member}
         labels={labels}
+        issues={issues}
         onClick={onClick}
       />
     </div>

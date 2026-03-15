@@ -121,6 +121,7 @@ export function BoardView({
               key={status.id}
               status={status}
               issues={columnIssues}
+              allIssues={issues}
               members={members}
               labels={labels}
               onClickIssue={onClickIssue}
@@ -136,6 +137,7 @@ export function BoardView({
             issue={activeIssue}
             member={getMember(activeIssue.assignee_id)}
             labels={[]}
+            issues={issues}
             onClick={() => {}}
             isDragging
           />

@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { AgentMetrics, ExecutionLog } from "@/types";
 import { useAgents, useProjectMetrics } from "@/hooks/use-agents";
-import { getAgentStats, recentActivity } from "@/tauri/commands";
+import { getAgentStats, recentActivity, getIssue } from "@/tauri/commands";
 
 interface AgentDashboardProps {
   projectId: number | null;
+  onViewReplay?: (identifier: string) => void;
 }
 
 const ENTRY_TYPE_STYLES: Record<string, string> = {
@@ -51,12 +52,13 @@ function formatTime(timestamp: string): string {
   return timestamp;
 }
 
-export function AgentDashboard({ projectId }: AgentDashboardProps) {
+export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps) {
   const { agents, loading: agentsLoading, refresh: refreshAgents } = useAgents();
   const { metrics, loading: metricsLoading, refresh: refreshMetrics } = useProjectMetrics(projectId);
   const [agentStats, setAgentStats] = useState<Record<string, AgentMetrics>>({});
   const [activityLogs, setActivityLogs] = useState<ExecutionLog[]>([]);
   const [activityLoading, setActivityLoading] = useState(true);
+  const [issueIdentifiers, setIssueIdentifiers] = useState<Record<number, string>>({});
 
   // Fetch per-agent stats
   useEffect(() => {
@@ -90,6 +92,27 @@ export function AgentDashboard({ projectId }: AgentDashboardProps) {
   }, [projectId]);
 
   useEffect(() => { refreshActivity(); }, [refreshActivity]);
+
+  // Fetch issue identifiers for activity log entries
+  useEffect(() => {
+    if (activityLogs.length === 0) return;
+    const uniqueIds = [...new Set(activityLogs.map(l => l.issue_id))];
+    const missingIds = uniqueIds.filter(id => !(id in issueIdentifiers));
+    if (missingIds.length === 0) return;
+    let cancelled = false;
+    async function fetchIdentifiers() {
+      const results: Record<number, string> = {};
+      for (const id of missingIds) {
+        try {
+          const issue = await getIssue(id);
+          if (!cancelled) results[id] = issue.identifier;
+        } catch { /* issue may have been deleted */ }
+      }
+      if (!cancelled) setIssueIdentifiers(prev => ({ ...prev, ...results }));
+    }
+    fetchIdentifiers();
+    return () => { cancelled = true; };
+  }, [activityLogs]);
 
   // Live refresh on db-changed
   useEffect(() => {
@@ -200,11 +223,21 @@ export function AgentDashboard({ projectId }: AgentDashboardProps) {
           <div className="rounded-lg border border-zinc-700 bg-zinc-900 divide-y divide-zinc-800 max-h-96 overflow-y-auto">
             {activityLogs.map((log) => {
               const style = ENTRY_TYPE_STYLES[log.entry_type] || "bg-zinc-500/20 text-zinc-400";
+              const identifier = issueIdentifiers[log.issue_id];
               return (
-                <div key={log.id} className="flex items-start gap-3 px-3 py-2 hover:bg-zinc-800/50">
+                <div
+                  key={log.id}
+                  className={`flex items-start gap-3 px-3 py-2 hover:bg-zinc-800/50 ${onViewReplay && identifier ? "cursor-pointer" : ""}`}
+                  onClick={() => { if (onViewReplay && identifier) onViewReplay(identifier); }}
+                >
                   <span className="text-[10px] font-mono text-zinc-600 mt-0.5 shrink-0 w-16">
                     {formatTime(log.timestamp)}
                   </span>
+                  {identifier && (
+                    <span className="text-[10px] font-mono text-amber-500 mt-0.5 shrink-0">
+                      {identifier}
+                    </span>
+                  )}
                   <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded shrink-0 ${style}`}>
                     {log.entry_type}
                   </span>

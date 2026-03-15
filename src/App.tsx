@@ -274,7 +274,7 @@ function App() {
         )}
 
         {page === "agents" && (
-          <AgentDashboard projectId={selectedProjectId} />
+          <AgentDashboard projectId={selectedProjectId} onViewReplay={(id) => setReplayIdentifier(id)} />
         )}
       </div>
 

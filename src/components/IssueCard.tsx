@@ -7,6 +7,7 @@ interface IssueCardProps {
   issue: Issue;
   member?: Member;
   labels: Label[];
+  issues?: Issue[];
   onClick: () => void;
   isDragging?: boolean;
 }
@@ -19,9 +20,10 @@ const priorityConfig: Record<string, { icon: React.ElementType; color: string }>
   none: { icon: Minus, color: "text-muted-foreground" },
 };
 
-export function IssueCard({ issue, member, labels, onClick, isDragging }: IssueCardProps) {
+export function IssueCard({ issue, member, labels, issues, onClick, isDragging }: IssueCardProps) {
   const priority = priorityConfig[issue.priority] || priorityConfig.none;
   const PriorityIcon = priority.icon;
+  const parent = issue.parent_id ? issues?.find(i => i.id === issue.parent_id) : undefined;
 
   return (
     <div
@@ -31,6 +33,14 @@ export function IssueCard({ issue, member, labels, onClick, isDragging }: IssueC
         isDragging && "rotate-2 shadow-lg opacity-90"
       )}
     >
+      {parent && (
+        <div className="flex items-center gap-1 mb-1">
+          <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+            ↑ {parent.identifier}
+          </span>
+          <span className="text-[10px] text-muted-foreground truncate">{parent.title}</span>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-1">

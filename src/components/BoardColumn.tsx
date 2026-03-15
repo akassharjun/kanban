@@ -9,13 +9,14 @@ import type { Issue, Status, Member, Label } from "@/types";
 interface BoardColumnProps {
   status: Status;
   issues: Issue[];
+  allIssues?: Issue[];
   members: Member[];
   labels: Label[];
   onClickIssue: (issue: Issue) => void;
   onQuickCreate: (title: string) => Promise<unknown>;
 }
 
-export function BoardColumn({ status, issues, members, labels, onClickIssue, onQuickCreate }: BoardColumnProps) {
+export function BoardColumn({ status, issues, allIssues, members, labels, onClickIssue, onQuickCreate }: BoardColumnProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -72,6 +73,7 @@ export function BoardColumn({ status, issues, members, labels, onClickIssue, onQ
                 issue={issue}
                 member={getMember(issue.assignee_id)}
                 labels={labels.filter((l) => l.project_id === issue.project_id)}
+                issues={allIssues}
                 onClick={() => onClickIssue(issue)}
               />
             ))}
