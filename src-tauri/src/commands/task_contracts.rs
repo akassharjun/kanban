@@ -3,6 +3,7 @@ use crate::orchestration::routing::{build_full_contract, FullTaskContract};
 use crate::orchestration::state_machine::{task_state_to_status_category, TaskState};
 use crate::state::AppState;
 use serde::Deserialize;
+use std::collections::{HashSet, VecDeque};
 use tauri::State;
 
 #[derive(Deserialize)]
@@ -881,4 +882,155 @@ pub fn reject_task(state: State<AppState>, identifier: String) -> Result<(), Str
             Ok(())
         })
         .map_err(|e: sqlx::Error| e.to_string())
+}
+
+#[tauri::command]
+pub fn invalidate_task(
+    state: State<AppState>,
+    identifier: String,
+    reason: String,
+) -> Result<serde_json::Value, String> {
+    state
+        .rt
+        .block_on(async {
+            let issue_id: i64 =
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                    .bind(&identifier)
+                    .fetch_one(&state.pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+            let result = crate::orchestration::cascade::invalidate_task(
+                &state.pool,
+                issue_id,
+                &reason,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+            Ok(serde_json::json!(result))
+        })
+}
+
+#[tauri::command]
+pub fn task_graph(
+    state: State<AppState>,
+    identifier: String,
+) -> Result<serde_json::Value, String> {
+    state
+        .rt
+        .block_on(async {
+            let issue_id: i64 =
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                    .bind(&identifier)
+                    .fetch_one(&state.pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+            let mut nodes = Vec::new();
+            let mut edges = Vec::new();
+            let mut visited = HashSet::new();
+            let mut queue = VecDeque::new();
+            queue.push_back(issue_id);
+
+            while let Some(id) = queue.pop_front() {
+                if !visited.insert(id) {
+                    continue;
+                }
+
+                let issue = sqlx::query_as::<_, crate::models::Issue>(
+                    "SELECT * FROM issues WHERE id = ?",
+                )
+                .bind(id)
+                .fetch_one(&state.pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let contract = sqlx::query_as::<_, TaskContract>(
+                    "SELECT * FROM task_contracts WHERE issue_id = ?",
+                )
+                .bind(id)
+                .fetch_optional(&state.pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                nodes.push(serde_json::json!({
+                    "id": id,
+                    "identifier": issue.identifier,
+                    "title": issue.title,
+                    "state": contract.as_ref().map(|c| c.task_state.as_str()).unwrap_or("no-contract"),
+                    "type": contract.as_ref().map(|c| c.r#type.as_str()).unwrap_or("unknown"),
+                }));
+
+                // Children
+                let children: Vec<i64> = sqlx::query_scalar(
+                    "SELECT id FROM issues WHERE parent_id = ?",
+                )
+                .bind(id)
+                .fetch_all(&state.pool)
+                .await
+                .map_err(|e| e.to_string())?;
+                for child in children {
+                    edges.push(serde_json::json!({"from": id, "to": child, "type": "parent-child"}));
+                    queue.push_back(child);
+                }
+
+                // Dependency relations (blocks)
+                let blocks: Vec<(i64, i64)> = sqlx::query_as(
+                    "SELECT source_issue_id, target_issue_id FROM issue_relations WHERE (source_issue_id = ? OR target_issue_id = ?) AND relation_type = 'blocks'",
+                )
+                .bind(id)
+                .bind(id)
+                .fetch_all(&state.pool)
+                .await
+                .map_err(|e| e.to_string())?;
+                for (src, tgt) in blocks {
+                    edges.push(serde_json::json!({"from": src, "to": tgt, "type": "blocks"}));
+                    if src != id {
+                        queue.push_back(src);
+                    }
+                    if tgt != id {
+                        queue.push_back(tgt);
+                    }
+                }
+
+                // Parent
+                if let Some(parent_id) = issue.parent_id {
+                    edges.push(serde_json::json!({"from": parent_id, "to": id, "type": "parent-child"}));
+                    queue.push_back(parent_id);
+                }
+            }
+
+            Ok(serde_json::json!({"nodes": nodes, "edges": edges}))
+        })
+}
+
+#[tauri::command]
+pub fn project_metrics(
+    state: State<AppState>,
+    project_id: i64,
+) -> Result<serde_json::Value, String> {
+    state
+        .rt
+        .block_on(async {
+            let metrics = crate::orchestration::metrics::project_metrics(&state.pool, project_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(serde_json::json!(metrics))
+        })
+}
+
+#[tauri::command]
+pub fn agent_metrics_cmd(
+    state: State<AppState>,
+    agent_id: String,
+) -> Result<serde_json::Value, String> {
+    state
+        .rt
+        .block_on(async {
+            let metrics = crate::orchestration::metrics::agent_metrics(&state.pool, &agent_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(serde_json::json!(metrics))
+        })
 }

@@ -418,6 +418,10 @@ enum TaskAction {
         #[arg(long)]
         reason: String,
     },
+    /// Show dependency graph for a task
+    Graph {
+        identifier: String,
+    },
     /// Search tasks
     Search {
         #[arg(long)]
@@ -1689,16 +1693,39 @@ async fn handle_task(
             .await?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&logs)?);
+            } else if logs.is_empty() {
+                println!("No execution logs for {}", identifier);
             } else {
-                if logs.is_empty() {
-                    println!("No execution logs for {}", identifier);
-                } else {
-                    for log in &logs {
-                        println!(
-                            "[{}] #{} {} | {} | {}",
-                            log.timestamp, log.attempt_number, log.entry_type, log.agent_id, log.message
-                        );
-                    }
+                let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?")
+                    .bind(issue.id).fetch_optional(pool).await?;
+
+                println!("{}: {}", identifier, issue.title);
+                if let Some(ref c) = contract {
+                    let confidence = c.result.as_ref()
+                        .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
+                        .and_then(|v| v.get("confidence").and_then(|c| c.as_f64()));
+                    println!("State: {} | Attempts: {}{}", c.task_state, c.attempt_count,
+                        confidence.map(|c| format!(" | Confidence: {:.2}", c)).unwrap_or_default());
+                }
+                println!("---");
+                for log in &logs {
+                    let type_label = match log.entry_type.as_str() {
+                        "claim" => "CLAIM   ",
+                        "start" => "START   ",
+                        "reasoning" => "THINK   ",
+                        "file_read" => "READ    ",
+                        "file_edit" => "EDIT    ",
+                        "command" => "RUN     ",
+                        "discovery" => "DISCOVER",
+                        "error" => "ERROR   ",
+                        "result" | "complete" => "RESULT  ",
+                        "checkpoint" => "CHECK   ",
+                        "timeout" => "TIMEOUT ",
+                        "unblocked" => "UNBLOCK ",
+                        _ => &log.entry_type,
+                    };
+                    let time = if log.timestamp.len() >= 19 { &log.timestamp[11..19] } else { &log.timestamp };
+                    println!("[{}] {} {}", time, type_label, log.message);
                 }
             }
         }
@@ -1878,45 +1905,59 @@ async fn handle_task(
         }
         TaskAction::Invalidate { identifier, reason } => {
             let issue = resolve_issue(pool, &identifier).await?;
-            let now = chrono::Utc::now().to_rfc3339();
+            let result = kanban_lib::orchestration::cascade::invalidate_task(pool, issue.id, &reason).await?;
+            if json {
+                println!("{}", serde_json::json!({"success": true, "data": result}));
+            } else {
+                println!("Task {} invalidated", identifier);
+                println!("  {} tasks blocked, {} warned, {} review tasks created",
+                    result.tasks_blocked.len(), result.tasks_warned.len(), result.review_tasks_created.len());
+            }
+        }
+        TaskAction::Graph { identifier } => {
+            let issue_id = resolve_issue(pool, &identifier).await?.id;
 
-            // Requeue the task
-            sqlx::query(
-                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL WHERE issue_id = ?",
-            )
-            .bind(issue.id)
-            .execute(pool)
-            .await?;
-            sync_issue_status_to_category(pool, issue.id, "unstarted").await?;
+            // Build graph by walking relations
+            let mut nodes = Vec::new();
+            let mut edges = Vec::new();
+            let mut visited = std::collections::HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+            queue.push_back(issue_id);
 
-            // Block downstream tasks
-            let downstream: Vec<(i64,)> = sqlx::query_as(
-                "SELECT target_issue_id FROM issue_relations WHERE source_issue_id = ? AND relation_type = 'blocks'",
-            )
-            .bind(issue.id)
-            .fetch_all(pool)
-            .await?;
-            for (target_id,) in &downstream {
-                sqlx::query("UPDATE task_contracts SET task_state = 'blocked' WHERE issue_id = ?")
-                    .bind(target_id)
-                    .execute(pool)
-                    .await?;
-                sync_issue_status_to_category(pool, *target_id, "blocked").await?;
+            while let Some(id) = queue.pop_front() {
+                if !visited.insert(id) { continue; }
+                let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?").bind(id).fetch_one(pool).await?;
+                let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?").bind(id).fetch_optional(pool).await?;
+                let state = contract.as_ref().map(|c| c.task_state.as_str()).unwrap_or("no-contract");
+
+                nodes.push(serde_json::json!({"id": id, "identifier": &issue.identifier, "title": &issue.title, "state": state}));
+
+                // Children
+                let children: Vec<i64> = sqlx::query_scalar("SELECT id FROM issues WHERE parent_id = ?").bind(id).fetch_all(pool).await?;
+                for c in children { edges.push(serde_json::json!({"from": id, "to": c, "type": "parent-child"})); queue.push_back(c); }
+
+                // Relations
+                let rels: Vec<(i64, i64)> = sqlx::query_as("SELECT source_issue_id, target_issue_id FROM issue_relations WHERE (source_issue_id = ? OR target_issue_id = ?) AND relation_type = 'blocks'").bind(id).bind(id).fetch_all(pool).await?;
+                for (s, t) in rels { edges.push(serde_json::json!({"from": s, "to": t, "type": "blocks"})); if s != id { queue.push_back(s); } if t != id { queue.push_back(t); } }
+
+                if let Some(pid) = issue.parent_id { edges.push(serde_json::json!({"from": pid, "to": id, "type": "parent-child"})); queue.push_back(pid); }
             }
 
-            sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, 'system', 0, 'invalidate', ?, ?)",
-            )
-            .bind(issue.id)
-            .bind(&reason)
-            .bind(&now)
-            .execute(pool)
-            .await?;
-
             if json {
-                println!("{}", serde_json::json!({"status": "invalidated", "identifier": identifier, "blocked_downstream": downstream.len()}));
+                println!("{}", serde_json::json!({"success": true, "data": {"nodes": nodes, "edges": edges}}));
             } else {
-                println!("Invalidated: {} ({} downstream blocked)", identifier, downstream.len());
+                println!("Graph for {}:", identifier);
+                for node in &nodes {
+                    let state_str = node["state"].as_str().unwrap_or("?");
+                    let symbol = match state_str { "completed" => "\u{2713}", "executing" => "\u{25b6}", "blocked" => "\u{2717}", "queued" => "\u{25cb}", _ => "?" };
+                    println!("  {} {} {} - {}", symbol, node["identifier"].as_str().unwrap_or(""), state_str, node["title"].as_str().unwrap_or(""));
+                }
+                if !edges.is_empty() {
+                    println!("Dependencies:");
+                    for edge in &edges {
+                        println!("  {} -> {} ({})", edge["from"], edge["to"], edge["type"].as_str().unwrap_or(""));
+                    }
+                }
             }
         }
         TaskAction::Search { project, query } => {
@@ -2019,53 +2060,34 @@ async fn handle_metrics(
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref agent_id) = agent {
-        let stats = sqlx::query_as::<_, AgentStats>("SELECT * FROM agent_stats WHERE agent_id = ?")
-            .bind(agent_id)
-            .fetch_one(pool)
-            .await?;
-        let avg = if stats.tasks_completed > 0 {
-            stats.total_confidence / stats.tasks_completed as f64
-        } else {
-            0.0
-        };
+        let metrics = kanban_lib::orchestration::metrics::agent_metrics(pool, agent_id).await?;
         if json {
-            println!("{}", serde_json::json!({
-                "agent_id": stats.agent_id,
-                "tasks_completed": stats.tasks_completed,
-                "tasks_failed": stats.tasks_failed,
-                "avg_confidence": avg,
-                "total_completion_time_seconds": stats.total_completion_time_seconds,
-            }));
+            println!("{}", serde_json::json!({"success": true, "data": metrics}));
         } else {
-            println!("Agent: {}", stats.agent_id);
-            println!("  Completed: {} | Failed: {} | Avg confidence: {:.2}", stats.tasks_completed, stats.tasks_failed, avg);
+            println!("Agent: {} ({})", metrics.name, metrics.agent_id);
+            println!("Status: {} | Active tasks: {}", metrics.status, metrics.current_tasks.len());
+            println!("Completed: {} | Failed: {} | Success rate: {:.0}%", metrics.tasks_completed, metrics.tasks_failed, metrics.success_rate * 100.0);
+            println!("Avg confidence: {:.2} | Avg time: {:.1}m", metrics.avg_confidence, metrics.avg_completion_time_minutes);
+            if !metrics.current_tasks.is_empty() {
+                println!("Active: {}", metrics.current_tasks.join(", "));
+            }
         }
     } else if let Some(pid) = project {
-        let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ?")
-            .bind(pid).fetch_one(pool).await?;
-        let completed: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'completed'")
-            .bind(pid).fetch_one(pool).await?;
-        let queued: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'queued'")
-            .bind(pid).fetch_one(pool).await?;
-        let in_progress: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state IN ('claimed', 'executing')")
-            .bind(pid).fetch_one(pool).await?;
-        let online_agents: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM agents WHERE status IN ('online', 'busy')")
-            .fetch_one(pool).await?;
+        let metrics = kanban_lib::orchestration::metrics::project_metrics(pool, pid).await?;
         if json {
-            println!("{}", serde_json::json!({
-                "project_id": pid,
-                "total_tasks": total.0,
-                "completed": completed.0,
-                "queued": queued.0,
-                "in_progress": in_progress.0,
-                "online_agents": online_agents.0,
-            }));
+            println!("{}", serde_json::json!({"success": true, "data": metrics}));
         } else {
-            println!("Project {} metrics:", pid);
-            println!("  Total: {} | Completed: {} | Queued: {} | In Progress: {} | Online agents: {}", total.0, completed.0, queued.0, in_progress.0, online_agents.0);
+            println!("Project {} Metrics:", pid);
+            println!("  Total: {} | Completed: {} | Queued: {} | In Progress: {} | Blocked: {} | Validating: {}",
+                metrics.total_tasks, metrics.completed, metrics.queued, metrics.in_progress, metrics.blocked, metrics.validating);
+            println!("  Failed attempts: {} | Agents online: {}", metrics.failed_attempts, metrics.agents_online);
+            if let Some(conf) = metrics.avg_confidence { println!("  Avg confidence: {:.2}", conf); }
+            println!("  Completed (24h): {}", metrics.tasks_completed_24h);
+            println!("  Types: {}", metrics.task_type_breakdown);
         }
     } else {
-        println!("Please specify --project or --agent");
+        eprintln!("Specify --project or --agent");
+        std::process::exit(1);
     }
     Ok(())
 }

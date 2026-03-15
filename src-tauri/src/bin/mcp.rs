@@ -276,6 +276,13 @@ fn tools_list() -> Vec<Value> {
         tool_def("system_metrics", "Get system-wide metrics for a project", json!({
             "project_id": prop("number", "Project ID")
         }), vec!["project_id"]),
+        tool_def("invalidate_task", "Invalidate a completed task and cascade effects to downstream tasks", json!({
+            "identifier": prop("string", "Task identifier"),
+            "reason": prop("string", "Reason for invalidation")
+        }), vec!["identifier", "reason"]),
+        tool_def("task_graph", "Get dependency graph for a task (nodes and edges)", json!({
+            "identifier": prop("string", "Task identifier")
+        }), vec!["identifier"]),
     ]
 }
 
@@ -1301,9 +1308,8 @@ async fn handle_tool_call(
         }
         "agent_stats" => {
             let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
-            let stats = sqlx::query_as::<_, AgentStats>("SELECT * FROM agent_stats WHERE agent_id = ?")
-                .bind(agent_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
-            Ok(json!(stats))
+            let metrics = orchestration::metrics::agent_metrics(pool, agent_id).await.map_err(|e| e.to_string())?;
+            Ok(json!(metrics))
         }
         "list_agents" => {
             let agents = sqlx::query_as::<_, Agent>("SELECT * FROM agents ORDER BY registered_at")
@@ -1312,52 +1318,44 @@ async fn handle_tool_call(
         }
         "system_metrics" => {
             let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let metrics = orchestration::metrics::project_metrics(pool, project_id).await.map_err(|e| e.to_string())?;
+            Ok(json!(metrics))
+        }
+        "invalidate_task" => {
+            let identifier = args["identifier"].as_str().ok_or("identifier required")?;
+            let reason = args["reason"].as_str().ok_or("reason required")?;
+            let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                .bind(identifier).fetch_one(pool).await.map_err(|e| e.to_string())?;
+            let result = orchestration::cascade::invalidate_task(pool, issue_id, reason).await.map_err(|e| e.to_string())?;
+            Ok(json!(result))
+        }
+        "task_graph" => {
+            let identifier = args["identifier"].as_str().ok_or("identifier required")?;
+            let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                .bind(identifier).fetch_one(pool).await.map_err(|e| e.to_string())?;
 
-            let total: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ?"
-            ).bind(project_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
+            let mut nodes = Vec::new();
+            let mut edges = Vec::new();
+            let mut visited = std::collections::HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+            queue.push_back(issue_id);
 
-            let queued: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'queued'"
-            ).bind(project_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
+            while let Some(id) = queue.pop_front() {
+                if !visited.insert(id) { continue; }
+                let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?").bind(id).fetch_one(pool).await.map_err(|e| e.to_string())?;
+                let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?").bind(id).fetch_optional(pool).await.map_err(|e| e.to_string())?;
+                nodes.push(json!({"id": id, "identifier": &issue.identifier, "title": &issue.title, "state": contract.as_ref().map(|c| c.task_state.as_str()).unwrap_or("no-contract")}));
 
-            let claimed: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'claimed'"
-            ).bind(project_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
+                let children: Vec<i64> = sqlx::query_scalar("SELECT id FROM issues WHERE parent_id = ?").bind(id).fetch_all(pool).await.map_err(|e| e.to_string())?;
+                for c in children { edges.push(json!({"from": id, "to": c, "type": "parent-child"})); queue.push_back(c); }
 
-            let executing: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'executing'"
-            ).bind(project_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
+                let rels: Vec<(i64, i64)> = sqlx::query_as("SELECT source_issue_id, target_issue_id FROM issue_relations WHERE (source_issue_id = ? OR target_issue_id = ?) AND relation_type = 'blocks'").bind(id).bind(id).fetch_all(pool).await.map_err(|e| e.to_string())?;
+                for (s, t) in rels { edges.push(json!({"from": s, "to": t, "type": "blocks"})); if s != id { queue.push_back(s); } if t != id { queue.push_back(t); } }
 
-            let validating: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'validating'"
-            ).bind(project_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
+                if let Some(pid) = issue.parent_id { edges.push(json!({"from": pid, "to": id, "type": "parent-child"})); queue.push_back(pid); }
+            }
 
-            let completed: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'completed'"
-            ).bind(project_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
-
-            let blocked: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'blocked'"
-            ).bind(project_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
-
-            let online_agents: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM agents WHERE status IN ('idle', 'working')"
-            ).fetch_one(pool).await.map_err(|e| e.to_string())?;
-
-            Ok(json!({
-                "project_id": project_id,
-                "tasks": {
-                    "total": total.0,
-                    "queued": queued.0,
-                    "claimed": claimed.0,
-                    "executing": executing.0,
-                    "validating": validating.0,
-                    "completed": completed.0,
-                    "blocked": blocked.0
-                },
-                "agents_online": online_agents.0
-            }))
+            Ok(json!({"nodes": nodes, "edges": edges}))
         }
         _ => Err(format!("Unknown tool: {}", name)),
     }
