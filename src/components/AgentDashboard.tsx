@@ -222,7 +222,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
         ) : (
           <div className="rounded-lg border border-zinc-700 bg-zinc-900 overflow-hidden">
             {/* Header */}
-            <div className="grid grid-cols-[3.5rem_4rem_5.5rem_7rem_1fr] gap-2 px-3 py-1.5 border-b border-zinc-700 bg-zinc-800/50 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+            <div className="grid grid-cols-[3.5rem_4rem_7.5rem_7rem_1fr] gap-2 px-3 py-1.5 border-b border-zinc-700 bg-zinc-800/50 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
               <span>Time</span>
               <span>Task</span>
               <span>Action</span>
@@ -249,7 +249,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
                 return (
                   <div
                     key={log.id}
-                    className={`grid grid-cols-[3.5rem_4rem_5.5rem_7rem_1fr] gap-2 px-3 py-2 hover:bg-zinc-800/50 items-start ${onViewReplay && identifier ? "cursor-pointer" : ""}`}
+                    className={`grid grid-cols-[3.5rem_4rem_7.5rem_7rem_1fr] gap-2 px-3 py-2 hover:bg-zinc-800/50 items-start ${onViewReplay && identifier ? "cursor-pointer" : ""}`}
                     onClick={() => { if (onViewReplay && identifier) onViewReplay(identifier); }}
                   >
                     <span className="text-[10px] font-mono text-zinc-600 tabular-nums">
@@ -261,7 +261,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
                     <span className="flex items-center gap-1">
                       <span className="text-xs">{icon}</span>
                       <span className={`text-[10px] font-mono uppercase px-1 py-0.5 rounded leading-none ${style}`}>
-                        {log.entry_type.length > 7 ? log.entry_type.slice(0, 7) : log.entry_type}
+                        {log.entry_type}
                       </span>
                     </span>
                     <span className="flex items-center gap-1 min-w-0">
