@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip } from "@/components/ui/tooltip";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, CustomField, CustomFieldValue } from "@/types";
+import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, CustomField, CustomFieldValue, FullTaskContract } from "@/types";
 import * as api from "@/tauri/commands";
 
 interface IssueDetailPanelProps {
@@ -59,6 +59,7 @@ export function IssueDetailPanel({
   const [editingCommentContent, setEditingCommentContent] = useState("");
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customValues, setCustomValues] = useState<CustomFieldValue[]>([]);
+  const [contract, setContract] = useState<FullTaskContract | null>(null);
 
   useEffect(() => {
     loadIssue();
@@ -83,6 +84,10 @@ export function IssueDetailPanel({
         const vals = await api.getIssueCustomValues(issueId);
         setCustomValues(vals);
       } catch { /* custom fields table may not exist yet */ }
+      try {
+        const tc = await api.getTaskContract(data.identifier);
+        setContract(tc);
+      } catch { setContract(null); }
     } catch (e) {
       console.error("Failed to load issue", e);
     }
@@ -539,6 +544,62 @@ export function IssueDetailPanel({
             </div>
           </div>
         </div>
+
+        {/* Task Contract */}
+        {contract && (
+          <div className="mt-6 border-t border-border px-4 pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Task Contract</h3>
+
+            <div className="mt-3 space-y-2 text-sm">
+              <div>
+                <span className="text-muted-foreground">State: </span>
+                <span className={`font-mono font-medium ${
+                  contract.task_state === 'completed' ? 'text-green-500' :
+                  contract.task_state === 'executing' ? 'text-amber-500' :
+                  contract.task_state === 'blocked' ? 'text-red-500' :
+                  contract.task_state === 'queued' ? 'text-blue-500' : ''
+                }`}>{contract.task_state}</span>
+                {contract.attempt_count > 0 && (
+                  <span className="text-muted-foreground ml-2">({contract.attempt_count} attempts)</span>
+                )}
+              </div>
+
+              <div>
+                <span className="text-muted-foreground">Type: </span>
+                <span className="font-mono">{contract.type}</span>
+                {contract.estimated_complexity && (
+                  <>
+                    <span className="text-muted-foreground ml-2">Complexity: </span>
+                    <span className="font-mono">{contract.estimated_complexity}</span>
+                  </>
+                )}
+              </div>
+
+              <div>
+                <span className="text-muted-foreground">Objective: </span>
+                <span>{contract.objective}</span>
+              </div>
+
+              {contract.required_skills && Array.isArray(contract.required_skills) && contract.required_skills.length > 0 && (
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="text-muted-foreground text-xs">Skills: </span>
+                  {contract.required_skills.map((skill: string) => (
+                    <span key={skill} className="text-[10px] font-mono bg-muted px-1.5 py-0.5 rounded">{skill}</span>
+                  ))}
+                </div>
+              )}
+
+              {contract.constraints && Array.isArray(contract.constraints) && contract.constraints.length > 0 && (
+                <div>
+                  <span className="text-muted-foreground text-xs">Constraints: </span>
+                  <ul className="list-disc list-inside text-xs mt-1">
+                    {contract.constraints.map((c: unknown, i: number) => <li key={i}>{String(c)}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Custom Fields */}
         {customFields.length > 0 && (
