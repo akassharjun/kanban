@@ -1,3 +1,6 @@
+pub mod agent;
+pub use agent::*;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
