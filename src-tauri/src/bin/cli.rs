@@ -1343,21 +1343,21 @@ async fn handle_task(
 
             // Get project config thresholds
             let config = sqlx::query_as::<_, ProjectAgentConfig>(
-                "SELECT * FROM project_agent_config WHERE project_id = ?",
+                "SELECT * FROM project_agent_configs WHERE project_id = ?",
             )
             .bind(issue.project_id)
             .fetch_optional(pool)
             .await?;
 
-            let auto_accept = config.as_ref().map(|c| c.auto_accept_threshold).unwrap_or(0.9);
-            let human_review = config.as_ref().map(|c| c.human_review_threshold).unwrap_or(0.7);
+            let auto_accept = config.as_ref().map(|c| c.auto_accept_threshold).unwrap_or(0.85);
+            let human_review = config.as_ref().map(|c| c.human_review_threshold).unwrap_or(0.50);
 
             let new_state = if confidence >= auto_accept {
                 "completed"
             } else if confidence >= human_review {
                 "validating"
             } else {
-                "validating"
+                "queued"
             };
 
             let result_json = serde_json::json!({
@@ -1366,12 +1366,21 @@ async fn handle_task(
                 "artifacts": artifacts.as_ref().and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok()),
             });
 
-            sqlx::query("UPDATE task_contracts SET task_state = ?, result = ? WHERE issue_id = ?")
-                .bind(new_state)
-                .bind(result_json.to_string())
-                .bind(issue.id)
-                .execute(pool)
-                .await?;
+            if new_state == "queued" {
+                // Auto-reject: requeue with cleared claim
+                sqlx::query("UPDATE task_contracts SET task_state = 'queued', result = ?, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = ?")
+                    .bind(result_json.to_string())
+                    .bind(issue.id)
+                    .execute(pool)
+                    .await?;
+            } else {
+                sqlx::query("UPDATE task_contracts SET task_state = ?, result = ? WHERE issue_id = ?")
+                    .bind(new_state)
+                    .bind(result_json.to_string())
+                    .bind(issue.id)
+                    .execute(pool)
+                    .await?;
+            }
 
             // Sync issue status
             let category = orchestration::state_machine::task_state_to_status_category(
@@ -1426,17 +1435,17 @@ async fn handle_task(
 
             // Append to prior_attempts in context
             let mut context: serde_json::Value = serde_json::from_str(&tc.context).unwrap_or(serde_json::json!({}));
-            let attempts = context.as_object_mut().unwrap()
-                .entry("prior_attempts")
-                .or_insert_with(|| serde_json::json!([]))
-                .as_array_mut()
-                .unwrap();
-            attempts.push(serde_json::json!({
+            if let Some(obj) = context.as_object_mut() {
+                let arr = obj.entry("prior_attempts").or_insert(serde_json::json!([]));
+                if let Some(a) = arr.as_array_mut() {
+                    a.push(serde_json::json!({
                 "attempt": tc.attempt_count,
                 "agent": agent,
                 "reason": reason,
                 "timestamp": now,
             }));
+                }
+            }
 
             // Requeue
             sqlx::query(

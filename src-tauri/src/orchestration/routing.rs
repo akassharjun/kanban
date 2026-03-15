@@ -94,10 +94,10 @@ pub async fn next_task(
         WHERE tc.task_state = 'queued'
           AND NOT EXISTS (
             SELECT 1 FROM issue_relations ir
-            JOIN task_contracts dtc ON dtc.issue_id = ir.source_issue_id
+            LEFT JOIN task_contracts dtc ON dtc.issue_id = ir.source_issue_id
             WHERE ir.target_issue_id = tc.issue_id
               AND ir.relation_type = 'blocks'
-              AND dtc.task_state NOT IN ('completed')
+              AND (dtc.task_state IS NULL OR dtc.task_state NOT IN ('completed'))
           )
         ORDER BY
           CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,

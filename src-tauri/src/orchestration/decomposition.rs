@@ -29,15 +29,8 @@ pub async fn check_decomposition_needed(
         return Ok(false);
     }
 
-    // Check if success_criteria is empty
-    let criteria_empty =
-        success_criteria.is_empty() || success_criteria == "[]" || success_criteria == "null";
-
-    if criteria_empty {
-        return Ok(true);
-    }
-
     // Check if estimated_complexity is 'large' and no child issues exist
+    // Only large tasks need decomposition — small/medium tasks are atomic
     if estimated_complexity.as_deref() == Some("large") {
         let child_count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE parent_id = ?")
