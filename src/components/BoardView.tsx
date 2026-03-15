@@ -45,7 +45,7 @@ export function BoardView({
     for (const status of statuses) {
       map.set(status.id, []);
     }
-    for (const issue of issues.filter(i => !i.parent_id)) {
+    for (const issue of issues) {
       const list = map.get(issue.status_id);
       if (list) list.push(issue);
     }
