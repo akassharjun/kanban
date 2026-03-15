@@ -22,6 +22,13 @@ interface IssueDetailPanelProps {
   onClickIssue: (issue: Issue) => void;
 }
 
+function getAgentType(memberName: string): { type: string; color: string } | null {
+  if (memberName.startsWith('[claude]')) return { type: 'claude', color: 'bg-orange-500/20 text-orange-400' };
+  if (memberName.startsWith('[codex]')) return { type: 'codex', color: 'bg-green-500/20 text-green-400' };
+  if (memberName.startsWith('[gemini]')) return { type: 'gemini', color: 'bg-blue-500/20 text-blue-400' };
+  return null;
+}
+
 const priorities = [
   { value: "urgent", label: "Urgent", icon: AlertCircle, color: "text-red-500" },
   { value: "high", label: "High", icon: SignalHigh, color: "text-orange-500" },
@@ -463,6 +470,14 @@ export function IssueDetailPanel({
                         <span className="text-xs font-medium">
                           {commentMember ? (commentMember.display_name || commentMember.name) : "System"}
                         </span>
+                        {(() => {
+                          const agentInfo = commentMember ? getAgentType(commentMember.name) : null;
+                          return agentInfo ? (
+                            <span className={`text-[10px] font-mono uppercase px-1 py-0.5 rounded ${agentInfo.color}`}>
+                              {agentInfo.type}
+                            </span>
+                          ) : null;
+                        })()}
                         <span className="text-[10px] text-muted-foreground">
                           {comment.created_at.slice(0, 16)}
                         </span>

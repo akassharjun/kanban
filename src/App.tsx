@@ -265,6 +265,11 @@ function App() {
             onUpdateProject={updateProject}
             onRefreshStatuses={refreshStatuses}
             onRefreshLabels={refreshLabels}
+            onDeleteProject={async (id) => {
+              await _removeProject(id);
+              setSelectedProjectId(null);
+              setPage("project");
+            }}
           />
         )}
 

@@ -9,6 +9,7 @@ interface ProjectSettingsViewProps {
   onUpdateProject: (id: number, input: { name?: string; description?: string; icon?: string; status?: string }) => Promise<unknown>;
   onRefreshStatuses: () => void;
   onRefreshLabels: () => void;
+  onDeleteProject: (id: number) => Promise<void>;
 }
 
 type Tab = "general" | "statuses" | "labels" | "templates";
@@ -27,7 +28,7 @@ const labelColors = [
   "#a855f7", "#d946ef", "#ec4899", "#f43f5e",
 ];
 
-export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels }: ProjectSettingsViewProps) {
+export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels, onDeleteProject }: ProjectSettingsViewProps) {
   const [tab, setTab] = useState<Tab>("general");
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
@@ -222,6 +223,21 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
             <button onClick={handleSaveGeneral} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
               Save Changes
             </button>
+
+            <div className="border-t border-border pt-4 mt-6">
+              <h3 className="text-sm font-semibold text-red-500 mb-2">Danger Zone</h3>
+              <p className="text-sm text-muted-foreground mb-3">Once you delete a project, there is no going back. Please be certain.</p>
+              <button
+                onClick={async () => {
+                  if (window.confirm(`Are you sure you want to delete "${project.name}"? This action cannot be undone.`)) {
+                    await onDeleteProject(project.id);
+                  }
+                }}
+                className="px-3 py-1.5 text-sm bg-red-500/10 text-red-500 border border-red-500/20 rounded hover:bg-red-500/20 transition-colors"
+              >
+                Delete Project
+              </button>
+            </div>
           </div>
         )}
 
