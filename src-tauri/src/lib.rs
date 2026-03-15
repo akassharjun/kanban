@@ -1,6 +1,7 @@
 mod commands;
 pub mod db;
 pub mod models;
+pub mod orchestration;
 mod state;
 
 use state::AppState;
