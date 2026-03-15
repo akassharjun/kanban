@@ -1,6 +1,11 @@
 import { useState } from "react";
-import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { DialogOverlay, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Status, Member, Label, IssueTemplate } from "@/types";
 
 interface CreateIssueDialogProps {
@@ -70,21 +75,20 @@ export function CreateIssueDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="w-[520px] rounded-lg border border-border bg-card p-6 shadow-xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">{parentId ? "New Sub-issue" : "New Issue"}</h2>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent"><X className="h-4 w-4" /></button>
-        </div>
+    <DialogOverlay onClose={onClose}>
+      <DialogContent>
+        <DialogHeader onClose={onClose}>
+          <DialogTitle>{parentId ? "New Sub-issue" : "New Issue"}</DialogTitle>
+        </DialogHeader>
 
         {templates.length > 0 && (
           <div className="mb-4">
             <label className="block text-sm text-muted-foreground mb-1">Template</label>
             <div className="flex flex-wrap gap-1">
               {templates.map(t => (
-                <button key={t.id} onClick={() => applyTemplate(t)} className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent">
+                <Button key={t.id} variant="outline" size="sm" onClick={() => applyTemplate(t)}>
                   {t.name}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -93,23 +97,22 @@ export function CreateIssueDialog({
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-muted-foreground mb-1">Title</label>
-            <input
+            <Input
               autoFocus
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && e.metaKey) handleSubmit(); }}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
               placeholder="Issue title"
             />
           </div>
 
           <div>
             <label className="block text-sm text-muted-foreground mb-1">Description (Markdown)</label>
-            <textarea
+            <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary font-mono"
+              className="font-mono"
               placeholder="Describe the issue..."
             />
           </div>
@@ -117,40 +120,37 @@ export function CreateIssueDialog({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-muted-foreground mb-1">Status</label>
-              <select
+              <Select
                 value={statusId}
                 onChange={(e) => setStatusId(Number(e.target.value))}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
               >
                 {statuses.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+              </Select>
             </div>
             <div>
               <label className="block text-sm text-muted-foreground mb-1">Priority</label>
-              <select
+              <Select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
               >
                 <option value="none">None</option>
                 <option value="urgent">Urgent</option>
                 <option value="high">High</option>
                 <option value="medium">Medium</option>
                 <option value="low">Low</option>
-              </select>
+              </Select>
             </div>
           </div>
 
           <div>
             <label className="block text-sm text-muted-foreground mb-1">Assignee</label>
-            <select
+            <Select
               value={assigneeId ?? ""}
               onChange={(e) => setAssigneeId(e.target.value ? Number(e.target.value) : undefined)}
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
             >
               <option value="">Unassigned</option>
               {members.map(m => <option key={m.id} value={m.id}>{m.display_name || m.name}</option>)}
-            </select>
+            </Select>
           </div>
 
           {labels.length > 0 && (
@@ -163,18 +163,22 @@ export function CreateIssueDialog({
                     onClick={() => setSelectedLabels(prev =>
                       prev.includes(l.id) ? prev.filter(id => id !== l.id) : [...prev, l.id]
                     )}
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-xs border transition-colors",
-                      selectedLabels.includes(l.id)
-                        ? "border-transparent"
-                        : "border-border opacity-50"
-                    )}
-                    style={{
-                      backgroundColor: selectedLabels.includes(l.id) ? l.color + "30" : "transparent",
-                      color: l.color,
-                    }}
                   >
-                    {l.name}
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "cursor-pointer transition-colors",
+                        selectedLabels.includes(l.id)
+                          ? "border-transparent"
+                          : "opacity-50"
+                      )}
+                      style={{
+                        backgroundColor: selectedLabels.includes(l.id) ? l.color + "30" : "transparent",
+                        color: l.color,
+                      }}
+                    >
+                      {l.name}
+                    </Badge>
                   </button>
                 ))}
               </div>
@@ -183,16 +187,12 @@ export function CreateIssueDialog({
         </div>
 
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-          <button
-            onClick={handleSubmit}
-            disabled={!title.trim()}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={!title.trim()}>
             Create
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </DialogOverlay>
   );
 }

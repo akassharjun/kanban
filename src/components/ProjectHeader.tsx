@@ -1,5 +1,7 @@
 import { LayoutGrid, List, TreePine, Search, Plus, Bell, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import type { Project } from "@/types";
 
 export type ViewMode = "board" | "list" | "tree";
@@ -64,38 +66,37 @@ export function ProjectHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onToggleTheme}
-          className="rounded-md p-1.5 hover:bg-accent"
-          title="Toggle theme"
-        >
-          {theme === "dark" ? (
-            <Sun className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <Moon className="h-4 w-4 text-muted-foreground" />
-          )}
-        </button>
-        <button
-          onClick={onOpenNotifications}
-          className="relative rounded-md p-1.5 hover:bg-accent"
-        >
-          <Bell className="h-4 w-4 text-muted-foreground" />
-          {notificationCount > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
-              {notificationCount > 9 ? "9+" : notificationCount}
-            </span>
-          )}
-        </button>
-        <button onClick={onSearch} className="rounded-md p-1.5 hover:bg-accent" title="Search (Cmd+K)">
-          <Search className="h-4 w-4 text-muted-foreground" />
-        </button>
-        <button
-          onClick={onCreateIssue}
-          className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus className="h-3.5 w-3.5" /> Issue
-        </button>
+      <div className="flex items-center gap-1">
+        <Tooltip content="Toggle theme">
+          <Button variant="ghost" size="icon-sm" onClick={onToggleTheme}>
+            {theme === "dark" ? (
+              <Sun className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <Moon className="h-4 w-4 text-muted-foreground" />
+            )}
+          </Button>
+        </Tooltip>
+
+        <Tooltip content="Notifications">
+          <Button variant="ghost" size="icon-sm" className="relative" onClick={onOpenNotifications}>
+            <Bell className="h-4 w-4 text-muted-foreground" />
+            {notificationCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+                {notificationCount > 9 ? "9+" : notificationCount}
+              </span>
+            )}
+          </Button>
+        </Tooltip>
+
+        <Tooltip content="Search (Cmd+K)">
+          <Button variant="ghost" size="icon-sm" onClick={onSearch}>
+            <Search className="h-4 w-4 text-muted-foreground" />
+          </Button>
+        </Tooltip>
+
+        <Button size="sm" onClick={onCreateIssue} className="ml-1">
+          <Plus className="h-3.5 w-3.5 mr-1" /> Issue
+        </Button>
       </div>
     </div>
   );

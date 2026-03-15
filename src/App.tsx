@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "./components/Sidebar";
 import { ProjectHeader, type ViewMode } from "./components/ProjectHeader";
+import { Button } from "./components/ui/button";
 import { BoardView } from "./components/BoardView";
 import { ListView } from "./components/ListView";
 import { TreeView } from "./components/TreeView";
@@ -237,12 +238,9 @@ function App() {
           <div className="flex flex-1 items-center justify-center text-muted-foreground">
             <div className="text-center">
               <p className="text-lg">No project selected</p>
-              <button
-                onClick={() => setShowCreateProject(true)}
-                className="mt-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-              >
+              <Button className="mt-2" onClick={() => setShowCreateProject(true)}>
                 Create your first project
-              </button>
+              </Button>
             </div>
           </div>
         )}
