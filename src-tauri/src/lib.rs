@@ -43,6 +43,31 @@ pub fn run() {
                 }
             });
 
+            // Timeout recovery thread - reclaims stale tasks every 30 seconds
+            let pool_clone = app.state::<AppState>().pool.clone();
+            let app_handle2 = app.handle().clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().expect("Failed to create timeout runtime");
+                loop {
+                    std::thread::sleep(Duration::from_secs(30));
+                    let pool = pool_clone.clone();
+                    rt.block_on(async {
+                        // Reclaim timed-out tasks
+                        if let Ok(reclaimed) = crate::orchestration::timeout::reclaim_timed_out_tasks(&pool).await {
+                            if !reclaimed.is_empty() {
+                                let _ = app_handle2.emit("db-changed", ());
+                            }
+                        }
+                        // Reclaim offline agents' tasks
+                        if let Ok(offline) = crate::orchestration::timeout::reclaim_offline_agents(&pool).await {
+                            if !offline.is_empty() {
+                                let _ = app_handle2.emit("db-changed", ());
+                            }
+                        }
+                    });
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

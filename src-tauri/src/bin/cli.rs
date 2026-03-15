@@ -436,6 +436,10 @@ enum TaskAction {
         #[arg(long)]
         skills: Option<String>,
     },
+    /// Manually trigger decomposition for a task
+    Decompose {
+        identifier: String,
+    },
 }
 
 #[derive(sqlx::FromRow, serde::Serialize, serde::Deserialize)]
@@ -1247,6 +1251,9 @@ async fn handle_task(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         TaskAction::Next { agent, skills } => {
+            // Lazy timeout recovery - reclaim stale tasks before routing
+            let _ = kanban_lib::orchestration::timeout::reclaim_timed_out_tasks(&pool).await;
+
             let agent_row = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE id = ?")
                 .bind(&agent)
                 .fetch_one(pool)
@@ -1389,6 +1396,11 @@ async fn handle_task(
             .bind(&agent)
             .execute(pool)
             .await?;
+
+            // Auto-unblock downstream tasks when completed
+            if new_state == "completed" {
+                let _ = kanban_lib::orchestration::dependency::resolve_downstream(pool, issue.id).await;
+            }
 
             if json {
                 println!("{}", serde_json::json!({"status": new_state, "identifier": identifier, "confidence": confidence}));
@@ -1635,6 +1647,11 @@ async fn handle_task(
 
             tx.commit().await?;
 
+            // Check if this task needs decomposition
+            if let Ok(true) = kanban_lib::orchestration::decomposition::check_decomposition_needed(pool, issue_id).await {
+                let _ = kanban_lib::orchestration::decomposition::create_decomposition_task(pool, issue_id).await;
+            }
+
             let contract = orchestration::routing::build_full_contract(pool, issue_id).await?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&contract)?);
@@ -1817,6 +1834,10 @@ async fn handle_task(
             .bind(&now)
             .execute(pool)
             .await?;
+
+            // Auto-unblock downstream tasks
+            let _ = kanban_lib::orchestration::dependency::resolve_downstream(pool, issue.id).await;
+
             if json {
                 println!("{}", serde_json::json!({"status": "completed", "identifier": identifier}));
             } else {
@@ -1964,6 +1985,27 @@ async fn handle_task(
                 println!("{}", serde_json::to_string_pretty(&contract)?);
             } else {
                 println!("Updated: {}", identifier);
+            }
+        }
+        TaskAction::Decompose { identifier } => {
+            let issue = resolve_issue(pool, &identifier).await?;
+            match kanban_lib::orchestration::decomposition::create_decomposition_task(pool, issue.id).await {
+                Ok(new_id) => {
+                    let new_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+                        .bind(new_id).fetch_one(pool).await?;
+                    if json {
+                        println!("{}", serde_json::json!({"success": true, "data": {"decomposition_task": new_issue.identifier}}));
+                    } else {
+                        println!("Created decomposition task: {}", new_issue.identifier);
+                    }
+                }
+                Err(e) => {
+                    if json {
+                        println!("{}", serde_json::json!({"success": false, "error": e.to_string()}));
+                    } else {
+                        eprintln!("Error: {}", e);
+                    }
+                }
             }
         }
     }

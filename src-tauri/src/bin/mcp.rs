@@ -858,6 +858,9 @@ async fn handle_tool_call(
         "next_task" => {
             let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
 
+            // Lazy timeout recovery
+            let _ = kanban_lib::orchestration::timeout::reclaim_timed_out_tasks(&pool).await;
+
             let agent = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE id = ?")
                 .bind(agent_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
 
@@ -978,6 +981,11 @@ async fn handle_tool_call(
                 "UPDATE agent_stats SET tasks_completed = tasks_completed + 1, total_confidence = total_confidence + ? WHERE agent_id = ?"
             ).bind(confidence).bind(agent_id)
             .execute(pool).await.map_err(|e| e.to_string())?;
+
+            // Auto-unblock downstream tasks when completed
+            if new_state == "completed" {
+                let _ = orchestration::dependency::resolve_downstream(pool, issue.id).await;
+            }
 
             Ok(json!({"status": "ok", "task_state": new_state, "confidence": confidence}))
         }
@@ -1116,6 +1124,9 @@ async fn handle_tool_call(
                 ).bind(agent_id).execute(pool).await.map_err(|e| e.to_string())?;
             }
 
+            // Auto-unblock downstream tasks
+            let _ = orchestration::dependency::resolve_downstream(pool, issue.id).await;
+
             Ok(json!({"status": "ok", "task_state": "completed"}))
         }
         "reject_task" => {
@@ -1243,6 +1254,11 @@ async fn handle_tool_call(
             }
 
             tx.commit().await.map_err(|e| e.to_string())?;
+
+            // Check if this task needs decomposition
+            if let Ok(true) = orchestration::decomposition::check_decomposition_needed(pool, issue_id).await {
+                let _ = orchestration::decomposition::create_decomposition_task(pool, issue_id).await;
+            }
 
             // Return full contract
             let full = orchestration::routing::build_full_contract(pool, issue_id)

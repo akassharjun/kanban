@@ -169,6 +169,11 @@ pub fn create_task_contract(
 
             tx.commit().await?;
 
+            // Check if this task needs decomposition
+            if let Ok(true) = crate::orchestration::decomposition::check_decomposition_needed(&state.pool, issue_id).await {
+                let _ = crate::orchestration::decomposition::create_decomposition_task(&state.pool, issue_id).await;
+            }
+
             // 5. Return full contract
             let contract = build_full_contract(&state.pool, issue_id).await?;
             contract.ok_or_else(|| sqlx::Error::RowNotFound)
@@ -427,6 +432,11 @@ pub fn complete_task(
                 .await?;
             }
 
+            // Auto-unblock downstream tasks when completed
+            if new_state == TaskState::Completed {
+                let _ = crate::orchestration::dependency::resolve_downstream(&state.pool, issue_id).await;
+            }
+
             Ok(serde_json::json!({
                 "accepted": accepted,
                 "new_state": new_state_str,
@@ -627,6 +637,9 @@ pub fn approve_task(state: State<AppState>, identifier: String) -> Result<(), St
                 .execute(&state.pool)
                 .await?;
             }
+
+            // Auto-unblock downstream tasks
+            let _ = crate::orchestration::dependency::resolve_downstream(&state.pool, issue_id).await;
 
             Ok(())
         })
