@@ -479,7 +479,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     dotenvy::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://kanban:kanban@localhost:5432/kanban".to_string());
+        .unwrap_or_else(|_| "postgres://kanban:kanban@localhost:5433/kanban".to_string());
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
