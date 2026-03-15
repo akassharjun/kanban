@@ -224,6 +224,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
             {activityLogs.map((log) => {
               const style = ENTRY_TYPE_STYLES[log.entry_type] || "bg-zinc-500/20 text-zinc-400";
               const identifier = issueIdentifiers[log.issue_id];
+              const agentName = agents.find(a => a.id === log.agent_id)?.name || log.agent_id.slice(0, 8);
               return (
                 <div
                   key={log.id}
@@ -241,7 +242,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
                   <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded shrink-0 ${style}`}>
                     {log.entry_type}
                   </span>
-                  <span className="text-xs text-zinc-400 font-mono truncate">{log.agent_id.slice(0, 8)}</span>
+                  <span className="text-xs text-amber-400 font-mono shrink-0">{agentName}</span>
                   <span className="text-sm text-zinc-300 truncate flex-1">{log.message}</span>
                 </div>
               );
