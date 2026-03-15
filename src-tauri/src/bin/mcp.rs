@@ -53,6 +53,19 @@ fn error(id: Value, code: i64, message: &str) -> JsonRpcResponse {
     }
 }
 
+/// Helper: auto-comment on an issue as an agent
+async fn mcp_auto_comment(pool: &PgPool, issue_id: i64, agent_id: &str, content: &str) -> Result<(), String> {
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+    let agent_member_id: Option<i64> = sqlx::query_scalar(
+        "SELECT member_id FROM agents WHERE id = $1"
+    ).bind(agent_id).fetch_optional(pool).await.map_err(|e| e.to_string())?;
+    sqlx::query(
+        "INSERT INTO comments (issue_id, member_id, content, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)"
+    ).bind(issue_id).bind(agent_member_id).bind(content).bind(&now).bind(&now)
+    .execute(pool).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn tool_def(name: &str, description: &str, properties: Value, required: Vec<&str>) -> Value {
     json!({
         "name": name,
@@ -812,7 +825,8 @@ async fn handle_tool_call(
         }
         // ── Agent lifecycle ──────────────────────────────────────────
         "register_agent" => {
-            let name = args["name"].as_str().ok_or("name required")?;
+            let name_input = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let agent_type = args.get("agent_type").and_then(|v| v.as_str());
             let skills = args.get("skills").and_then(|v| v.as_array())
                 .map(|a| serde_json::to_string(a).unwrap_or_default())
                 .unwrap_or_else(|| "[]".to_string());
@@ -824,12 +838,40 @@ async fn handle_tool_call(
             let agent_id = Uuid::new_v4().to_string();
             let now = chrono::Utc::now().to_rfc3339();
 
+            // Generate name if not provided
+            let agent_name = if name_input.is_empty() {
+                orchestration::names::generate_agent_name()
+            } else {
+                name_input.to_string()
+            };
+
+            // Determine avatar color based on agent type
+            let agent_type_str = agent_type.unwrap_or("custom");
+            let avatar_color = match agent_type_str {
+                "claude" | "claude-code" => "#f97316",
+                "codex" => "#22c55e",
+                "gemini" => "#3b82f6",
+                _ => "#8b5cf6",
+            };
+
             let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-            sqlx::query(
-                "INSERT INTO agents (id, name, skills, task_types, max_concurrent, max_complexity, status, registered_at, last_heartbeat) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, 'idle', $7, $8)"
+
+            // Create a member for this agent
+            let member_id: i64 = sqlx::query_scalar(
+                "INSERT INTO members (name, display_name, email, avatar_color, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id"
             )
-            .bind(&agent_id).bind(name).bind(&skills).bind(&task_types)
-            .bind(max_concurrent).bind(max_complexity).bind(&now).bind(&now)
+            .bind(format!("[{}] {}", agent_type_str, &agent_name))
+            .bind(&agent_name)
+            .bind(Option::<String>::None)
+            .bind(avatar_color)
+            .bind(&now)
+            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+
+            sqlx::query(
+                "INSERT INTO agents (id, name, agent_type, skills, task_types, max_concurrent, max_complexity, member_id, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, 'idle', $9, $10)"
+            )
+            .bind(&agent_id).bind(&agent_name).bind(&agent_type).bind(&skills).bind(&task_types)
+            .bind(max_concurrent).bind(max_complexity).bind(member_id).bind(&now).bind(&now)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
             sqlx::query(
@@ -840,7 +882,7 @@ async fn handle_tool_call(
 
             tx.commit().await.map_err(|e| e.to_string())?;
             notify_change();
-            Ok(json!({"agent_id": agent_id, "name": name}))
+            Ok(json!({"agent_id": agent_id, "name": agent_name, "member_id": member_id}))
         }
         "agent_heartbeat" => {
             let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
@@ -908,7 +950,10 @@ async fn handle_tool_call(
             ).await.map_err(|e| e.to_string())?;
 
             match contract {
-                Some(c) => Ok(json!(c)),
+                Some(c) => {
+                    let _ = mcp_auto_comment(pool, c.issue_id, agent_id, "\u{1F916} Task claimed. Reading contract and preparing to execute.").await;
+                    Ok(json!(c))
+                }
                 None => Ok(json!(null)),
             }
         }
@@ -938,6 +983,7 @@ async fn handle_tool_call(
             ).bind(issue.id).bind(agent_id).bind(contract.attempt_count).bind(&now)
             .execute(pool).await.map_err(|e| e.to_string())?;
 
+            let _ = mcp_auto_comment(pool, issue.id, agent_id, "\u{1F527} Execution started.").await;
             notify_change();
             Ok(json!({"status": "ok", "task_state": "executing"}))
         }
@@ -1011,6 +1057,13 @@ async fn handle_tool_call(
                 "UPDATE agent_stats SET tasks_completed = tasks_completed + 1, total_confidence = total_confidence + $1 WHERE agent_id = $2"
             ).bind(confidence).bind(agent_id)
             .execute(pool).await.map_err(|e| e.to_string())?;
+
+            // Auto-comment based on outcome
+            if new_state == "completed" {
+                let _ = mcp_auto_comment(pool, issue.id, agent_id, &format!("\u{2705} Task completed (confidence: {:.2}). {}", confidence, summary)).await;
+            } else if new_state == "validating" {
+                let _ = mcp_auto_comment(pool, issue.id, agent_id, &format!("\u{23F3} Task completed with low confidence ({:.2}). Awaiting review. {}", confidence, summary)).await;
+            }
 
             // Auto-unblock downstream tasks when completed
             if new_state == "completed" {
@@ -1086,6 +1139,8 @@ async fn handle_tool_call(
                 "UPDATE agent_stats SET tasks_failed = tasks_failed + 1 WHERE agent_id = $1"
             ).bind(agent_id).execute(pool).await.map_err(|e| e.to_string())?;
 
+            let _ = mcp_auto_comment(pool, issue.id, agent_id, &format!("\u{274C} Task failed: {}", reason)).await;
+
             notify_change();
             Ok(json!({"status": "ok", "task_state": new_state, "attempt_count": new_attempt}))
         }
@@ -1121,6 +1176,8 @@ async fn handle_tool_call(
                 "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'state_change', 'Task unclaimed by agent', $4)"
             ).bind(issue.id).bind(agent_id).bind(contract.attempt_count).bind(&now)
             .execute(pool).await.map_err(|e| e.to_string())?;
+
+            let _ = mcp_auto_comment(pool, issue.id, agent_id, "\u{21A9}\u{FE0F} Task unclaimed and returned to queue.").await;
 
             notify_change();
             Ok(json!({"status": "ok", "task_state": "queued"}))

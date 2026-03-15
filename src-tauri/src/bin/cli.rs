@@ -259,8 +259,11 @@ enum CommentAction {
 enum AgentAction {
     /// Register a new agent
     Register {
-        #[arg(long)]
+        #[arg(long, default_value = "")]
         name: String,
+        /// Agent type (claude, claude-code, codex, gemini, custom)
+        #[arg(long)]
+        agent_type: Option<String>,
         /// Comma-delimited skills
         #[arg(long)]
         skills: String,
@@ -1126,6 +1129,19 @@ async fn sync_issue_status_to_category(pool: &PgPool, issue_id: i64, category: &
     Ok(())
 }
 
+/// Helper: auto-comment on an issue as an agent
+async fn cli_auto_comment(pool: &PgPool, issue_id: i64, agent_id: &str, content: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+    let agent_member_id: Option<i64> = sqlx::query_scalar(
+        "SELECT member_id FROM agents WHERE id = $1"
+    ).bind(agent_id).fetch_optional(pool).await?;
+    sqlx::query(
+        "INSERT INTO comments (issue_id, member_id, content, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)"
+    ).bind(issue_id).bind(agent_member_id).bind(content).bind(&now).bind(&now)
+    .execute(pool).await?;
+    Ok(())
+}
+
 async fn handle_agent(
     pool: &PgPool,
     action: AgentAction,
@@ -1134,6 +1150,7 @@ async fn handle_agent(
     match action {
         AgentAction::Register {
             name,
+            agent_type,
             skills,
             task_types,
             max_concurrent,
@@ -1153,15 +1170,45 @@ async fn handle_agent(
                 .transpose()?
                 .unwrap_or_else(|| "[]".to_string());
 
+            // Generate name if not provided
+            let agent_name = if name.is_empty() {
+                orchestration::names::generate_agent_name()
+            } else {
+                name
+            };
+
+            // Determine avatar color based on agent type
+            let agent_type_str = agent_type.as_deref().unwrap_or("custom");
+            let avatar_color = match agent_type_str {
+                "claude" | "claude-code" => "#f97316",
+                "codex" => "#22c55e",
+                "gemini" => "#3b82f6",
+                _ => "#8b5cf6",
+            };
+
+            // Create a member for this agent
+            let member_id: i64 = sqlx::query_scalar(
+                "INSERT INTO members (name, display_name, email, avatar_color, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id"
+            )
+            .bind(format!("[{}] {}", agent_type_str, &agent_name))
+            .bind(&agent_name)
+            .bind(Option::<String>::None)
+            .bind(avatar_color)
+            .bind(&now)
+            .fetch_one(pool)
+            .await?;
+
             sqlx::query(
-                "INSERT INTO agents (id, name, skills, task_types, max_concurrent, max_complexity, status, registered_at, last_heartbeat) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6, 'online', $7, $8)",
+                "INSERT INTO agents (id, name, agent_type, skills, task_types, max_concurrent, max_complexity, member_id, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, 'online', $9, $10)",
             )
             .bind(&id)
-            .bind(&name)
+            .bind(&agent_name)
+            .bind(&agent_type)
             .bind(&skills_json)
             .bind(&task_types_json)
             .bind(max_concurrent)
             .bind(&max_complexity)
+            .bind(member_id)
             .bind(&now)
             .bind(&now)
             .execute(pool)
@@ -1181,7 +1228,7 @@ async fn handle_agent(
                     .await?;
                 println!("{}", serde_json::to_string_pretty(&agent)?);
             } else {
-                println!("Registered agent: {} (id: {})", name, id);
+                println!("Registered agent: {} (id: {})", agent_name, id);
             }
             notify_change();
         }
@@ -1319,6 +1366,7 @@ async fn handle_task(
             .await?;
             match result {
                 Some(contract) => {
+                    let _ = cli_auto_comment(pool, contract.issue_id, &agent, "\u{1F916} Task claimed. Reading contract and preparing to execute.").await;
                     if json {
                         println!("{}", serde_json::to_string_pretty(&contract)?);
                     } else {
@@ -1360,6 +1408,7 @@ async fn handle_task(
             .bind(&now)
             .execute(pool)
             .await?;
+            let _ = cli_auto_comment(pool, issue.id, &agent, "\u{1F527} Execution started.").await;
             if json {
                 println!("{}", serde_json::json!({"status": "executing", "identifier": identifier}));
             } else {
@@ -1453,6 +1502,13 @@ async fn handle_task(
             .execute(pool)
             .await?;
 
+            // Auto-comment based on outcome
+            if new_state == "completed" {
+                let _ = cli_auto_comment(pool, issue.id, &agent, &format!("\u{2705} Task completed (confidence: {:.2}). {}", confidence, summary)).await;
+            } else if new_state == "validating" {
+                let _ = cli_auto_comment(pool, issue.id, &agent, &format!("\u{23F3} Task completed with low confidence ({:.2}). Awaiting review. {}", confidence, summary)).await;
+            }
+
             // Auto-unblock downstream tasks when completed
             if new_state == "completed" {
                 let _ = kanban_lib::orchestration::dependency::resolve_downstream(pool, issue.id).await;
@@ -1520,6 +1576,8 @@ async fn handle_task(
                 .execute(pool)
                 .await?;
 
+            let _ = cli_auto_comment(pool, issue.id, &agent, &format!("\u{274C} Task failed: {}", reason)).await;
+
             if json {
                 println!("{}", serde_json::json!({"status": "requeued", "identifier": identifier}));
             } else {
@@ -1551,6 +1609,7 @@ async fn handle_task(
             .bind(&now)
             .execute(pool)
             .await?;
+            let _ = cli_auto_comment(pool, issue.id, &agent, "\u{21A9}\u{FE0F} Task unclaimed and returned to queue.").await;
             if json {
                 println!("{}", serde_json::json!({"status": "queued", "identifier": identifier}));
             } else {

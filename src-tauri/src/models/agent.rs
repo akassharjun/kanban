@@ -9,6 +9,7 @@ pub struct Agent {
     pub task_types: serde_json::Value,
     pub max_concurrent: i64,
     pub max_complexity: String,
+    pub member_id: Option<i64>,
     pub status: String,
     pub registered_at: String,
     pub last_heartbeat: String,

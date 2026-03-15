@@ -23,18 +23,47 @@ pub fn register_agent(state: State<AppState>, input: RegisterAgentInput) -> Resu
         let max_concurrent = input.max_concurrent.unwrap_or(1);
         let max_complexity = input.max_complexity.unwrap_or_else(|| "large".to_string());
 
+        // Generate name if not provided
+        let agent_name = if input.name.is_empty() {
+            crate::orchestration::names::generate_agent_name()
+        } else {
+            input.name.clone()
+        };
+
+        // Determine avatar color based on agent type
+        let agent_type_str = input.agent_type.as_deref().unwrap_or("custom");
+        let avatar_color = match agent_type_str {
+            "claude" | "claude-code" => "#f97316",
+            "codex" => "#22c55e",
+            "gemini" => "#3b82f6",
+            _ => "#8b5cf6",
+        };
+
         let mut tx = state.pool.begin().await?;
 
+        // Create a member for this agent
+        let member_id: i64 = sqlx::query_scalar(
+            "INSERT INTO members (name, display_name, email, avatar_color, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id"
+        )
+        .bind(format!("[{}] {}", agent_type_str, &agent_name))
+        .bind(&agent_name)
+        .bind(Option::<String>::None)
+        .bind(avatar_color)
+        .bind(&now)
+        .fetch_one(&mut *tx)
+        .await?;
+
         sqlx::query(
-            "INSERT INTO agents (id, name, agent_type, skills, task_types, max_concurrent, max_complexity, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, 'idle', $8, $9)"
+            "INSERT INTO agents (id, name, agent_type, skills, task_types, max_concurrent, max_complexity, member_id, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, 'idle', $9, $10)"
         )
         .bind(&id)
-        .bind(&input.name)
+        .bind(&agent_name)
         .bind(&input.agent_type)
         .bind(&skills)
         .bind(&task_types)
         .bind(max_concurrent)
         .bind(&max_complexity)
+        .bind(member_id)
         .bind(&now)
         .bind(&now)
         .execute(&mut *tx)

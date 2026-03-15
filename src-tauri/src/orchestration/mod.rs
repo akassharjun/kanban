@@ -2,6 +2,7 @@ pub mod cascade;
 pub mod decomposition;
 pub mod dependency;
 pub mod metrics;
+pub mod names;
 pub mod state_machine;
 pub mod routing;
 pub mod timeout;

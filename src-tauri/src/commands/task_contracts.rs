@@ -35,6 +35,19 @@ pub struct CompleteTaskInput {
     pub artifacts: Option<serde_json::Value>,
 }
 
+/// Helper: auto-comment on an issue as an agent
+async fn auto_comment(pool: &sqlx::PgPool, issue_id: i64, agent_id: &str, content: &str) -> Result<(), sqlx::Error> {
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+    let agent_member_id: Option<i64> = sqlx::query_scalar(
+        "SELECT member_id FROM agents WHERE id = $1"
+    ).bind(agent_id).fetch_optional(pool).await?;
+    sqlx::query(
+        "INSERT INTO comments (issue_id, member_id, content, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)"
+    ).bind(issue_id).bind(agent_member_id).bind(content).bind(&now).bind(&now)
+    .execute(pool).await?;
+    Ok(())
+}
+
 /// Helper: sync issues.status_id based on task state category
 async fn sync_issue_status(
     pool: &sqlx::PgPool,
@@ -221,14 +234,20 @@ pub fn next_task(
                 serde_json::from_value(agent.skills.clone()).unwrap_or_default()
             };
 
-            crate::orchestration::routing::next_task(
+            let result = crate::orchestration::routing::next_task(
                 &state.pool,
                 &agent_id,
                 &skills,
                 &agent.max_complexity,
                 agent.max_concurrent,
             )
-            .await
+            .await?;
+
+            if let Some(ref contract) = result {
+                let _ = auto_comment(&state.pool, contract.issue_id, &agent_id, "\u{1F916} Task claimed. Reading contract and preparing to execute.").await;
+            }
+
+            Ok(result)
         })
         .map_err(|e: sqlx::Error| e.to_string())
 }
@@ -293,6 +312,8 @@ pub fn start_task(
             .bind(&now)
             .execute(&state.pool)
             .await?;
+
+            let _ = auto_comment(&state.pool, issue_id, &agent_id, "\u{1F527} Execution started.").await;
 
             Ok(())
         })
@@ -573,6 +594,13 @@ pub fn complete_task(
                 .await?;
             }
 
+            // Auto-comment based on outcome
+            if accepted {
+                let _ = auto_comment(&state.pool, issue_id, &input.agent_id, &format!("\u{2705} Task completed (confidence: {:.2}). {}", input.confidence, input.summary)).await;
+            } else if new_state == TaskState::Validating {
+                let _ = auto_comment(&state.pool, issue_id, &input.agent_id, &format!("\u{23F3} Task completed with low confidence ({:.2}). Awaiting review. {}", input.confidence, input.summary)).await;
+            }
+
             // Auto-unblock downstream tasks when completed
             if new_state == TaskState::Completed {
                 let _ = crate::orchestration::dependency::resolve_downstream(&state.pool, issue_id).await;
@@ -711,6 +739,8 @@ pub fn fail_task(
             // Sync issues.status_id to 'unstarted' category
             sync_issue_status(&state.pool, issue_id, TaskState::Queued, &now).await?;
 
+            let _ = auto_comment(&state.pool, issue_id, &agent_id, &format!("\u{274C} Task failed: {}", reason)).await;
+
             Ok(serde_json::json!({
                 "requeued": true,
                 "attempt_number": new_attempt_count,
@@ -774,6 +804,8 @@ pub fn unclaim_task(
             .bind(&now)
             .execute(&state.pool)
             .await?;
+
+            let _ = auto_comment(&state.pool, issue_id, &agent_id, "\u{21A9}\u{FE0F} Task unclaimed and returned to queue.").await;
 
             Ok(())
         })
