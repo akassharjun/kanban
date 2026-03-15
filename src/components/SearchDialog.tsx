@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Search } from "lucide-react";
+import { DialogOverlay } from "@/components/ui/dialog";
 import type { Issue, Project } from "@/types";
 import * as api from "@/tauri/commands";
 
@@ -40,7 +41,7 @@ export function SearchDialog({ projects, currentProjectId: _currentProjectId, on
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh] bg-black/50" onClick={onClose}>
+    <DialogOverlay className="items-start pt-[20vh]" onClose={onClose}>
       <div className="w-[560px] rounded-lg border border-border bg-card shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           <Search className="h-4 w-4 text-muted-foreground" />
@@ -98,6 +99,6 @@ export function SearchDialog({ projects, currentProjectId: _currentProjectId, on
           )}
         </div>
       </div>
-    </div>
+    </DialogOverlay>
   );
 }

@@ -1,9 +1,13 @@
 import { useState, useEffect } from "react";
 import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Tooltip } from "@/components/ui/tooltip";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, CustomField, CustomFieldValue } from "@/types";
+import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment } from "@/types";
 import * as api from "@/tauri/commands";
 
 interface IssueDetailPanelProps {
@@ -30,7 +34,7 @@ export function IssueDetailPanel({
   issueId,
   statuses,
   members,
-  projectLabels,
+  projectLabels: _projectLabels,
   onClose,
   onUpdate,
   onDelete,
@@ -47,14 +51,10 @@ export function IssueDetailPanel({
   const [showPriorityMenu, setShowPriorityMenu] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showAssigneeMenu, setShowAssigneeMenu] = useState(false);
-  const [showLabelsMenu, setShowLabelsMenu] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
-  const [estimateValue, setEstimateValue] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  const [customValues, setCustomValues] = useState<CustomFieldValue[]>([]);
 
   useEffect(() => {
     loadIssue();
@@ -66,17 +66,12 @@ export function IssueDetailPanel({
       setIssue(data);
       setTitle(data.title);
       setDesc(data.description || "");
-      setEstimateValue(data.estimate != null ? String(data.estimate) : "");
       const acts = await api.getActivityLog(issueId);
       setActivity(acts);
       const subs = await api.getSubIssues(issueId);
       setSubIssues(subs);
       const comms = await api.listComments(issueId);
       setComments(comms);
-      const fields = await api.listCustomFields(data.project_id);
-      setCustomFields(fields);
-      const vals = await api.getIssueCustomValues(issueId);
-      setCustomValues(vals);
     } catch (e) {
       console.error("Failed to load issue", e);
     }
@@ -137,24 +132,26 @@ export function IssueDetailPanel({
   const currentPriority = priorities.find(p => p.value === issue.priority) || priorities[4];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div
-        className="flex h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-border bg-card shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="flex h-full w-[480px] flex-col border-l border-border bg-card">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <span className="text-sm text-muted-foreground">{issue.identifier}</span>
         <div className="flex items-center gap-1">
-          <button onClick={() => onDuplicate(issueId)} className="rounded p-1 hover:bg-accent" title="Duplicate">
-            <Copy className="h-4 w-4 text-muted-foreground" />
-          </button>
-          <button onClick={async () => { await onDelete(issueId); onClose(); }} className="rounded p-1 hover:bg-destructive/20" title="Delete">
-            <Trash2 className="h-4 w-4 text-muted-foreground" />
-          </button>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent" title="Close (Esc)">
-            <X className="h-4 w-4 text-muted-foreground" />
-          </button>
+          <Tooltip content="Duplicate">
+            <Button variant="ghost" size="icon-sm" onClick={() => onDuplicate(issueId)}>
+              <Copy className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Delete">
+            <Button variant="ghost" size="icon-sm" onClick={() => { onDelete(issueId); onClose(); }} className="hover:bg-destructive/20">
+              <Trash2 className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Close (Esc)">
+            <Button variant="ghost" size="icon-sm" onClick={onClose}>
+              <X className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          </Tooltip>
         </div>
       </div>
 
@@ -283,41 +280,20 @@ export function IssueDetailPanel({
           </div>
 
           {/* Labels */}
-          <div className="flex items-start gap-3 text-sm relative">
+          <div className="flex items-start gap-3 text-sm">
             <span className="w-20 pt-1 text-muted-foreground">Labels</span>
-            <div>
-              <button onClick={() => setShowLabelsMenu(!showLabelsMenu)} className="flex flex-wrap gap-1 rounded px-2 py-1 hover:bg-accent">
-                {issue.labels.length > 0 ? issue.labels.map(l => (
-                  <span key={l.id} className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: l.color + "20", color: l.color }}>
-                    {l.name}
-                  </span>
-                )) : <span className="text-muted-foreground">None</span>}
-              </button>
-              {showLabelsMenu && (
-                <div className="absolute left-20 top-8 z-50 rounded-md border border-border bg-popover p-1 shadow-lg">
-                  {projectLabels.map(l => {
-                    const isSelected = issue.labels.some(il => il.id === l.id);
-                    return (
-                      <button
-                        key={l.id}
-                        onClick={async () => {
-                          const newIds = isSelected
-                            ? issue.labels.filter(il => il.id !== l.id).map(il => il.id)
-                            : [...issue.labels.map(il => il.id), l.id];
-                          await api.setIssueLabels(issueId, newIds);
-                          await loadIssue();
-                        }}
-                        className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-accent"
-                      >
-                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: l.color }} />
-                        <span>{l.name}</span>
-                        {isSelected && <span className="ml-auto text-xs">✓</span>}
-                      </button>
-                    );
-                  })}
-                  {projectLabels.length === 0 && <span className="px-3 py-1.5 text-xs text-muted-foreground">No labels</span>}
-                </div>
-              )}
+            <div className="flex flex-wrap gap-1">
+              {issue.labels.map(l => (
+                <Badge
+                  key={l.id}
+                  variant="outline"
+                  className="border-transparent font-medium"
+                  style={{ backgroundColor: l.color + "20", color: l.color }}
+                >
+                  {l.name}
+                </Badge>
+              ))}
+              {issue.labels.length === 0 && <span className="text-muted-foreground">None</span>}
             </div>
           </div>
 
@@ -338,23 +314,11 @@ export function IssueDetailPanel({
             <input
               type="number"
               min="0"
-              value={estimateValue}
-              onChange={(e) => setEstimateValue(e.target.value)}
-              onBlur={async () => {
-                const parsed = estimateValue === "" ? -1 : parseFloat(estimateValue);
-                const current = issue.estimate ?? -1;
-                if (parsed !== current) {
-                  await onUpdate(issueId, { estimate: parsed });
-                  await loadIssue();
-                }
-              }}
-              onKeyDown={async (e) => {
-                if (e.key === "Enter") {
-                  (e.target as HTMLElement).blur();
-                }
-                if (e.key === "Escape") {
-                  setEstimateValue(issue.estimate != null ? String(issue.estimate) : "");
-                }
+              value={issue.estimate ?? ""}
+              onChange={async (e) => {
+                const val = e.target.value === "" ? -1 : parseFloat(e.target.value);
+                await onUpdate(issueId, { estimate: val });
+                await loadIssue();
               }}
               placeholder="Points"
               className="w-20 rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
@@ -362,113 +326,16 @@ export function IssueDetailPanel({
           </div>
         </div>
 
-        {/* Custom Fields */}
-        {customFields.length > 0 && (
-          <div className="mt-4 space-y-3 px-4">
-            <h3 className="text-xs font-medium text-muted-foreground">Custom Fields</h3>
-            {customFields.map((field) => {
-              const cv = customValues.find((v) => v.field_id === field.id);
-              const currentValue = cv?.value ?? "";
-              return (
-                <div key={field.id} className="flex items-center gap-3 text-sm">
-                  <span className="w-20 text-muted-foreground truncate" title={field.name}>
-                    {field.name}
-                  </span>
-                  {field.field_type === "select" ? (
-                    <select
-                      value={currentValue}
-                      onChange={async (e) => {
-                        const val = e.target.value || null;
-                        await api.setIssueCustomValue(issueId, field.id, val);
-                        await loadIssue();
-                      }}
-                      className="rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
-                    >
-                      <option value="">None</option>
-                      {(() => {
-                        try {
-                          const opts: string[] = JSON.parse(field.options || "[]");
-                          return opts.map((o) => (
-                            <option key={o} value={o}>
-                              {o}
-                            </option>
-                          ));
-                        } catch {
-                          return null;
-                        }
-                      })()}
-                    </select>
-                  ) : field.field_type === "date" ? (
-                    <input
-                      type="date"
-                      value={currentValue}
-                      onChange={async (e) => {
-                        const val = e.target.value || null;
-                        await api.setIssueCustomValue(issueId, field.id, val);
-                        await loadIssue();
-                      }}
-                      className="rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
-                    />
-                  ) : field.field_type === "number" ? (
-                    <input
-                      type="number"
-                      value={currentValue}
-                      onBlur={async (e) => {
-                        const val = e.target.value || null;
-                        await api.setIssueCustomValue(issueId, field.id, val);
-                        await loadIssue();
-                      }}
-                      onChange={(e) => {
-                        setCustomValues((prev) =>
-                          prev.some((v) => v.field_id === field.id)
-                            ? prev.map((v) =>
-                                v.field_id === field.id ? { ...v, value: e.target.value } : v
-                              )
-                            : [...prev, { id: 0, issue_id: issueId, field_id: field.id, value: e.target.value }]
-                        );
-                      }}
-                      placeholder="0"
-                      className="w-24 rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
-                    />
-                  ) : (
-                    <input
-                      type="text"
-                      value={currentValue}
-                      onBlur={async (e) => {
-                        const val = e.target.value || null;
-                        await api.setIssueCustomValue(issueId, field.id, val);
-                        await loadIssue();
-                      }}
-                      onChange={(e) => {
-                        setCustomValues((prev) =>
-                          prev.some((v) => v.field_id === field.id)
-                            ? prev.map((v) =>
-                                v.field_id === field.id ? { ...v, value: e.target.value } : v
-                              )
-                            : [...prev, { id: 0, issue_id: issueId, field_id: field.id, value: e.target.value }]
-                        );
-                      }}
-                      placeholder="Enter value..."
-                      className="flex-1 rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
         {/* Description */}
         <div className="mt-6 border-t border-border px-4 pt-4">
           <h3 className="mb-2 text-xs font-medium text-muted-foreground">Description</h3>
           {editingDesc ? (
-            <textarea
+            <Textarea
               autoFocus
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
               onBlur={handleDescSave}
               rows={8}
-              className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:border-primary"
               placeholder="Add a description... (Markdown supported)"
             />
           ) : (
@@ -545,44 +412,45 @@ export function IssueDetailPanel({
                         <span className="text-[10px] text-muted-foreground">
                           {comment.created_at.slice(0, 16)}
                         </span>
-                        <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
+                        <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
                             onClick={() => { setEditingCommentId(comment.id); setEditingCommentContent(comment.content); }}
-                            className="rounded p-0.5 hover:bg-accent"
+                            className="h-6 w-6"
                           >
                             <Pencil className="h-3 w-3 text-muted-foreground" />
-                          </button>
-                          <button
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
                             onClick={() => handleDeleteComment(comment.id)}
-                            className="rounded p-0.5 hover:bg-destructive/20"
+                            className="h-6 w-6 hover:bg-destructive/20"
                           >
                             <Trash2 className="h-3 w-3 text-muted-foreground" />
-                          </button>
+                          </Button>
                         </div>
                       </div>
 
                       {editingCommentId === comment.id ? (
                         <div className="mt-1">
-                          <textarea
+                          <Textarea
                             autoFocus
                             value={editingCommentContent}
                             onChange={(e) => setEditingCommentContent(e.target.value)}
                             rows={3}
-                            className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:border-primary"
                           />
                           <div className="mt-1 flex gap-1">
-                            <button
-                              onClick={() => handleUpdateComment(comment.id)}
-                              className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                            >
+                            <Button size="sm" onClick={() => handleUpdateComment(comment.id)}>
                               Save
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => { setEditingCommentId(null); setEditingCommentContent(""); }}
-                              className="rounded-md px-2 py-1 text-xs hover:bg-accent"
                             >
                               Cancel
-                            </button>
+                            </Button>
                           </div>
                         </div>
                       ) : (
@@ -599,7 +467,7 @@ export function IssueDetailPanel({
 
           {/* Add comment */}
           <div className="mt-4">
-            <textarea
+            <Textarea
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
               onKeyDown={(e) => {
@@ -610,16 +478,15 @@ export function IssueDetailPanel({
               }}
               rows={3}
               placeholder="Leave a comment... (Markdown supported, Cmd+Enter to submit)"
-              className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:border-primary"
             />
             <div className="mt-1 flex justify-end">
-              <button
+              <Button
+                size="sm"
                 onClick={handleAddComment}
                 disabled={!newComment.trim()}
-                className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 Comment
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -642,7 +509,6 @@ export function IssueDetailPanel({
             </div>
           </div>
         )}
-      </div>
       </div>
     </div>
   );

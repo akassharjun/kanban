@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import { AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus } from "lucide-react";
 import type { Issue, Member, Label } from "@/types";
 
@@ -53,13 +54,14 @@ export function IssueCard({ issue, member, labels, onClick, isDragging }: IssueC
       {labels.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {labels.map((label) => (
-            <span
+            <Badge
               key={label.id}
-              className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+              variant="outline"
+              className="border-transparent py-0 text-[10px] font-medium"
               style={{ backgroundColor: label.color + "20", color: label.color }}
             >
               {label.name}
-            </span>
+            </Badge>
           ))}
         </div>
       )}
