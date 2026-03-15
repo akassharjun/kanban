@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
 import type { Agent, AgentMetrics, ProjectMetrics, ExecutionLog } from "@/types";
 import * as api from "@/tauri/commands";
 
@@ -18,6 +19,12 @@ export function useAgents() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Auto-refresh on db-changed event
+  useEffect(() => {
+    const unlisten = listen("db-changed", () => { refresh(); });
+    return () => { unlisten.then(fn => fn()); };
+  }, [refresh]);
 
   return { agents, loading, refresh };
 }
@@ -39,6 +46,11 @@ export function useProjectMetrics(projectId: number | null) {
   }, [projectId]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  useEffect(() => {
+    const unlisten = listen("db-changed", () => { refresh(); });
+    return () => { unlisten.then(fn => fn()); };
+  }, [refresh]);
 
   return { metrics, loading, refresh };
 }
