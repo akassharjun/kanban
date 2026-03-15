@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip } from "@/components/ui/tooltip";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment } from "@/types";
+import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, CustomField, CustomFieldValue } from "@/types";
 import * as api from "@/tauri/commands";
 
 interface IssueDetailPanelProps {
@@ -34,7 +34,7 @@ export function IssueDetailPanel({
   issueId,
   statuses,
   members,
-  projectLabels: _projectLabels,
+  projectLabels,
   onClose,
   onUpdate,
   onDelete,
@@ -46,15 +46,19 @@ export function IssueDetailPanel({
   const [title, setTitle] = useState("");
   const [editingDesc, setEditingDesc] = useState(false);
   const [desc, setDesc] = useState("");
+  const [estimateValue, setEstimateValue] = useState("");
   const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
   const [subIssues, setSubIssues] = useState<Issue[]>([]);
   const [showPriorityMenu, setShowPriorityMenu] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showAssigneeMenu, setShowAssigneeMenu] = useState(false);
+  const [showLabelsMenu, setShowLabelsMenu] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [customValues, setCustomValues] = useState<CustomFieldValue[]>([]);
 
   useEffect(() => {
     loadIssue();
@@ -66,12 +70,19 @@ export function IssueDetailPanel({
       setIssue(data);
       setTitle(data.title);
       setDesc(data.description || "");
+      setEstimateValue(data.estimate != null ? String(data.estimate) : "");
       const acts = await api.getActivityLog(issueId);
       setActivity(acts);
       const subs = await api.getSubIssues(issueId);
       setSubIssues(subs);
       const comms = await api.listComments(issueId);
       setComments(comms);
+      try {
+        const fields = await api.listCustomFields(data.project_id);
+        setCustomFields(fields);
+        const vals = await api.getIssueCustomValues(issueId);
+        setCustomValues(vals);
+      } catch { /* custom fields table may not exist yet */ }
     } catch (e) {
       console.error("Failed to load issue", e);
     }
@@ -132,7 +143,11 @@ export function IssueDetailPanel({
   const currentPriority = priorities.find(p => p.value === issue.priority) || priorities[4];
 
   return (
-    <div className="flex h-full w-[480px] flex-col border-l border-border bg-card">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div
+        className="flex h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-border bg-card shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <span className="text-sm text-muted-foreground">{issue.identifier}</span>
@@ -143,7 +158,7 @@ export function IssueDetailPanel({
             </Button>
           </Tooltip>
           <Tooltip content="Delete">
-            <Button variant="ghost" size="icon-sm" onClick={() => { onDelete(issueId); onClose(); }} className="hover:bg-destructive/20">
+            <Button variant="ghost" size="icon-sm" onClick={async () => { await onDelete(issueId); onClose(); }} className="hover:bg-destructive/20">
               <Trash2 className="h-4 w-4 text-muted-foreground" />
             </Button>
           </Tooltip>
@@ -280,20 +295,46 @@ export function IssueDetailPanel({
           </div>
 
           {/* Labels */}
-          <div className="flex items-start gap-3 text-sm">
+          <div className="flex items-start gap-3 text-sm relative">
             <span className="w-20 pt-1 text-muted-foreground">Labels</span>
-            <div className="flex flex-wrap gap-1">
-              {issue.labels.map(l => (
-                <Badge
-                  key={l.id}
-                  variant="outline"
-                  className="border-transparent font-medium"
-                  style={{ backgroundColor: l.color + "20", color: l.color }}
-                >
-                  {l.name}
-                </Badge>
-              ))}
-              {issue.labels.length === 0 && <span className="text-muted-foreground">None</span>}
+            <div>
+              <button onClick={() => setShowLabelsMenu(!showLabelsMenu)} className="flex flex-wrap gap-1 rounded px-2 py-1 hover:bg-accent">
+                {issue.labels.length > 0 ? issue.labels.map(l => (
+                  <Badge
+                    key={l.id}
+                    variant="outline"
+                    className="border-transparent font-medium"
+                    style={{ backgroundColor: l.color + "20", color: l.color }}
+                  >
+                    {l.name}
+                  </Badge>
+                )) : <span className="text-muted-foreground">None</span>}
+              </button>
+              {showLabelsMenu && (
+                <div className="absolute left-20 top-8 z-50 rounded-md border border-border bg-popover p-1 shadow-lg">
+                  {projectLabels.map(l => {
+                    const isSelected = issue.labels.some(il => il.id === l.id);
+                    return (
+                      <button
+                        key={l.id}
+                        onClick={async () => {
+                          const newIds = isSelected
+                            ? issue.labels.filter(il => il.id !== l.id).map(il => il.id)
+                            : [...issue.labels.map(il => il.id), l.id];
+                          await api.setIssueLabels(issueId, newIds);
+                          await loadIssue();
+                        }}
+                        className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-accent"
+                      >
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: l.color }} />
+                        <span>{l.name}</span>
+                        {isSelected && <span className="ml-auto text-xs">✓</span>}
+                      </button>
+                    );
+                  })}
+                  {projectLabels.length === 0 && <span className="px-3 py-1.5 text-xs text-muted-foreground">No labels</span>}
+                </div>
+              )}
             </div>
           </div>
 
@@ -314,11 +355,19 @@ export function IssueDetailPanel({
             <input
               type="number"
               min="0"
-              value={issue.estimate ?? ""}
-              onChange={async (e) => {
-                const val = e.target.value === "" ? -1 : parseFloat(e.target.value);
-                await onUpdate(issueId, { estimate: val });
-                await loadIssue();
+              value={estimateValue}
+              onChange={(e) => setEstimateValue(e.target.value)}
+              onBlur={async () => {
+                const parsed = estimateValue === "" ? -1 : parseFloat(estimateValue);
+                const current = issue.estimate ?? -1;
+                if (parsed !== current) {
+                  await onUpdate(issueId, { estimate: parsed });
+                  await loadIssue();
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLElement).blur();
+                if (e.key === "Escape") setEstimateValue(issue.estimate != null ? String(issue.estimate) : "");
               }}
               placeholder="Points"
               className="w-20 rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
@@ -491,6 +540,49 @@ export function IssueDetailPanel({
           </div>
         </div>
 
+        {/* Custom Fields */}
+        {customFields.length > 0 && (
+          <div className="mt-6 border-t border-border px-4 pt-4">
+            <h3 className="mb-2 text-xs font-medium text-muted-foreground">Custom Fields</h3>
+            <div className="space-y-3">
+              {customFields.map(field => {
+                const val = customValues.find(v => v.field_id === field.id);
+                return (
+                  <div key={field.id} className="flex items-center gap-3 text-sm">
+                    <span className="w-24 text-muted-foreground truncate">{field.name}</span>
+                    {field.field_type === "select" ? (
+                      <select
+                        value={val?.value || ""}
+                        onChange={async (e) => {
+                          await api.setIssueCustomValue(issueId, field.id, e.target.value || null);
+                          await loadIssue();
+                        }}
+                        className="rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent border border-border"
+                      >
+                        <option value="">—</option>
+                        {JSON.parse(field.options || "[]").map((opt: string) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type={field.field_type === "date" ? "date" : field.field_type === "number" ? "number" : "text"}
+                        value={val?.value || ""}
+                        onChange={async (e) => {
+                          await api.setIssueCustomValue(issueId, field.id, e.target.value || null);
+                          await loadIssue();
+                        }}
+                        className="rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
+                        placeholder={`Enter ${field.name.toLowerCase()}`}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Activity log */}
         {activity.length > 0 && (
           <div className="mt-6 border-t border-border px-4 pt-4 pb-4">
@@ -509,6 +601,7 @@ export function IssueDetailPanel({
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

@@ -116,11 +116,11 @@ function App() {
       // Undo/Redo
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
-        api.undo().then(() => { refreshIssues(); refreshStatuses(); refreshProjects(); });
+        api.undo().then(() => { refreshIssues(); refreshStatuses(); refreshProjects(); refreshLabels(); });
       }
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
         e.preventDefault();
-        api.redo().then(() => { refreshIssues(); refreshStatuses(); refreshProjects(); });
+        api.redo().then(() => { refreshIssues(); refreshStatuses(); refreshProjects(); refreshLabels(); });
       }
     };
     window.addEventListener("keydown", handler);
