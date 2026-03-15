@@ -91,6 +91,19 @@ pub fn update_status(state: State<AppState>, id: i64, input: UpdateStatusInput) 
 #[tauri::command]
 pub fn delete_status(state: State<AppState>, id: i64) -> Result<(), String> {
     state.rt.block_on(async {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM issues WHERE status_id = ?"
+        )
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+
+        if count > 0 {
+            return Err(sqlx::Error::Protocol(
+                format!("Cannot delete status: {} issue(s) are currently using it. Move or delete those issues first.", count)
+            ));
+        }
+
         sqlx::query("DELETE FROM statuses WHERE id = ?").bind(id).execute(&state.pool).await?;
         Ok(())
     }).map_err(|e: sqlx::Error| e.to_string())
