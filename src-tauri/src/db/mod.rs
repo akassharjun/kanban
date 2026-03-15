@@ -1,25 +1,15 @@
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::SqlitePool;
-use std::str::FromStr;
+use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
 
-pub async fn init_db() -> Result<SqlitePool, Box<dyn std::error::Error>> {
-    let data_dir = dirs::home_dir()
-        .expect("Could not find home directory")
-        .join(".kanban");
+pub async fn init_db() -> Result<PgPool, Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
 
-    std::fs::create_dir_all(&data_dir)?;
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://kanban:kanban@localhost:5432/kanban".to_string());
 
-    let db_path = data_dir.join("data.db");
-    let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
-
-    let options = SqliteConnectOptions::from_str(&db_url)?
-        .create_if_missing(true)
-        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
-        .foreign_keys(true);
-
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect_with(options)
+    let pool = PgPoolOptions::new()
+        .max_connections(10)
+        .connect(&database_url)
         .await?;
 
     sqlx::migrate!("./migrations").run(&pool).await?;
