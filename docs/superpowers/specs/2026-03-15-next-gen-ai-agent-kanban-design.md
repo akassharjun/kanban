@@ -726,6 +726,9 @@ CREATE TABLE task_contracts (
     success_criteria JSON NOT NULL DEFAULT '[]',
     required_skills JSON NOT NULL DEFAULT '[]',
     estimated_complexity TEXT DEFAULT 'medium',
+    -- ON DELETE SET NULL: if agent is deleted, claimed_by becomes NULL.
+    -- The deregister command MUST reclaim all active tasks (move to queued)
+    -- before deleting the agent record to prevent orphaned claimed tasks.
     claimed_by TEXT REFERENCES agents(id) ON DELETE SET NULL,
     claimed_at DATETIME,
     timeout_minutes INTEGER NOT NULL DEFAULT 30,
