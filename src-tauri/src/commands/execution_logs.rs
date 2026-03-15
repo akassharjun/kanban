@@ -21,14 +21,14 @@ pub fn log_task_activity(state: State<AppState>, input: LogEntryInput) -> Result
 
             // Resolve identifier to issue_id
             let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
                     .bind(&input.identifier)
                     .fetch_one(&state.pool)
                     .await?;
 
             // Get current attempt_count from task_contracts + 1
             let contract = sqlx::query_as::<_, TaskContract>(
-                "SELECT * FROM task_contracts WHERE issue_id = ?",
+                "SELECT * FROM task_contracts WHERE issue_id = $1",
             )
             .bind(issue_id)
             .fetch_one(&state.pool)
@@ -41,8 +41,8 @@ pub fn log_task_activity(state: State<AppState>, input: LogEntryInput) -> Result
                 .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "{}".to_string()));
 
             // Insert into execution_logs
-            let result = sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
             )
             .bind(issue_id)
             .bind(&input.agent_id)
@@ -51,10 +51,10 @@ pub fn log_task_activity(state: State<AppState>, input: LogEntryInput) -> Result
             .bind(&input.message)
             .bind(&metadata_str)
             .bind(&now)
-            .execute(&state.pool)
+            .fetch_one(&state.pool)
             .await?;
 
-            Ok(result.last_insert_rowid())
+            Ok(id)
         })
         .map_err(|e: sqlx::Error| e.to_string())
 }
@@ -69,13 +69,13 @@ pub fn task_replay(
         .block_on(async {
             // Resolve identifier to issue_id
             let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
                     .bind(&identifier)
                     .fetch_one(&state.pool)
                     .await?;
 
             sqlx::query_as::<_, ExecutionLog>(
-                "SELECT * FROM execution_logs WHERE issue_id = ? ORDER BY timestamp ASC",
+                "SELECT * FROM execution_logs WHERE issue_id = $1 ORDER BY timestamp ASC",
             )
             .bind(issue_id)
             .fetch_all(&state.pool)
@@ -94,14 +94,14 @@ pub fn task_attempts(
         .block_on(async {
             // Resolve identifier to issue_id
             let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
                     .bind(&identifier)
                     .fetch_one(&state.pool)
                     .await?;
 
             // Get task_contracts row
             let contract = sqlx::query_as::<_, TaskContract>(
-                "SELECT * FROM task_contracts WHERE issue_id = ?",
+                "SELECT * FROM task_contracts WHERE issue_id = $1",
             )
             .bind(issue_id)
             .fetch_one(&state.pool)

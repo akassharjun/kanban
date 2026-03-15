@@ -57,21 +57,21 @@ pub struct IssueWithLabels {
 }
 
 // Helper to log activity
-async fn log_activity(pool: &sqlx::SqlitePool, issue_id: i64, field: &str, old_val: Option<String>, new_val: Option<String>) -> Result<(), sqlx::Error> {
+async fn log_activity(pool: &sqlx::PgPool, issue_id: i64, field: &str, old_val: Option<String>, new_val: Option<String>) -> Result<(), sqlx::Error> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
-    sqlx::query("INSERT INTO activity_log (issue_id, field_changed, old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?)")
+    sqlx::query("INSERT INTO activity_log (issue_id, field_changed, old_value, new_value, timestamp) VALUES ($1, $2, $3, $4, $5)")
         .bind(issue_id).bind(field).bind(old_val).bind(new_val).bind(&now)
         .execute(pool).await?;
     Ok(())
 }
 
 // Helper to log undo
-async fn log_undo(pool: &sqlx::SqlitePool, op_type: &str, entity_type: &str, entity_id: i64, before: Option<String>, after: Option<String>) -> Result<(), sqlx::Error> {
+async fn log_undo(pool: &sqlx::PgPool, op_type: &str, entity_type: &str, entity_id: i64, before: Option<String>, after: Option<String>) -> Result<(), sqlx::Error> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
     // Clear any undone entries after the current position (new operation invalidates redo stack)
-    sqlx::query("DELETE FROM undo_log WHERE undone = 1")
+    sqlx::query("DELETE FROM undo_log WHERE undone = TRUE")
         .execute(pool).await?;
-    sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES (?, ?, ?, ?, ?, ?)")
+    sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES ($1, $2, $3, $4, $5, $6)")
         .bind(op_type).bind(entity_type).bind(entity_id).bind(before).bind(after).bind(&now)
         .execute(pool).await?;
     Ok(())
@@ -87,18 +87,18 @@ pub fn create_issue(state: State<AppState>, input: CreateIssueInput) -> Result<I
 
         // Atomically increment counter and get new value + prefix
         let (counter, prefix): (i64, String) = sqlx::query_as(
-            "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix"
+            "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix"
         ).bind(input.project_id).fetch_one(&mut *tx).await?;
         let identifier = format!("{}-{}", prefix, counter);
 
         // Get max position for this status
-        let max_pos: Option<f64> = sqlx::query_scalar("SELECT MAX(position) FROM issues WHERE project_id = ? AND status_id = ?")
+        let max_pos: Option<f64> = sqlx::query_scalar("SELECT MAX(position) FROM issues WHERE project_id = $1 AND status_id = $2")
             .bind(input.project_id).bind(input.status_id)
             .fetch_one(&mut *tx).await?;
         let position = max_pos.unwrap_or(-1.0) + 1.0;
 
-        let result = sqlx::query(
-            "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        let issue_id: i64 = sqlx::query_scalar(
+            "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id"
         )
         .bind(input.project_id)
         .bind(&identifier)
@@ -113,29 +113,27 @@ pub fn create_issue(state: State<AppState>, input: CreateIssueInput) -> Result<I
         .bind(&input.due_date)
         .bind(&now)
         .bind(&now)
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await?;
-
-        let issue_id = result.last_insert_rowid();
 
         // Add labels
         if let Some(label_ids) = &input.label_ids {
             for label_id in label_ids {
-                sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES (?, ?)")
+                sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES ($1, $2)")
                     .bind(issue_id).bind(label_id).execute(&mut *tx).await?;
             }
         }
 
-        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
             .bind(issue_id).fetch_one(&mut *tx).await?;
 
         let snapshot = serde_json::to_string(&issue).unwrap_or_default();
 
         // Clear redo stack
-        sqlx::query("DELETE FROM undo_log WHERE undone = 1")
+        sqlx::query("DELETE FROM undo_log WHERE undone = TRUE")
             .execute(&mut *tx).await?;
         // Insert undo entry
-        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES (?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES ($1, $2, $3, $4, $5, $6)")
             .bind("create").bind("issue").bind(issue_id)
             .bind(Option::<String>::None).bind(Some(&snapshot))
             .bind(&now)
@@ -150,10 +148,10 @@ pub fn create_issue(state: State<AppState>, input: CreateIssueInput) -> Result<I
 #[tauri::command]
 pub fn get_issue(state: State<AppState>, id: i64) -> Result<IssueWithLabels, String> {
     state.rt.block_on(async {
-        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
             .bind(id).fetch_one(&state.pool).await?;
         let labels = sqlx::query_as::<_, crate::models::Label>(
-            "SELECT l.* FROM labels l JOIN issue_labels il ON l.id = il.label_id WHERE il.issue_id = ?"
+            "SELECT l.* FROM labels l JOIN issue_labels il ON l.id = il.label_id WHERE il.issue_id = $1"
         ).bind(id).fetch_all(&state.pool).await?;
         Ok(IssueWithLabels { issue, labels })
     }).map_err(|e: sqlx::Error| e.to_string())
@@ -162,10 +160,10 @@ pub fn get_issue(state: State<AppState>, id: i64) -> Result<IssueWithLabels, Str
 #[tauri::command]
 pub fn get_issue_by_identifier(state: State<AppState>, identifier: String) -> Result<IssueWithLabels, String> {
     state.rt.block_on(async {
-        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
             .bind(&identifier).fetch_one(&state.pool).await?;
         let labels = sqlx::query_as::<_, crate::models::Label>(
-            "SELECT l.* FROM labels l JOIN issue_labels il ON l.id = il.label_id WHERE il.issue_id = ?"
+            "SELECT l.* FROM labels l JOIN issue_labels il ON l.id = il.label_id WHERE il.issue_id = $1"
         ).bind(issue.id).fetch_all(&state.pool).await?;
         Ok(IssueWithLabels { issue, labels })
     }).map_err(|e: sqlx::Error| e.to_string())
@@ -174,7 +172,7 @@ pub fn get_issue_by_identifier(state: State<AppState>, identifier: String) -> Re
 #[tauri::command]
 pub fn list_issues(state: State<AppState>, filter: ListIssuesFilter) -> Result<Vec<Issue>, String> {
     state.rt.block_on(async {
-        let mut qb: sqlx::QueryBuilder<sqlx::Sqlite> = sqlx::QueryBuilder::new("SELECT i.* FROM issues i");
+        let mut qb: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new("SELECT i.* FROM issues i");
 
         if filter.label_id.is_some() {
             qb.push(" JOIN issue_labels il ON i.id = il.issue_id");
@@ -224,7 +222,7 @@ pub fn list_issues(state: State<AppState>, filter: ListIssuesFilter) -> Result<V
 pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) -> Result<Issue, String> {
     state.rt.block_on(async {
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
-        let old_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+        let old_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
             .bind(id).fetch_one(&state.pool).await?;
         let old_snapshot = serde_json::to_string(&old_issue).unwrap_or_default();
 
@@ -232,26 +230,26 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
             if title != &old_issue.title {
                 log_activity(&state.pool, id, "title", Some(old_issue.title.clone()), Some(title.clone())).await?;
             }
-            sqlx::query("UPDATE issues SET title = ?, updated_at = ? WHERE id = ?")
+            sqlx::query("UPDATE issues SET title = $1, updated_at = $2 WHERE id = $3")
                 .bind(title).bind(&now).bind(id).execute(&state.pool).await?;
         }
         if let Some(ref desc) = input.description {
             log_activity(&state.pool, id, "description", old_issue.description.clone(), Some(desc.clone())).await?;
-            sqlx::query("UPDATE issues SET description = ?, updated_at = ? WHERE id = ?")
+            sqlx::query("UPDATE issues SET description = $1, updated_at = $2 WHERE id = $3")
                 .bind(desc).bind(&now).bind(id).execute(&state.pool).await?;
         }
         if let Some(status_id) = input.status_id {
             if status_id != old_issue.status_id {
                 log_activity(&state.pool, id, "status_id", Some(old_issue.status_id.to_string()), Some(status_id.to_string())).await?;
             }
-            sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
+            sqlx::query("UPDATE issues SET status_id = $1, updated_at = $2 WHERE id = $3")
                 .bind(status_id).bind(&now).bind(id).execute(&state.pool).await?;
         }
         if let Some(ref priority) = input.priority {
             if priority != &old_issue.priority {
                 log_activity(&state.pool, id, "priority", Some(old_issue.priority.clone()), Some(priority.clone())).await?;
             }
-            sqlx::query("UPDATE issues SET priority = ?, updated_at = ? WHERE id = ?")
+            sqlx::query("UPDATE issues SET priority = $1, updated_at = $2 WHERE id = $3")
                 .bind(priority).bind(&now).bind(id).execute(&state.pool).await?;
         }
         if let Some(assignee_id) = input.assignee_id {
@@ -259,49 +257,49 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
             let val = if assignee_id <= 0 { None } else { Some(assignee_id) };
             log_activity(&state.pool, id, "assignee_id", old_issue.assignee_id.map(|v| v.to_string()), val.map(|v| v.to_string())).await?;
             if let Some(v) = val {
-                sqlx::query("UPDATE issues SET assignee_id = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET assignee_id = $1, updated_at = $2 WHERE id = $3")
                     .bind(v).bind(&now).bind(id).execute(&state.pool).await?;
             } else {
-                sqlx::query("UPDATE issues SET assignee_id = NULL, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET assignee_id = NULL, updated_at = $1 WHERE id = $2")
                     .bind(&now).bind(id).execute(&state.pool).await?;
             }
         }
         if let Some(parent_id) = input.parent_id {
             let val = if parent_id <= 0 { None } else { Some(parent_id) };
             if let Some(v) = val {
-                sqlx::query("UPDATE issues SET parent_id = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET parent_id = $1, updated_at = $2 WHERE id = $3")
                     .bind(v).bind(&now).bind(id).execute(&state.pool).await?;
             } else {
-                sqlx::query("UPDATE issues SET parent_id = NULL, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET parent_id = NULL, updated_at = $1 WHERE id = $2")
                     .bind(&now).bind(id).execute(&state.pool).await?;
             }
         }
         if let Some(position) = input.position {
-            sqlx::query("UPDATE issues SET position = ?, updated_at = ? WHERE id = ?")
+            sqlx::query("UPDATE issues SET position = $1, updated_at = $2 WHERE id = $3")
                 .bind(position).bind(&now).bind(id).execute(&state.pool).await?;
         }
         if let Some(estimate) = input.estimate {
             let val = if estimate < 0.0 { None } else { Some(estimate) };
             if let Some(v) = val {
-                sqlx::query("UPDATE issues SET estimate = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET estimate = $1, updated_at = $2 WHERE id = $3")
                     .bind(v).bind(&now).bind(id).execute(&state.pool).await?;
             } else {
-                sqlx::query("UPDATE issues SET estimate = NULL, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET estimate = NULL, updated_at = $1 WHERE id = $2")
                     .bind(&now).bind(id).execute(&state.pool).await?;
             }
         }
         if let Some(ref due_date) = input.due_date {
             let val = if due_date.is_empty() { None } else { Some(due_date.clone()) };
             if let Some(ref v) = val {
-                sqlx::query("UPDATE issues SET due_date = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET due_date = $1, updated_at = $2 WHERE id = $3")
                     .bind(v).bind(&now).bind(id).execute(&state.pool).await?;
             } else {
-                sqlx::query("UPDATE issues SET due_date = NULL, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET due_date = NULL, updated_at = $1 WHERE id = $2")
                     .bind(&now).bind(id).execute(&state.pool).await?;
             }
         }
 
-        let updated = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+        let updated = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
             .bind(id).fetch_one(&state.pool).await?;
         let new_snapshot = serde_json::to_string(&updated).unwrap_or_default();
 
@@ -310,30 +308,30 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
         // Check if parent should auto-complete (all children done/discarded)
         if input.status_id.is_some() {
             if let Some(parent_id) = updated.parent_id {
-                let status = sqlx::query_as::<_, crate::models::Status>("SELECT * FROM statuses WHERE id = ?")
+                let status = sqlx::query_as::<_, crate::models::Status>("SELECT * FROM statuses WHERE id = $1")
                     .bind(updated.status_id).fetch_one(&state.pool).await?;
                 if status.category == "completed" || status.category == "discarded" {
                     // Check all siblings
                     let incomplete: i64 = sqlx::query_scalar(
-                        "SELECT COUNT(*) FROM issues i JOIN statuses s ON i.status_id = s.id WHERE i.parent_id = ? AND s.category NOT IN ('completed', 'discarded')"
+                        "SELECT COUNT(*) FROM issues i JOIN statuses s ON i.status_id = s.id WHERE i.parent_id = $1 AND s.category NOT IN ('completed', 'discarded')"
                     ).bind(parent_id).fetch_one(&state.pool).await?;
 
                     if incomplete == 0 {
                         // Auto-close parent - find a 'completed' status for the project
                         let done_status: Option<crate::models::Status> = sqlx::query_as(
-                            "SELECT * FROM statuses WHERE project_id = (SELECT project_id FROM issues WHERE id = ?) AND category = 'completed' LIMIT 1"
+                            "SELECT * FROM statuses WHERE project_id = (SELECT project_id FROM issues WHERE id = $1) AND category = 'completed' LIMIT 1"
                         ).bind(parent_id).fetch_optional(&state.pool).await?;
 
                         if let Some(done) = done_status {
-                            let parent_before = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+                            let parent_before = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
                                 .bind(parent_id).fetch_one(&state.pool).await?;
                             let parent_old_snapshot = serde_json::to_string(&parent_before).unwrap_or_default();
                             let parent_old_status_id = parent_before.status_id;
 
-                            sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
+                            sqlx::query("UPDATE issues SET status_id = $1, updated_at = $2 WHERE id = $3")
                                 .bind(done.id).bind(&now).bind(parent_id).execute(&state.pool).await?;
 
-                            let parent_after = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+                            let parent_after = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
                                 .bind(parent_id).fetch_one(&state.pool).await?;
                             let parent_new_snapshot = serde_json::to_string(&parent_after).unwrap_or_default();
 
@@ -352,17 +350,17 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
 #[tauri::command]
 pub fn delete_issue(state: State<AppState>, id: i64) -> Result<(), String> {
     state.rt.block_on(async {
-        let old_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+        let old_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
             .bind(id).fetch_one(&state.pool).await?;
 
         // Also snapshot label associations so undo can restore them
-        let labels: Vec<i64> = sqlx::query_scalar("SELECT label_id FROM issue_labels WHERE issue_id = ?")
+        let labels: Vec<i64> = sqlx::query_scalar("SELECT label_id FROM issue_labels WHERE issue_id = $1")
             .bind(id).fetch_all(&state.pool).await?;
         let mut snapshot_val = serde_json::to_value(&old_issue).unwrap();
         snapshot_val.as_object_mut().unwrap().insert("label_ids".to_string(), serde_json::to_value(&labels).unwrap());
         let old_snapshot = serde_json::to_string(&snapshot_val).unwrap_or_default();
 
-        sqlx::query("DELETE FROM issues WHERE id = ?").bind(id).execute(&state.pool).await?;
+        sqlx::query("DELETE FROM issues WHERE id = $1").bind(id).execute(&state.pool).await?;
 
         log_undo(&state.pool, "delete", "issue", id, Some(old_snapshot), None).await?;
 
@@ -373,7 +371,7 @@ pub fn delete_issue(state: State<AppState>, id: i64) -> Result<(), String> {
 #[tauri::command]
 pub fn duplicate_issue(state: State<AppState>, id: i64) -> Result<Issue, String> {
     state.rt.block_on(async {
-        let original = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+        let original = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
             .bind(id).fetch_one(&state.pool).await?;
 
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
@@ -382,12 +380,12 @@ pub fn duplicate_issue(state: State<AppState>, id: i64) -> Result<Issue, String>
 
         // Atomically increment counter and get new value + prefix
         let (counter, prefix): (i64, String) = sqlx::query_as(
-            "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix"
+            "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix"
         ).bind(original.project_id).fetch_one(&mut *tx).await?;
         let identifier = format!("{}-{}", prefix, counter);
 
-        let result = sqlx::query(
-            "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        let new_id: i64 = sqlx::query_scalar(
+            "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id"
         )
         .bind(original.project_id)
         .bind(&identifier)
@@ -402,29 +400,27 @@ pub fn duplicate_issue(state: State<AppState>, id: i64) -> Result<Issue, String>
         .bind(&original.due_date)
         .bind(&now)
         .bind(&now)
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await?;
 
-        let new_id = result.last_insert_rowid();
-
         // Copy labels
-        let labels = sqlx::query_scalar::<_, i64>("SELECT label_id FROM issue_labels WHERE issue_id = ?")
+        let labels = sqlx::query_scalar::<_, i64>("SELECT label_id FROM issue_labels WHERE issue_id = $1")
             .bind(id).fetch_all(&mut *tx).await?;
         for label_id in labels {
-            sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES (?, ?)")
+            sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES ($1, $2)")
                 .bind(new_id).bind(label_id).execute(&mut *tx).await?;
         }
 
-        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+        let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
             .bind(new_id).fetch_one(&mut *tx).await?;
 
         let snapshot = serde_json::to_string(&issue).unwrap_or_default();
 
         // Clear redo stack
-        sqlx::query("DELETE FROM undo_log WHERE undone = 1")
+        sqlx::query("DELETE FROM undo_log WHERE undone = TRUE")
             .execute(&mut *tx).await?;
         // Insert undo entry
-        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES (?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES ($1, $2, $3, $4, $5, $6)")
             .bind("create").bind("issue").bind(new_id)
             .bind(Option::<String>::None).bind(Some(&snapshot))
             .bind(&now)
@@ -443,31 +439,31 @@ pub fn bulk_update_issues(state: State<AppState>, input: BulkUpdateInput) -> Res
 
         for issue_id in &input.issue_ids {
             // Fetch old state before updating
-            let old_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+            let old_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
                 .bind(issue_id).fetch_one(&state.pool).await?;
             let old_snapshot = serde_json::to_string(&old_issue).unwrap_or_default();
 
             if let Some(status_id) = input.status_id {
-                sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET status_id = $1, updated_at = $2 WHERE id = $3")
                     .bind(status_id).bind(&now).bind(issue_id).execute(&state.pool).await?;
             }
             if let Some(ref priority) = input.priority {
-                sqlx::query("UPDATE issues SET priority = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET priority = $1, updated_at = $2 WHERE id = $3")
                     .bind(priority).bind(&now).bind(issue_id).execute(&state.pool).await?;
             }
             if let Some(assignee_id) = input.assignee_id {
                 let val = if assignee_id <= 0 { None } else { Some(assignee_id) };
                 if let Some(v) = val {
-                    sqlx::query("UPDATE issues SET assignee_id = ?, updated_at = ? WHERE id = ?")
+                    sqlx::query("UPDATE issues SET assignee_id = $1, updated_at = $2 WHERE id = $3")
                         .bind(v).bind(&now).bind(issue_id).execute(&state.pool).await?;
                 } else {
-                    sqlx::query("UPDATE issues SET assignee_id = NULL, updated_at = ? WHERE id = ?")
+                    sqlx::query("UPDATE issues SET assignee_id = NULL, updated_at = $1 WHERE id = $2")
                         .bind(&now).bind(issue_id).execute(&state.pool).await?;
                 }
             }
 
             // Fetch new state after updating
-            let updated_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+            let updated_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
                 .bind(issue_id).fetch_one(&state.pool).await?;
             let new_snapshot = serde_json::to_string(&updated_issue).unwrap_or_default();
 
@@ -492,13 +488,15 @@ pub fn bulk_update_issues(state: State<AppState>, input: BulkUpdateInput) -> Res
         }
 
         // Fetch updated issues
-        let placeholders: Vec<String> = input.issue_ids.iter().map(|_| "?".to_string()).collect();
-        let query = format!("SELECT * FROM issues WHERE id IN ({}) ORDER BY position", placeholders.join(","));
-        let mut q = sqlx::query_as::<_, Issue>(&query);
+        let mut qb: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new("SELECT * FROM issues WHERE id IN (");
+        let mut separated = qb.separated(", ");
         for id in &input.issue_ids {
-            q = q.bind(id);
+            separated.push_bind(*id);
         }
-        q.fetch_all(&state.pool).await
+        separated.push_unseparated(") ORDER BY position");
+        qb.build_query_as::<Issue>()
+            .fetch_all(&state.pool)
+            .await
     }).map_err(|e: sqlx::Error| e.to_string())
 }
 
@@ -507,7 +505,7 @@ pub fn search_issues(state: State<AppState>, project_id: i64, query: String) -> 
     state.rt.block_on(async {
         let pattern = format!("%{}%", query);
         sqlx::query_as::<_, Issue>(
-            "SELECT * FROM issues WHERE project_id = ? AND (title LIKE ? OR description LIKE ? OR identifier LIKE ?) ORDER BY updated_at DESC"
+            "SELECT * FROM issues WHERE project_id = $1 AND (title LIKE $2 OR description LIKE $3 OR identifier LIKE $4) ORDER BY updated_at DESC"
         )
         .bind(project_id)
         .bind(&pattern)
@@ -521,7 +519,7 @@ pub fn search_issues(state: State<AppState>, project_id: i64, query: String) -> 
 #[tauri::command]
 pub fn get_sub_issues(state: State<AppState>, parent_id: i64) -> Result<Vec<Issue>, String> {
     state.rt.block_on(async {
-        sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE parent_id = ? ORDER BY position")
+        sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE parent_id = $1 ORDER BY position")
             .bind(parent_id)
             .fetch_all(&state.pool)
             .await
@@ -531,10 +529,10 @@ pub fn get_sub_issues(state: State<AppState>, parent_id: i64) -> Result<Vec<Issu
 #[tauri::command]
 pub fn set_issue_labels(state: State<AppState>, issue_id: i64, label_ids: Vec<i64>) -> Result<(), String> {
     state.rt.block_on(async {
-        sqlx::query("DELETE FROM issue_labels WHERE issue_id = ?")
+        sqlx::query("DELETE FROM issue_labels WHERE issue_id = $1")
             .bind(issue_id).execute(&state.pool).await?;
         for label_id in &label_ids {
-            sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES (?, ?)")
+            sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES ($1, $2)")
                 .bind(issue_id).bind(label_id).execute(&state.pool).await?;
         }
         Ok(())
@@ -544,7 +542,7 @@ pub fn set_issue_labels(state: State<AppState>, issue_id: i64, label_ids: Vec<i6
 #[tauri::command]
 pub fn get_activity_log(state: State<AppState>, issue_id: i64) -> Result<Vec<ActivityLogEntry>, String> {
     state.rt.block_on(async {
-        sqlx::query_as::<_, ActivityLogEntry>("SELECT * FROM activity_log WHERE issue_id = ? ORDER BY timestamp DESC")
+        sqlx::query_as::<_, ActivityLogEntry>("SELECT * FROM activity_log WHERE issue_id = $1 ORDER BY timestamp DESC")
             .bind(issue_id)
             .fetch_all(&state.pool)
             .await

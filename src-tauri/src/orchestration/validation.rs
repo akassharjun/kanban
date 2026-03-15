@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidationCheck {
@@ -19,11 +19,11 @@ pub struct ValidationResult {
 /// Criteria with "command" and "expect" fields are executed as shell commands.
 /// Returns ValidationResult with per-check pass/fail.
 pub async fn run_validation_pipeline(
-    pool: &SqlitePool,
+    pool: &PgPool,
     issue_id: i64,
 ) -> Result<ValidationResult, sqlx::Error> {
     let contract = sqlx::query_as::<_, crate::models::TaskContract>(
-        "SELECT * FROM task_contracts WHERE issue_id = ?",
+        "SELECT * FROM task_contracts WHERE issue_id = $1",
     )
     .bind(issue_id)
     .fetch_one(pool)

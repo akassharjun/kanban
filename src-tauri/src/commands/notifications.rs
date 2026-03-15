@@ -13,7 +13,7 @@ pub fn list_notifications(state: State<AppState>) -> Result<Vec<Notification>, S
 #[tauri::command]
 pub fn unread_notification_count(state: State<AppState>) -> Result<i64, String> {
     state.rt.block_on(async {
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM notifications WHERE read = 0")
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM notifications WHERE read = FALSE")
             .fetch_one(&state.pool).await
     }).map_err(|e| e.to_string())
 }
@@ -21,7 +21,7 @@ pub fn unread_notification_count(state: State<AppState>) -> Result<i64, String> 
 #[tauri::command]
 pub fn mark_notification_read(state: State<AppState>, id: i64) -> Result<(), String> {
     state.rt.block_on(async {
-        sqlx::query("UPDATE notifications SET read = 1 WHERE id = ?")
+        sqlx::query("UPDATE notifications SET read = TRUE WHERE id = $1")
             .bind(id).execute(&state.pool).await?;
         Ok(())
     }).map_err(|e: sqlx::Error| e.to_string())
@@ -30,7 +30,7 @@ pub fn mark_notification_read(state: State<AppState>, id: i64) -> Result<(), Str
 #[tauri::command]
 pub fn mark_all_notifications_read(state: State<AppState>) -> Result<(), String> {
     state.rt.block_on(async {
-        sqlx::query("UPDATE notifications SET read = 1")
+        sqlx::query("UPDATE notifications SET read = TRUE")
             .execute(&state.pool).await?;
         Ok(())
     }).map_err(|e: sqlx::Error| e.to_string())

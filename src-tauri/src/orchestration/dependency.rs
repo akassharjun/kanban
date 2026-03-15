@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 /// When a task completes, find all downstream tasks that were blocked and can
 /// now be unblocked (i.e. all their blockers are completed). Atomically
@@ -7,7 +7,7 @@ use sqlx::SqlitePool;
 ///
 /// Returns the list of issue IDs that were newly unblocked.
 pub async fn resolve_downstream(
-    pool: &SqlitePool,
+    pool: &PgPool,
     completed_issue_id: i64,
 ) -> Result<Vec<i64>, sqlx::Error> {
     let now = chrono::Utc::now().to_rfc3339();
@@ -23,7 +23,7 @@ pub async fn resolve_downstream(
           AND issue_id IN (
             SELECT ir.target_issue_id
             FROM issue_relations ir
-            WHERE ir.source_issue_id = ?
+            WHERE ir.source_issue_id = $1
               AND ir.relation_type = 'blocks'
           )
           AND NOT EXISTS (
@@ -51,8 +51,8 @@ pub async fn resolve_downstream(
                 SELECT s.id FROM statuses s
                 WHERE s.project_id = issues.project_id AND s.category = 'unstarted'
                 ORDER BY s.position ASC LIMIT 1
-             ), updated_at = ?
-             WHERE id = ?",
+             ), updated_at = $1
+             WHERE id = $2",
         )
         .bind(&now)
         .bind(issue_id)
@@ -62,7 +62,7 @@ pub async fn resolve_downstream(
         // Insert execution_log entry for the unblock event.
         sqlx::query(
             "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) \
-             VALUES (?, NULL, (SELECT attempt_count FROM task_contracts WHERE issue_id = ?), 'unblocked', 'Dependencies resolved, task unblocked', ?)",
+             VALUES ($1, NULL, (SELECT attempt_count FROM task_contracts WHERE issue_id = $2), 'unblocked', 'Dependencies resolved, task unblocked', $3)",
         )
         .bind(issue_id)
         .bind(issue_id)

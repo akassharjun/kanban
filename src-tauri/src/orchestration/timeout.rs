@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 /// Row type for timed-out task queries.
 #[derive(Debug, sqlx::FromRow)]
@@ -28,7 +28,7 @@ const DEFAULT_OFFLINE_THRESHOLD_SECONDS: i64 = 180;
 /// - Inserts an execution_log entry
 ///
 /// Returns the list of reclaimed issue_ids.
-pub async fn reclaim_timed_out_tasks(pool: &SqlitePool) -> Result<Vec<i64>, sqlx::Error> {
+pub async fn reclaim_timed_out_tasks(pool: &PgPool) -> Result<Vec<i64>, sqlx::Error> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
     // Find tasks where claimed_at + timeout_minutes has elapsed
@@ -38,7 +38,7 @@ pub async fn reclaim_timed_out_tasks(pool: &SqlitePool) -> Result<Vec<i64>, sqlx
         FROM task_contracts tc
         WHERE tc.task_state IN ('claimed', 'executing')
           AND tc.claimed_at IS NOT NULL
-          AND datetime(tc.claimed_at) < datetime('now', '-' || tc.timeout_minutes || ' minutes')
+          AND tc.claimed_at::timestamptz + (tc.timeout_minutes * interval '1 minute') < NOW()
         "#,
     )
     .fetch_all(pool)
@@ -76,7 +76,7 @@ pub async fn reclaim_timed_out_tasks(pool: &SqlitePool) -> Result<Vec<i64>, sqlx
             SELECT pac.max_attempts
             FROM project_agent_configs pac
             JOIN issues i ON i.project_id = pac.project_id
-            WHERE i.id = ?
+            WHERE i.id = $1
             "#,
         )
         .bind(task.issue_id)
@@ -91,7 +91,7 @@ pub async fn reclaim_timed_out_tasks(pool: &SqlitePool) -> Result<Vec<i64>, sqlx
 
         // Update task_contracts: requeue or block, clear claimed_by/claimed_at
         sqlx::query(
-            "UPDATE task_contracts SET task_state = ?, claimed_by = NULL, claimed_at = NULL, attempt_count = ?, context = ? WHERE issue_id = ?",
+            "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3 WHERE issue_id = $4",
         )
         .bind(new_state)
         .bind(new_attempt_count)
@@ -104,10 +104,10 @@ pub async fn reclaim_timed_out_tasks(pool: &SqlitePool) -> Result<Vec<i64>, sqlx
         sqlx::query(
             "UPDATE issues SET status_id = (
                 SELECT s.id FROM statuses s
-                WHERE s.project_id = issues.project_id AND s.category = ?
+                WHERE s.project_id = issues.project_id AND s.category = $1
                 ORDER BY s.position ASC LIMIT 1
-             ), updated_at = ?
-             WHERE id = ?",
+             ), updated_at = $2
+             WHERE id = $3",
         )
         .bind(status_category)
         .bind(&now)
@@ -117,7 +117,7 @@ pub async fn reclaim_timed_out_tasks(pool: &SqlitePool) -> Result<Vec<i64>, sqlx
 
         // Insert execution_log entry
         sqlx::query(
-            "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'timeout', 'Task reclaimed due to timeout', ?)",
+            "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'timeout', 'Task reclaimed due to timeout', $4)",
         )
         .bind(task.issue_id)
         .bind(agent_id)
@@ -143,7 +143,7 @@ pub async fn reclaim_timed_out_tasks(pool: &SqlitePool) -> Result<Vec<i64>, sqlx
 /// - Reclaims all their claimed/executing tasks (same logic as timed-out tasks)
 ///
 /// Returns the list of agent IDs that went offline.
-pub async fn reclaim_offline_agents(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
+pub async fn reclaim_offline_agents(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
     // Use default threshold; no per-agent config since agents are global
@@ -153,10 +153,10 @@ pub async fn reclaim_offline_agents(pool: &SqlitePool) -> Result<Vec<String>, sq
         FROM agents a
         WHERE a.status != 'offline'
           AND a.last_heartbeat IS NOT NULL
-          AND datetime(a.last_heartbeat) < datetime('now', ? || ' seconds')
+          AND a.last_heartbeat::timestamptz + ($1 * interval '1 second') < NOW()
         "#,
     )
-    .bind(format!("-{}", DEFAULT_OFFLINE_THRESHOLD_SECONDS))
+    .bind(DEFAULT_OFFLINE_THRESHOLD_SECONDS)
     .fetch_all(pool)
     .await?;
 
@@ -164,7 +164,7 @@ pub async fn reclaim_offline_agents(pool: &SqlitePool) -> Result<Vec<String>, sq
 
     for agent in &offline_agents {
         // Set agent status to offline
-        sqlx::query("UPDATE agents SET status = 'offline' WHERE id = ?")
+        sqlx::query("UPDATE agents SET status = 'offline' WHERE id = $1")
             .bind(&agent.id)
             .execute(pool)
             .await?;
@@ -174,7 +174,7 @@ pub async fn reclaim_offline_agents(pool: &SqlitePool) -> Result<Vec<String>, sq
             r#"
             SELECT tc.issue_id, tc.claimed_by, tc.attempt_count, tc.context
             FROM task_contracts tc
-            WHERE tc.claimed_by = ?
+            WHERE tc.claimed_by = $1
               AND tc.task_state IN ('claimed', 'executing')
             "#,
         )
@@ -211,7 +211,7 @@ pub async fn reclaim_offline_agents(pool: &SqlitePool) -> Result<Vec<String>, sq
                 SELECT pac.max_attempts
                 FROM project_agent_configs pac
                 JOIN issues i ON i.project_id = pac.project_id
-                WHERE i.id = ?
+                WHERE i.id = $1
                 "#,
             )
             .bind(task.issue_id)
@@ -226,7 +226,7 @@ pub async fn reclaim_offline_agents(pool: &SqlitePool) -> Result<Vec<String>, sq
 
             // Update task_contracts
             sqlx::query(
-                "UPDATE task_contracts SET task_state = ?, claimed_by = NULL, claimed_at = NULL, attempt_count = ?, context = ? WHERE issue_id = ?",
+                "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3 WHERE issue_id = $4",
             )
             .bind(new_state)
             .bind(new_attempt_count)
@@ -239,10 +239,10 @@ pub async fn reclaim_offline_agents(pool: &SqlitePool) -> Result<Vec<String>, sq
             sqlx::query(
                 "UPDATE issues SET status_id = (
                     SELECT s.id FROM statuses s
-                    WHERE s.project_id = issues.project_id AND s.category = ?
+                    WHERE s.project_id = issues.project_id AND s.category = $1
                     ORDER BY s.position ASC LIMIT 1
-                 ), updated_at = ?
-                 WHERE id = ?",
+                 ), updated_at = $2
+                 WHERE id = $3",
             )
             .bind(status_category)
             .bind(&now)
@@ -252,7 +252,7 @@ pub async fn reclaim_offline_agents(pool: &SqlitePool) -> Result<Vec<String>, sq
 
             // Insert execution_log entry
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'timeout', 'Task reclaimed due to agent going offline', ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'timeout', 'Task reclaimed due to agent going offline', $4)",
             )
             .bind(task.issue_id)
             .bind(&agent.id)

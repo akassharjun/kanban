@@ -29,7 +29,7 @@ pub fn list_custom_fields(
         .rt
         .block_on(async {
             sqlx::query_as::<_, CustomField>(
-                "SELECT * FROM custom_fields WHERE project_id = ? ORDER BY position ASC, id ASC",
+                "SELECT * FROM custom_fields WHERE project_id = $1 ORDER BY position ASC, id ASC",
             )
             .bind(project_id)
             .fetch_all(&state.pool)
@@ -55,19 +55,19 @@ pub fn create_custom_field(
     state
         .rt
         .block_on(async {
-            let result = sqlx::query(
-                "INSERT INTO custom_fields (project_id, name, field_type, options, position) VALUES (?, ?, ?, ?, ?)",
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO custom_fields (project_id, name, field_type, options, position) VALUES ($1, $2, $3, $4, $5) RETURNING id",
             )
             .bind(input.project_id)
             .bind(input.name.trim())
             .bind(&field_type)
             .bind(&input.options)
             .bind(position)
-            .execute(&state.pool)
+            .fetch_one(&state.pool)
             .await?;
 
-            sqlx::query_as::<_, CustomField>("SELECT * FROM custom_fields WHERE id = ?")
-                .bind(result.last_insert_rowid())
+            sqlx::query_as::<_, CustomField>("SELECT * FROM custom_fields WHERE id = $1")
+                .bind(id)
                 .fetch_one(&state.pool)
                 .await
         })
@@ -89,7 +89,7 @@ pub fn update_custom_field(
     state
         .rt
         .block_on(async {
-            let existing = sqlx::query_as::<_, CustomField>("SELECT * FROM custom_fields WHERE id = ?")
+            let existing = sqlx::query_as::<_, CustomField>("SELECT * FROM custom_fields WHERE id = $1")
                 .bind(id)
                 .fetch_one(&state.pool)
                 .await
@@ -101,7 +101,7 @@ pub fn update_custom_field(
             let position = input.position.unwrap_or(existing.position);
 
             sqlx::query(
-                "UPDATE custom_fields SET name = ?, field_type = ?, options = ?, position = ? WHERE id = ?",
+                "UPDATE custom_fields SET name = $1, field_type = $2, options = $3, position = $4 WHERE id = $5",
             )
             .bind(&name)
             .bind(&field_type)
@@ -111,7 +111,7 @@ pub fn update_custom_field(
             .execute(&state.pool)
             .await?;
 
-            sqlx::query_as::<_, CustomField>("SELECT * FROM custom_fields WHERE id = ?")
+            sqlx::query_as::<_, CustomField>("SELECT * FROM custom_fields WHERE id = $1")
                 .bind(id)
                 .fetch_one(&state.pool)
                 .await
@@ -124,7 +124,7 @@ pub fn delete_custom_field(state: State<AppState>, id: i64) -> Result<(), String
     state
         .rt
         .block_on(async {
-            let result = sqlx::query("DELETE FROM custom_fields WHERE id = ?")
+            let result = sqlx::query("DELETE FROM custom_fields WHERE id = $1")
                 .bind(id)
                 .execute(&state.pool)
                 .await?;
@@ -145,7 +145,7 @@ pub fn get_issue_custom_values(
         .rt
         .block_on(async {
             sqlx::query_as::<_, CustomFieldValue>(
-                "SELECT * FROM issue_custom_field_values WHERE issue_id = ?",
+                "SELECT * FROM issue_custom_field_values WHERE issue_id = $1",
             )
             .bind(issue_id)
             .fetch_all(&state.pool)
@@ -165,7 +165,7 @@ pub fn set_issue_custom_value(
         .rt
         .block_on(async {
             sqlx::query(
-                "INSERT INTO issue_custom_field_values (issue_id, field_id, value) VALUES (?, ?, ?) ON CONFLICT(issue_id, field_id) DO UPDATE SET value = excluded.value",
+                "INSERT INTO issue_custom_field_values (issue_id, field_id, value) VALUES ($1, $2, $3) ON CONFLICT(issue_id, field_id) DO UPDATE SET value = excluded.value",
             )
             .bind(issue_id)
             .bind(field_id)

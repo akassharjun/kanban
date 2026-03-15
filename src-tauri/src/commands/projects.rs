@@ -22,7 +22,7 @@ pub struct UpdateProjectInput {
 #[tauri::command]
 pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
     state.rt.block_on(async {
-        sqlx::query_as::<_, Project>("SELECT * FROM projects ORDER BY name")
+        sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE deleted_at IS NULL ORDER BY name")
             .fetch_all(&state.pool)
             .await
     }).map_err(|e| e.to_string())
@@ -31,7 +31,7 @@ pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
 #[tauri::command]
 pub fn get_project(state: State<AppState>, id: i64) -> Result<Project, String> {
     state.rt.block_on(async {
-        sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
+        sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1")
             .bind(id)
             .fetch_one(&state.pool)
             .await
@@ -44,8 +44,8 @@ pub fn create_project(state: State<AppState>, input: CreateProjectInput) -> Resu
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
         // Insert project
-        let result = sqlx::query(
-            "INSERT INTO projects (name, description, icon, status, prefix, issue_counter, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, 0, ?, ?)"
+        let project_id: i64 = sqlx::query_scalar(
+            "INSERT INTO projects (name, description, icon, status, prefix, issue_counter, created_at, updated_at) VALUES ($1, $2, $3, 'active', $4, 0, $5, $6) RETURNING id"
         )
         .bind(&input.name)
         .bind(&input.description)
@@ -53,10 +53,8 @@ pub fn create_project(state: State<AppState>, input: CreateProjectInput) -> Resu
         .bind(&input.prefix)
         .bind(&now)
         .bind(&now)
-        .execute(&state.pool)
+        .fetch_one(&state.pool)
         .await?;
-
-        let project_id = result.last_insert_rowid();
 
         // Create default statuses
         let default_statuses = vec![
@@ -71,7 +69,7 @@ pub fn create_project(state: State<AppState>, input: CreateProjectInput) -> Resu
 
         for (name, category, color, position) in default_statuses {
             sqlx::query(
-                "INSERT INTO statuses (project_id, name, category, color, position) VALUES (?, ?, ?, ?, ?)"
+                "INSERT INTO statuses (project_id, name, category, color, position) VALUES ($1, $2, $3, $4, $5)"
             )
             .bind(project_id)
             .bind(name)
@@ -83,13 +81,13 @@ pub fn create_project(state: State<AppState>, input: CreateProjectInput) -> Resu
         }
 
         // Log undo
-        let project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
+        let project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1")
             .bind(project_id)
             .fetch_one(&state.pool)
             .await?;
 
         let snapshot = serde_json::to_string(&project).unwrap_or_default();
-        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES ('create', 'project', ?, NULL, ?, ?)")
+        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES ('create', 'project', $1, NULL, $2, $3)")
             .bind(project_id)
             .bind(&snapshot)
             .bind(&now)
@@ -106,7 +104,7 @@ pub fn update_project(state: State<AppState>, id: i64, input: UpdateProjectInput
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
         // Get old state for undo
-        let old_project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
+        let old_project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1")
             .bind(id)
             .fetch_one(&state.pool)
             .await?;
@@ -136,11 +134,11 @@ pub fn update_project(state: State<AppState>, id: i64, input: UpdateProjectInput
         qb.push_bind(id);
         qb.build().execute(&state.pool).await?;
 
-        let updated = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
+        let updated = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1")
             .bind(id).fetch_one(&state.pool).await?;
         let new_snapshot = serde_json::to_string(&updated).unwrap_or_default();
 
-        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES ('update', 'project', ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES ('update', 'project', $1, $2, $3, $4)")
             .bind(id).bind(&old_snapshot).bind(&new_snapshot).bind(&now)
             .execute(&state.pool).await?;
 
@@ -152,16 +150,28 @@ pub fn update_project(state: State<AppState>, id: i64, input: UpdateProjectInput
 pub fn delete_project(state: State<AppState>, id: i64) -> Result<(), String> {
     state.rt.block_on(async {
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
-        let old_project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
+        let old_project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1")
             .bind(id).fetch_one(&state.pool).await?;
         let old_snapshot = serde_json::to_string(&old_project).unwrap_or_default();
 
-        sqlx::query("DELETE FROM projects WHERE id = ?").bind(id).execute(&state.pool).await?;
+        sqlx::query("UPDATE projects SET deleted_at = $1 WHERE id = $2")
+            .bind(&now).bind(id).execute(&state.pool).await?;
 
-        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES ('delete', 'project', ?, ?, NULL, ?)")
+        sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES ('delete', 'project', $1, $2, NULL, $3)")
             .bind(id).bind(&old_snapshot).bind(&now)
             .execute(&state.pool).await?;
 
         Ok(())
+    }).map_err(|e: sqlx::Error| e.to_string())
+}
+
+#[tauri::command]
+pub fn restore_project(state: State<AppState>, id: i64) -> Result<Project, String> {
+    state.rt.block_on(async {
+        sqlx::query("UPDATE projects SET deleted_at = NULL WHERE id = $1")
+            .bind(id).execute(&state.pool).await?;
+
+        sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1")
+            .bind(id).fetch_one(&state.pool).await
     }).map_err(|e: sqlx::Error| e.to_string())
 }

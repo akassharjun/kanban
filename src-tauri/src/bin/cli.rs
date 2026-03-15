@@ -1,8 +1,17 @@
 use clap::{Parser, Subcommand};
-use kanban_lib::db;
 use kanban_lib::models::*;
 use kanban_lib::orchestration;
-use sqlx::{QueryBuilder, Row, Sqlite, SqlitePool};
+use sqlx::{QueryBuilder, Row, Postgres, PgPool};
+
+fn notify_change() {
+    if let Ok(redis_url) = std::env::var("REDIS_URL") {
+        if let Ok(client) = redis::Client::open(redis_url) {
+            if let Ok(mut conn) = client.get_connection() {
+                let _: Result<(), _> = redis::cmd("PUBLISH").arg("kanban:db-changed").arg("1").query(&mut conn);
+            }
+        }
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "kanban", about = "Kanban - Desktop Project Management CLI")]
@@ -467,7 +476,16 @@ struct ExportData {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    let pool = db::init_db().await?;
+
+    dotenvy::dotenv().ok();
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://kanban:kanban@localhost:5432/kanban".to_string());
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to database");
+    sqlx::migrate!("./migrations").run(&pool).await.expect("Failed to run migrations");
 
     match cli.command {
         Commands::Project { action } => handle_project(&pool, action, cli.json).await?,
@@ -487,7 +505,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn handle_project(
-    pool: &SqlitePool,
+    pool: &PgPool,
     action: ProjectAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -511,8 +529,8 @@ async fn handle_project(
             icon,
         } => {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
-            let result = sqlx::query(
-                "INSERT INTO projects (name, description, icon, status, prefix, issue_counter, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, 0, ?, ?)",
+            let project_id: i64 = sqlx::query_scalar(
+                "INSERT INTO projects (name, description, icon, status, prefix, issue_counter, created_at, updated_at) VALUES ($1, $2, $3, 'active', $4, 0, $5, $6) RETURNING id",
             )
             .bind(&name)
             .bind(&description)
@@ -520,9 +538,8 @@ async fn handle_project(
             .bind(&prefix)
             .bind(&now)
             .bind(&now)
-            .execute(pool)
+            .fetch_one(pool)
             .await?;
-            let project_id = result.last_insert_rowid();
 
             // Create default statuses
             let defaults = [
@@ -535,7 +552,7 @@ async fn handle_project(
                 ("Discarded", "discarded", "#6b7280", 6),
             ];
             for (sname, cat, color, pos) in defaults {
-                sqlx::query("INSERT INTO statuses (project_id, name, category, color, position) VALUES (?, ?, ?, ?, ?)")
+                sqlx::query("INSERT INTO statuses (project_id, name, category, color, position) VALUES ($1, $2, $3, $4, $5)")
                     .bind(project_id)
                     .bind(sname)
                     .bind(cat)
@@ -545,7 +562,7 @@ async fn handle_project(
                     .await?;
             }
 
-            let project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
+            let project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1")
                 .bind(project_id)
                 .fetch_one(pool)
                 .await?;
@@ -554,6 +571,7 @@ async fn handle_project(
             } else {
                 println!("Created project: {} ({})", project.name, project.prefix);
             }
+            notify_change();
         }
         ProjectAction::Update {
             id,
@@ -563,7 +581,7 @@ async fn handle_project(
         } => {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             if let Some(n) = &name {
-                sqlx::query("UPDATE projects SET name = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE projects SET name = $1, updated_at = $2 WHERE id = $3")
                     .bind(n)
                     .bind(&now)
                     .bind(id)
@@ -571,7 +589,7 @@ async fn handle_project(
                     .await?;
             }
             if let Some(d) = &description {
-                sqlx::query("UPDATE projects SET description = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE projects SET description = $1, updated_at = $2 WHERE id = $3")
                     .bind(d)
                     .bind(&now)
                     .bind(id)
@@ -579,14 +597,14 @@ async fn handle_project(
                     .await?;
             }
             if let Some(s) = &status {
-                sqlx::query("UPDATE projects SET status = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE projects SET status = $1, updated_at = $2 WHERE id = $3")
                     .bind(s)
                     .bind(&now)
                     .bind(id)
                     .execute(pool)
                     .await?;
             }
-            let project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
+            let project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1")
                 .bind(id)
                 .fetch_one(pool)
                 .await?;
@@ -595,20 +613,22 @@ async fn handle_project(
             } else {
                 println!("Updated project: {}", project.name);
             }
+            notify_change();
         }
         ProjectAction::Delete { id } => {
-            sqlx::query("DELETE FROM projects WHERE id = ?")
+            sqlx::query("DELETE FROM projects WHERE id = $1")
                 .bind(id)
                 .execute(pool)
                 .await?;
             println!("Deleted project {}", id);
+            notify_change();
         }
     }
     Ok(())
 }
 
 async fn handle_issue(
-    pool: &SqlitePool,
+    pool: &PgPool,
     action: IssueAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -619,15 +639,20 @@ async fn handle_issue(
             priority,
             assignee,
         } => {
-            let mut query = String::from("SELECT * FROM issues WHERE project_id = ?");
+            let mut param_idx = 1;
+            let mut query = format!("SELECT * FROM issues WHERE project_id = ${}", param_idx);
+            param_idx += 1;
             if status.is_some() {
-                query.push_str(" AND status_id = ?");
+                query.push_str(&format!(" AND status_id = ${}", param_idx));
+                param_idx += 1;
             }
             if priority.is_some() {
-                query.push_str(" AND priority = ?");
+                query.push_str(&format!(" AND priority = ${}", param_idx));
+                param_idx += 1;
             }
             if assignee.is_some() {
-                query.push_str(" AND assignee_id = ?");
+                query.push_str(&format!(" AND assignee_id = ${}", param_idx));
+                // param_idx += 1;
             }
             query.push_str(" ORDER BY position");
 
@@ -670,7 +695,7 @@ async fn handle_issue(
 
             // Atomically increment counter and get new value + prefix
             let (counter, prefix): (i64, String) = sqlx::query_as(
-                "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix"
+                "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix"
             )
             .bind(project)
             .fetch_one(&mut *tx)
@@ -678,7 +703,7 @@ async fn handle_issue(
             let identifier = format!("{}-{}", prefix, counter);
 
             let max_pos: Option<f64> = sqlx::query_scalar(
-                "SELECT MAX(position) FROM issues WHERE project_id = ? AND status_id = ?",
+                "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status_id = $2",
             )
             .bind(project)
             .bind(status)
@@ -686,8 +711,8 @@ async fn handle_issue(
             .await?;
             let position = max_pos.unwrap_or(-1.0) + 1.0;
 
-            let result = sqlx::query(
-                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            let issue_id: i64 = sqlx::query_scalar(
+                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
             )
             .bind(project)
             .bind(&identifier)
@@ -700,11 +725,11 @@ async fn handle_issue(
             .bind(position)
             .bind(&now)
             .bind(&now)
-            .execute(&mut *tx)
+            .fetch_one(&mut *tx)
             .await?;
 
-            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
-                .bind(result.last_insert_rowid())
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
+                .bind(issue_id)
                 .fetch_one(&mut *tx)
                 .await?;
 
@@ -714,6 +739,7 @@ async fn handle_issue(
             } else {
                 println!("Created: {} - {}", issue.identifier, issue.title);
             }
+            notify_change();
         }
         IssueAction::Update {
             identifier,
@@ -724,12 +750,12 @@ async fn handle_issue(
             description,
         } => {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
-            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                 .bind(&identifier)
                 .fetch_one(pool)
                 .await?;
             if let Some(t) = &title {
-                sqlx::query("UPDATE issues SET title = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET title = $1, updated_at = $2 WHERE id = $3")
                     .bind(t)
                     .bind(&now)
                     .bind(issue.id)
@@ -737,7 +763,7 @@ async fn handle_issue(
                     .await?;
             }
             if let Some(s) = status {
-                sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET status_id = $1, updated_at = $2 WHERE id = $3")
                     .bind(s)
                     .bind(&now)
                     .bind(issue.id)
@@ -745,7 +771,7 @@ async fn handle_issue(
                     .await?;
             }
             if let Some(p) = &priority {
-                sqlx::query("UPDATE issues SET priority = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET priority = $1, updated_at = $2 WHERE id = $3")
                     .bind(p)
                     .bind(&now)
                     .bind(issue.id)
@@ -753,7 +779,7 @@ async fn handle_issue(
                     .await?;
             }
             if let Some(a) = assignee {
-                sqlx::query("UPDATE issues SET assignee_id = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET assignee_id = $1, updated_at = $2 WHERE id = $3")
                     .bind(a)
                     .bind(&now)
                     .bind(issue.id)
@@ -761,14 +787,14 @@ async fn handle_issue(
                     .await?;
             }
             if let Some(d) = &description {
-                sqlx::query("UPDATE issues SET description = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET description = $1, updated_at = $2 WHERE id = $3")
                     .bind(d)
                     .bind(&now)
                     .bind(issue.id)
                     .execute(pool)
                     .await?;
             }
-            let updated = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+            let updated = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
@@ -777,11 +803,12 @@ async fn handle_issue(
             } else {
                 println!("Updated: {} - {}", updated.identifier, updated.title);
             }
+            notify_change();
         }
         IssueAction::Search { project, query } => {
             let pattern = format!("%{}%", query);
             let issues = sqlx::query_as::<_, Issue>(
-                "SELECT * FROM issues WHERE project_id = ? AND (title LIKE ? OR description LIKE ? OR identifier LIKE ?) ORDER BY updated_at DESC",
+                "SELECT * FROM issues WHERE project_id = $1 AND (title LIKE $2 OR description LIKE $3 OR identifier LIKE $4) ORDER BY updated_at DESC",
             )
             .bind(project)
             .bind(&pattern)
@@ -798,67 +825,71 @@ async fn handle_issue(
             }
         }
         IssueAction::Move { identifier, parent } => {
-            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                 .bind(&identifier)
                 .fetch_one(pool)
                 .await?;
             let parent_issue =
-                sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+                sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                     .bind(&parent)
                     .fetch_one(pool)
                     .await?;
-            sqlx::query("UPDATE issues SET parent_id = ? WHERE id = ?")
+            sqlx::query("UPDATE issues SET parent_id = $1 WHERE id = $2")
                 .bind(parent_issue.id)
                 .bind(issue.id)
                 .execute(pool)
                 .await?;
             println!("{} is now a child of {}", identifier, parent);
+            notify_change();
         }
         IssueAction::Block { identifier, by } => {
-            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                 .bind(&identifier)
                 .fetch_one(pool)
                 .await?;
-            let blocker = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+            let blocker = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                 .bind(&by)
                 .fetch_one(pool)
                 .await?;
-            sqlx::query("INSERT INTO issue_relations (source_issue_id, target_issue_id, relation_type) VALUES (?, ?, 'blocked_by')")
+            sqlx::query("INSERT INTO issue_relations (source_issue_id, target_issue_id, relation_type) VALUES ($1, $2, 'blocked_by')")
                 .bind(issue.id)
                 .bind(blocker.id)
                 .execute(pool)
                 .await?;
             println!("{} is blocked by {}", identifier, by);
+            notify_change();
         }
         IssueAction::Relate { identifier, to } => {
-            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                 .bind(&identifier)
                 .fetch_one(pool)
                 .await?;
-            let target = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+            let target = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                 .bind(&to)
                 .fetch_one(pool)
                 .await?;
-            sqlx::query("INSERT INTO issue_relations (source_issue_id, target_issue_id, relation_type) VALUES (?, ?, 'related')")
+            sqlx::query("INSERT INTO issue_relations (source_issue_id, target_issue_id, relation_type) VALUES ($1, $2, 'related')")
                 .bind(issue.id)
                 .bind(target.id)
                 .execute(pool)
                 .await?;
             println!("{} is related to {}", identifier, to);
+            notify_change();
         }
         IssueAction::Delete { identifier } => {
-            sqlx::query("DELETE FROM issues WHERE identifier = ?")
+            sqlx::query("DELETE FROM issues WHERE identifier = $1")
                 .bind(&identifier)
                 .execute(pool)
                 .await?;
             println!("Deleted {}", identifier);
+            notify_change();
         }
     }
     Ok(())
 }
 
 async fn handle_member(
-    pool: &SqlitePool,
+    pool: &PgPool,
     action: MemberAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -887,18 +918,18 @@ async fn handle_member(
         } => {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let color = "#6366f1";
-            let result = sqlx::query(
-                "INSERT INTO members (name, display_name, email, avatar_color, created_at) VALUES (?, ?, ?, ?, ?)",
+            let member_id: i64 = sqlx::query_scalar(
+                "INSERT INTO members (name, display_name, email, avatar_color, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id",
             )
             .bind(&name)
             .bind(&display_name)
             .bind(&email)
             .bind(color)
             .bind(&now)
-            .execute(pool)
+            .fetch_one(pool)
             .await?;
-            let member = sqlx::query_as::<_, Member>("SELECT * FROM members WHERE id = ?")
-                .bind(result.last_insert_rowid())
+            let member = sqlx::query_as::<_, Member>("SELECT * FROM members WHERE id = $1")
+                .bind(member_id)
                 .fetch_one(pool)
                 .await?;
             if json {
@@ -906,27 +937,29 @@ async fn handle_member(
             } else {
                 println!("Added member: {}", member.name);
             }
+            notify_change();
         }
         MemberAction::Delete { id } => {
-            sqlx::query("DELETE FROM members WHERE id = ?")
+            sqlx::query("DELETE FROM members WHERE id = $1")
                 .bind(id)
                 .execute(pool)
                 .await?;
             println!("Deleted member {}", id);
+            notify_change();
         }
     }
     Ok(())
 }
 
 async fn handle_label(
-    pool: &SqlitePool,
+    pool: &PgPool,
     action: LabelAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         LabelAction::List { project } => {
             let labels = sqlx::query_as::<_, Label>(
-                "SELECT * FROM labels WHERE project_id = ? ORDER BY name",
+                "SELECT * FROM labels WHERE project_id = $1 ORDER BY name",
             )
             .bind(project)
             .fetch_all(pool)
@@ -944,15 +977,16 @@ async fn handle_label(
             name,
             color,
         } => {
-            let result =
-                sqlx::query("INSERT INTO labels (project_id, name, color) VALUES (?, ?, ?)")
+            let label_id: i64 = sqlx::query_scalar(
+                "INSERT INTO labels (project_id, name, color) VALUES ($1, $2, $3) RETURNING id",
+            )
                     .bind(project)
                     .bind(&name)
                     .bind(&color)
-                    .execute(pool)
+                    .fetch_one(pool)
                     .await?;
-            let label = sqlx::query_as::<_, Label>("SELECT * FROM labels WHERE id = ?")
-                .bind(result.last_insert_rowid())
+            let label = sqlx::query_as::<_, Label>("SELECT * FROM labels WHERE id = $1")
+                .bind(label_id)
                 .fetch_one(pool)
                 .await?;
             if json {
@@ -960,20 +994,22 @@ async fn handle_label(
             } else {
                 println!("Created label: {} ({})", label.name, label.color);
             }
+            notify_change();
         }
         LabelAction::Delete { id } => {
-            sqlx::query("DELETE FROM labels WHERE id = ?")
+            sqlx::query("DELETE FROM labels WHERE id = $1")
                 .bind(id)
                 .execute(pool)
                 .await?;
             println!("Deleted label {}", id);
+            notify_change();
         }
     }
     Ok(())
 }
 
 async fn handle_notifications(
-    pool: &SqlitePool,
+    pool: &PgPool,
     action: NotificationAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1002,21 +1038,22 @@ async fn handle_notifications(
                 .execute(pool)
                 .await?;
             println!("Cleared all notifications");
+            notify_change();
         }
     }
     Ok(())
 }
 
 async fn handle_comment(
-    pool: &SqlitePool,
+    pool: &PgPool,
     action: CommentAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         CommentAction::List { identifier } => {
-            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                 .bind(&identifier).fetch_one(pool).await?;
-            let comments = sqlx::query_as::<_, Comment>("SELECT * FROM comments WHERE issue_id = ? ORDER BY created_at ASC")
+            let comments = sqlx::query_as::<_, Comment>("SELECT * FROM comments WHERE issue_id = $1 ORDER BY created_at ASC")
                 .bind(issue.id).fetch_all(pool).await?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&comments)?);
@@ -1026,7 +1063,7 @@ async fn handle_comment(
                 } else {
                     for c in &comments {
                         let member_name = if let Some(mid) = c.member_id {
-                            sqlx::query_scalar::<_, String>("SELECT COALESCE(display_name, name) FROM members WHERE id = ?")
+                            sqlx::query_scalar::<_, String>("SELECT COALESCE(display_name, name) FROM members WHERE id = $1")
                                 .bind(mid).fetch_optional(pool).await?.unwrap_or_else(|| "Unknown".to_string())
                         } else {
                             "System".to_string()
@@ -1038,28 +1075,30 @@ async fn handle_comment(
             }
         }
         CommentAction::Add { identifier, content, member } => {
-            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                 .bind(&identifier).fetch_one(pool).await?;
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
-            let result = sqlx::query("INSERT INTO comments (issue_id, member_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+            let comment_id: i64 = sqlx::query_scalar("INSERT INTO comments (issue_id, member_id, content, created_at, updated_at) VALUES ($1, $2, $3, $4, $5) RETURNING id")
                 .bind(issue.id).bind(member).bind(&content).bind(&now).bind(&now)
-                .execute(pool).await?;
-            let comment = sqlx::query_as::<_, Comment>("SELECT * FROM comments WHERE id = ?")
-                .bind(result.last_insert_rowid()).fetch_one(pool).await?;
+                .fetch_one(pool).await?;
+            let comment = sqlx::query_as::<_, Comment>("SELECT * FROM comments WHERE id = $1")
+                .bind(comment_id).fetch_one(pool).await?;
             if json { println!("{}", serde_json::to_string_pretty(&comment)?); }
             else { println!("Comment added to {} (id: {})", identifier, comment.id); }
+            notify_change();
         }
         CommentAction::Delete { id } => {
-            sqlx::query("DELETE FROM comments WHERE id = ?").bind(id).execute(pool).await?;
+            sqlx::query("DELETE FROM comments WHERE id = $1").bind(id).execute(pool).await?;
             println!("Deleted comment {}", id);
+            notify_change();
         }
     }
     Ok(())
 }
 
 /// Helper: resolve an issue identifier (e.g. "KAN-42") to the issue row.
-async fn resolve_issue(pool: &SqlitePool, identifier: &str) -> Result<Issue, Box<dyn std::error::Error>> {
-    let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+async fn resolve_issue(pool: &PgPool, identifier: &str) -> Result<Issue, Box<dyn std::error::Error>> {
+    let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
         .bind(identifier)
         .fetch_one(pool)
         .await?;
@@ -1067,16 +1106,16 @@ async fn resolve_issue(pool: &SqlitePool, identifier: &str) -> Result<Issue, Box
 }
 
 /// Helper: sync an issue's status_id to a status matching the given category.
-async fn sync_issue_status_to_category(pool: &SqlitePool, issue_id: i64, category: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn sync_issue_status_to_category(pool: &PgPool, issue_id: i64, category: &str) -> Result<(), Box<dyn std::error::Error>> {
     let now = chrono::Utc::now().to_rfc3339();
     sqlx::query(
         "UPDATE issues SET status_id = (
             SELECT s.id FROM statuses s
-            WHERE s.project_id = (SELECT project_id FROM issues WHERE id = ?)
-              AND s.category = ?
+            WHERE s.project_id = (SELECT project_id FROM issues WHERE id = $1)
+              AND s.category = $2
             ORDER BY s.position ASC LIMIT 1
-         ), updated_at = ?
-         WHERE id = ?",
+         ), updated_at = $3
+         WHERE id = $4",
     )
     .bind(issue_id)
     .bind(category)
@@ -1088,7 +1127,7 @@ async fn sync_issue_status_to_category(pool: &SqlitePool, issue_id: i64, categor
 }
 
 async fn handle_agent(
-    pool: &SqlitePool,
+    pool: &PgPool,
     action: AgentAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1115,7 +1154,7 @@ async fn handle_agent(
                 .unwrap_or_else(|| "[]".to_string());
 
             sqlx::query(
-                "INSERT INTO agents (id, name, skills, task_types, max_concurrent, max_complexity, status, registered_at, last_heartbeat) VALUES (?, ?, ?, ?, ?, ?, 'online', ?, ?)",
+                "INSERT INTO agents (id, name, skills, task_types, max_concurrent, max_complexity, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4, $5, $6, 'online', $7, $8)",
             )
             .bind(&id)
             .bind(&name)
@@ -1129,14 +1168,14 @@ async fn handle_agent(
             .await?;
 
             sqlx::query(
-                "INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES (?, 0, 0, 0.0, 0, '{}')",
+                "INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES ($1, 0, 0, 0.0, 0, '{}')",
             )
             .bind(&id)
             .execute(pool)
             .await?;
 
             if json {
-                let agent = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE id = ?")
+                let agent = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE id = $1")
                     .bind(&id)
                     .fetch_one(pool)
                     .await?;
@@ -1144,17 +1183,18 @@ async fn handle_agent(
             } else {
                 println!("Registered agent: {} (id: {})", name, id);
             }
+            notify_change();
         }
         AgentAction::Heartbeat { id } => {
             let now = chrono::Utc::now().to_rfc3339();
             let active_count: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM task_contracts WHERE claimed_by = ? AND task_state IN ('claimed', 'executing')",
+                "SELECT COUNT(*) FROM task_contracts WHERE claimed_by = $1 AND task_state IN ('claimed', 'executing')",
             )
             .bind(&id)
             .fetch_one(pool)
             .await?;
             let new_status = if active_count.0 > 0 { "busy" } else { "online" };
-            sqlx::query("UPDATE agents SET last_heartbeat = ?, status = ? WHERE id = ?")
+            sqlx::query("UPDATE agents SET last_heartbeat = $1, status = $2 WHERE id = $3")
                 .bind(&now)
                 .bind(new_status)
                 .bind(&id)
@@ -1165,25 +1205,26 @@ async fn handle_agent(
             } else {
                 println!("Heartbeat: {} (status: {}, active: {})", id, new_status, active_count.0);
             }
+            notify_change();
         }
         AgentAction::Deregister { id } => {
             let now = chrono::Utc::now().to_rfc3339();
             // Reclaim active tasks
             let active_tasks: Vec<(i64,)> = sqlx::query_as(
-                "SELECT issue_id FROM task_contracts WHERE claimed_by = ? AND task_state IN ('claimed', 'executing')",
+                "SELECT issue_id FROM task_contracts WHERE claimed_by = $1 AND task_state IN ('claimed', 'executing')",
             )
             .bind(&id)
             .fetch_all(pool)
             .await?;
 
             for (issue_id,) in &active_tasks {
-                sqlx::query("UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL WHERE issue_id = ?")
+                sqlx::query("UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL WHERE issue_id = $1")
                     .bind(issue_id)
                     .execute(pool)
                     .await?;
                 sync_issue_status_to_category(pool, *issue_id, "unstarted").await?;
                 sqlx::query(
-                    "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, 0, 'reclaim', 'Agent deregistered, task requeued', ?)",
+                    "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, 0, 'reclaim', 'Agent deregistered, task requeued', $3)",
                 )
                 .bind(issue_id)
                 .bind(&id)
@@ -1192,11 +1233,12 @@ async fn handle_agent(
                 .await?;
             }
 
-            sqlx::query("DELETE FROM agents WHERE id = ?")
+            sqlx::query("DELETE FROM agents WHERE id = $1")
                 .bind(&id)
                 .execute(pool)
                 .await?;
             println!("Deregistered agent {} ({} tasks requeued)", id, active_tasks.len());
+            notify_change();
         }
         AgentAction::List => {
             let agents = sqlx::query_as::<_, Agent>("SELECT * FROM agents ORDER BY registered_at")
@@ -1211,7 +1253,7 @@ async fn handle_agent(
             }
         }
         AgentAction::Stats { id } => {
-            let stats = sqlx::query_as::<_, AgentStats>("SELECT * FROM agent_stats WHERE agent_id = ?")
+            let stats = sqlx::query_as::<_, AgentStats>("SELECT * FROM agent_stats WHERE agent_id = $1")
                 .bind(&id)
                 .fetch_one(pool)
                 .await?;
@@ -1249,7 +1291,7 @@ async fn handle_agent(
 }
 
 async fn handle_task(
-    pool: &SqlitePool,
+    pool: &PgPool,
     action: TaskAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1258,7 +1300,7 @@ async fn handle_task(
             // Lazy timeout recovery - reclaim stale tasks before routing
             let _ = kanban_lib::orchestration::timeout::reclaim_timed_out_tasks(&pool).await;
 
-            let agent_row = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE id = ?")
+            let agent_row = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE id = $1")
                 .bind(&agent)
                 .fetch_one(pool)
                 .await?;
@@ -1297,7 +1339,7 @@ async fn handle_task(
         }
         TaskAction::Start { identifier, agent } => {
             let issue = resolve_issue(pool, &identifier).await?;
-            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?")
+            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = $1")
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
@@ -1305,12 +1347,12 @@ async fn handle_task(
                 return Err(format!("Task {} is not claimed by agent {}", identifier, agent).into());
             }
             let now = chrono::Utc::now().to_rfc3339();
-            sqlx::query("UPDATE task_contracts SET task_state = 'executing' WHERE issue_id = ?")
+            sqlx::query("UPDATE task_contracts SET task_state = 'executing' WHERE issue_id = $1")
                 .bind(issue.id)
                 .execute(pool)
                 .await?;
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'start', 'Task execution started', ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'start', 'Task execution started', $4)",
             )
             .bind(issue.id)
             .bind(&agent)
@@ -1323,6 +1365,7 @@ async fn handle_task(
             } else {
                 println!("Started: {}", identifier);
             }
+            notify_change();
         }
         TaskAction::Complete {
             identifier,
@@ -1332,7 +1375,7 @@ async fn handle_task(
             artifacts,
         } => {
             let issue = resolve_issue(pool, &identifier).await?;
-            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?")
+            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = $1")
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
@@ -1343,7 +1386,7 @@ async fn handle_task(
 
             // Get project config thresholds
             let config = sqlx::query_as::<_, ProjectAgentConfig>(
-                "SELECT * FROM project_agent_configs WHERE project_id = ?",
+                "SELECT * FROM project_agent_configs WHERE project_id = $1",
             )
             .bind(issue.project_id)
             .fetch_optional(pool)
@@ -1368,13 +1411,13 @@ async fn handle_task(
 
             if new_state == "queued" {
                 // Auto-reject: requeue with cleared claim
-                sqlx::query("UPDATE task_contracts SET task_state = 'queued', result = ?, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = ?")
+                sqlx::query("UPDATE task_contracts SET task_state = 'queued', result = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $2")
                     .bind(result_json.to_string())
                     .bind(issue.id)
                     .execute(pool)
                     .await?;
             } else {
-                sqlx::query("UPDATE task_contracts SET task_state = ?, result = ? WHERE issue_id = ?")
+                sqlx::query("UPDATE task_contracts SET task_state = $1, result = $2 WHERE issue_id = $3")
                     .bind(new_state)
                     .bind(result_json.to_string())
                     .bind(issue.id)
@@ -1391,7 +1434,7 @@ async fn handle_task(
 
             // Log
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'complete', ?, ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'complete', $4, $5)",
             )
             .bind(issue.id)
             .bind(&agent)
@@ -1403,7 +1446,7 @@ async fn handle_task(
 
             // Update agent stats
             sqlx::query(
-                "UPDATE agent_stats SET tasks_completed = tasks_completed + 1, total_confidence = total_confidence + ? WHERE agent_id = ?",
+                "UPDATE agent_stats SET tasks_completed = tasks_completed + 1, total_confidence = total_confidence + $1 WHERE agent_id = $2",
             )
             .bind(confidence)
             .bind(&agent)
@@ -1420,6 +1463,7 @@ async fn handle_task(
             } else {
                 println!("Completed: {} (state: {}, confidence: {:.2})", identifier, new_state, confidence);
             }
+            notify_change();
         }
         TaskAction::Fail {
             identifier,
@@ -1427,7 +1471,7 @@ async fn handle_task(
             reason,
         } => {
             let issue = resolve_issue(pool, &identifier).await?;
-            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?")
+            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = $1")
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
@@ -1449,7 +1493,7 @@ async fn handle_task(
 
             // Requeue
             sqlx::query(
-                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1, context = ? WHERE issue_id = ?",
+                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1, context = $1 WHERE issue_id = $2",
             )
             .bind(context.to_string())
             .bind(issue.id)
@@ -1460,7 +1504,7 @@ async fn handle_task(
 
             // Log
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'fail', ?, ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'fail', $4, $5)",
             )
             .bind(issue.id)
             .bind(&agent)
@@ -1471,7 +1515,7 @@ async fn handle_task(
             .await?;
 
             // Update agent stats
-            sqlx::query("UPDATE agent_stats SET tasks_failed = tasks_failed + 1 WHERE agent_id = ?")
+            sqlx::query("UPDATE agent_stats SET tasks_failed = tasks_failed + 1 WHERE agent_id = $1")
                 .bind(&agent)
                 .execute(pool)
                 .await?;
@@ -1481,10 +1525,11 @@ async fn handle_task(
             } else {
                 println!("Failed and requeued: {}", identifier);
             }
+            notify_change();
         }
         TaskAction::Unclaim { identifier, agent } => {
             let issue = resolve_issue(pool, &identifier).await?;
-            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?")
+            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = $1")
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
@@ -1492,13 +1537,13 @@ async fn handle_task(
                 return Err(format!("Task {} is not claimed by agent {}", identifier, agent).into());
             }
             let now = chrono::Utc::now().to_rfc3339();
-            sqlx::query("UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL WHERE issue_id = ?")
+            sqlx::query("UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL WHERE issue_id = $1")
                 .bind(issue.id)
                 .execute(pool)
                 .await?;
             sync_issue_status_to_category(pool, issue.id, "unstarted").await?;
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'unclaim', 'Task unclaimed by agent', ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'unclaim', 'Task unclaimed by agent', $4)",
             )
             .bind(issue.id)
             .bind(&agent)
@@ -1511,6 +1556,7 @@ async fn handle_task(
             } else {
                 println!("Unclaimed: {}", identifier);
             }
+            notify_change();
         }
         TaskAction::Log {
             identifier,
@@ -1521,14 +1567,14 @@ async fn handle_task(
         } => {
             let issue = resolve_issue(pool, &identifier).await?;
             let attempt_count: (i64,) = sqlx::query_as(
-                "SELECT attempt_count FROM task_contracts WHERE issue_id = ?",
+                "SELECT attempt_count FROM task_contracts WHERE issue_id = $1",
             )
             .bind(issue.id)
             .fetch_one(pool)
             .await?;
             let now = chrono::Utc::now().to_rfc3339();
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)",
             )
             .bind(issue.id)
             .bind(&agent)
@@ -1544,6 +1590,7 @@ async fn handle_task(
             } else {
                 println!("Logged [{}] for {}", entry_type, identifier);
             }
+            notify_change();
         }
         TaskAction::Create {
             project,
@@ -1571,7 +1618,7 @@ async fn handle_task(
 
             // Increment counter
             let (counter, prefix): (i64, String) = sqlx::query_as(
-                "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix",
+                "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix",
             )
             .bind(project)
             .fetch_one(&mut *tx)
@@ -1579,7 +1626,7 @@ async fn handle_task(
             let identifier = format!("{}-{}", prefix, counter);
 
             let max_pos: Option<f64> = sqlx::query_scalar(
-                "SELECT MAX(position) FROM issues WHERE project_id = ? AND status_id = ?",
+                "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status_id = $2",
             )
             .bind(project)
             .bind(status)
@@ -1589,7 +1636,7 @@ async fn handle_task(
 
             // Resolve parent
             let parent_id: Option<i64> = if let Some(ref p) = parent {
-                let pi = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+                let pi = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                     .bind(p)
                     .fetch_one(&mut *tx)
                     .await?;
@@ -1598,8 +1645,8 @@ async fn handle_task(
                 None
             };
 
-            let result = sqlx::query(
-                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            let issue_id: i64 = sqlx::query_scalar(
+                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
             )
             .bind(project)
             .bind(&identifier)
@@ -1612,9 +1659,8 @@ async fn handle_task(
             .bind(position)
             .bind(&now)
             .bind(&now)
-            .execute(&mut *tx)
+            .fetch_one(&mut *tx)
             .await?;
-            let issue_id = result.last_insert_rowid();
 
             let skills_json = skills
                 .map(|s| serde_json::to_string(&s.split(',').map(|s| s.trim()).collect::<Vec<_>>()))
@@ -1628,7 +1674,7 @@ async fn handle_task(
             }
 
             sqlx::query(
-                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, 0)",
+                "INSERT INTO task_contracts (issue_id, agent_type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4, $5, $6, $7, $8, $9, 0)",
             )
             .bind(issue_id)
             .bind(&tt)
@@ -1646,11 +1692,11 @@ async fn handle_task(
             if let Some(ref deps) = depends_on {
                 for dep_ident in deps.split(',').map(|s| s.trim()) {
                     if dep_ident.is_empty() { continue; }
-                    let dep_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
+                    let dep_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                         .bind(dep_ident)
                         .fetch_one(&mut *tx)
                         .await?;
-                    sqlx::query("INSERT INTO issue_relations (source_issue_id, target_issue_id, relation_type) VALUES (?, ?, 'blocks')")
+                    sqlx::query("INSERT INTO issue_relations (source_issue_id, target_issue_id, relation_type) VALUES ($1, $2, 'blocks')")
                         .bind(dep_issue.id)
                         .bind(issue_id)
                         .execute(&mut *tx)
@@ -1671,6 +1717,7 @@ async fn handle_task(
             } else {
                 println!("Created: {} - {}", identifier, title);
             }
+            notify_change();
         }
         TaskAction::Get { identifier } => {
             let issue = resolve_issue(pool, &identifier).await?;
@@ -1695,7 +1742,7 @@ async fn handle_task(
         TaskAction::Replay { identifier } => {
             let issue = resolve_issue(pool, &identifier).await?;
             let logs = sqlx::query_as::<_, ExecutionLog>(
-                "SELECT * FROM execution_logs WHERE issue_id = ? ORDER BY timestamp ASC",
+                "SELECT * FROM execution_logs WHERE issue_id = $1 ORDER BY timestamp ASC",
             )
             .bind(issue.id)
             .fetch_all(pool)
@@ -1705,7 +1752,7 @@ async fn handle_task(
             } else if logs.is_empty() {
                 println!("No execution logs for {}", identifier);
             } else {
-                let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?")
+                let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = $1")
                     .bind(issue.id).fetch_optional(pool).await?;
 
                 println!("{}: {}", identifier, issue.title);
@@ -1740,7 +1787,7 @@ async fn handle_task(
         }
         TaskAction::Attempts { identifier } => {
             let issue = resolve_issue(pool, &identifier).await?;
-            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?")
+            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = $1")
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
@@ -1773,7 +1820,7 @@ async fn handle_task(
             agent,
             available,
         } => {
-            let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
+            let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
                 "SELECT i.identifier, i.title, i.priority, tc.task_state, tc.claimed_by, tc.estimated_complexity FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ",
             );
             qb.push_bind(project);
@@ -1826,7 +1873,7 @@ async fn handle_task(
         TaskAction::Children { identifier } => {
             let issue = resolve_issue(pool, &identifier).await?;
             let children = sqlx::query_as::<_, Issue>(
-                "SELECT * FROM issues WHERE parent_id = ? ORDER BY position",
+                "SELECT * FROM issues WHERE parent_id = $1 ORDER BY position",
             )
             .bind(issue.id)
             .fetch_all(pool)
@@ -1841,7 +1888,7 @@ async fn handle_task(
         }
         TaskAction::Approve { identifier } => {
             let issue = resolve_issue(pool, &identifier).await?;
-            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?")
+            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = $1")
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
@@ -1849,20 +1896,20 @@ async fn handle_task(
                 return Err(format!("Task {} is in state '{}', expected 'validating'", identifier, tc.task_state).into());
             }
             let now = chrono::Utc::now().to_rfc3339();
-            sqlx::query("UPDATE task_contracts SET task_state = 'completed' WHERE issue_id = ?")
+            sqlx::query("UPDATE task_contracts SET task_state = 'completed' WHERE issue_id = $1")
                 .bind(issue.id)
                 .execute(pool)
                 .await?;
             sync_issue_status_to_category(pool, issue.id, "completed").await?;
             // Update agent stats if there's a claimed_by
             if let Some(ref agent_id) = tc.claimed_by {
-                sqlx::query("UPDATE agent_stats SET tasks_completed = tasks_completed + 1 WHERE agent_id = ?")
+                sqlx::query("UPDATE agent_stats SET tasks_completed = tasks_completed + 1 WHERE agent_id = $1")
                     .bind(agent_id)
                     .execute(pool)
                     .await?;
             }
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'approve', 'Task approved', ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'approve', 'Task approved', $4)",
             )
             .bind(issue.id)
             .bind(tc.claimed_by.as_deref().unwrap_or("system"))
@@ -1879,10 +1926,11 @@ async fn handle_task(
             } else {
                 println!("Approved: {}", identifier);
             }
+            notify_change();
         }
         TaskAction::Reject { identifier } => {
             let issue = resolve_issue(pool, &identifier).await?;
-            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?")
+            let tc = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = $1")
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
@@ -1891,14 +1939,14 @@ async fn handle_task(
             }
             let now = chrono::Utc::now().to_rfc3339();
             sqlx::query(
-                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = ?",
+                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $1",
             )
             .bind(issue.id)
             .execute(pool)
             .await?;
             sync_issue_status_to_category(pool, issue.id, "unstarted").await?;
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'reject', 'Task rejected, requeued', ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'reject', 'Task rejected, requeued', $4)",
             )
             .bind(issue.id)
             .bind(tc.claimed_by.as_deref().unwrap_or("system"))
@@ -1911,6 +1959,7 @@ async fn handle_task(
             } else {
                 println!("Rejected and requeued: {}", identifier);
             }
+            notify_change();
         }
         TaskAction::Invalidate { identifier, reason } => {
             let issue = resolve_issue(pool, &identifier).await?;
@@ -1922,6 +1971,7 @@ async fn handle_task(
                 println!("  {} tasks blocked, {} warned, {} review tasks created",
                     result.tasks_blocked.len(), result.tasks_warned.len(), result.review_tasks_created.len());
             }
+            notify_change();
         }
         TaskAction::Graph { identifier } => {
             let issue_id = resolve_issue(pool, &identifier).await?.id;
@@ -1935,18 +1985,18 @@ async fn handle_task(
 
             while let Some(id) = queue.pop_front() {
                 if !visited.insert(id) { continue; }
-                let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?").bind(id).fetch_one(pool).await?;
-                let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = ?").bind(id).fetch_optional(pool).await?;
+                let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1").bind(id).fetch_one(pool).await?;
+                let contract = sqlx::query_as::<_, TaskContract>("SELECT * FROM task_contracts WHERE issue_id = $1").bind(id).fetch_optional(pool).await?;
                 let state = contract.as_ref().map(|c| c.task_state.as_str()).unwrap_or("no-contract");
 
                 nodes.push(serde_json::json!({"id": id, "identifier": &issue.identifier, "title": &issue.title, "state": state}));
 
                 // Children
-                let children: Vec<i64> = sqlx::query_scalar("SELECT id FROM issues WHERE parent_id = ?").bind(id).fetch_all(pool).await?;
+                let children: Vec<i64> = sqlx::query_scalar("SELECT id FROM issues WHERE parent_id = $1").bind(id).fetch_all(pool).await?;
                 for c in children { edges.push(serde_json::json!({"from": id, "to": c, "type": "parent-child"})); queue.push_back(c); }
 
                 // Relations
-                let rels: Vec<(i64, i64)> = sqlx::query_as("SELECT source_issue_id, target_issue_id FROM issue_relations WHERE (source_issue_id = ? OR target_issue_id = ?) AND relation_type = 'blocks'").bind(id).bind(id).fetch_all(pool).await?;
+                let rels: Vec<(i64, i64)> = sqlx::query_as("SELECT source_issue_id, target_issue_id FROM issue_relations WHERE (source_issue_id = $1 OR target_issue_id = $2) AND relation_type = 'blocks'").bind(id).bind(id).fetch_all(pool).await?;
                 for (s, t) in rels { edges.push(serde_json::json!({"from": s, "to": t, "type": "blocks"})); if s != id { queue.push_back(s); } if t != id { queue.push_back(t); } }
 
                 if let Some(pid) = issue.parent_id { edges.push(serde_json::json!({"from": pid, "to": id, "type": "parent-child"})); queue.push_back(pid); }
@@ -1972,7 +2022,7 @@ async fn handle_task(
         TaskAction::Search { project, query } => {
             let pattern = format!("%{}%", query);
             let rows = sqlx::query_as::<_, Issue>(
-                "SELECT i.* FROM issues i JOIN task_contracts tc ON tc.issue_id = i.id WHERE i.project_id = ? AND (i.title LIKE ? OR tc.objective LIKE ? OR i.identifier LIKE ?) ORDER BY i.updated_at DESC",
+                "SELECT i.* FROM issues i JOIN task_contracts tc ON tc.issue_id = i.id WHERE i.project_id = $1 AND (i.title LIKE $2 OR tc.objective LIKE $3 OR i.identifier LIKE $4) ORDER BY i.updated_at DESC",
             )
             .bind(project)
             .bind(&pattern)
@@ -1998,7 +2048,7 @@ async fn handle_task(
             let issue = resolve_issue(pool, &identifier).await?;
             let now = chrono::Utc::now().to_rfc3339();
             if let Some(ref t) = title {
-                sqlx::query("UPDATE issues SET title = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET title = $1, updated_at = $2 WHERE id = $3")
                     .bind(t)
                     .bind(&now)
                     .bind(issue.id)
@@ -2006,7 +2056,7 @@ async fn handle_task(
                     .await?;
             }
             if let Some(ref p) = priority {
-                sqlx::query("UPDATE issues SET priority = ?, updated_at = ? WHERE id = ?")
+                sqlx::query("UPDATE issues SET priority = $1, updated_at = $2 WHERE id = $3")
                     .bind(p)
                     .bind(&now)
                     .bind(issue.id)
@@ -2014,7 +2064,7 @@ async fn handle_task(
                     .await?;
             }
             if let Some(ref c) = complexity {
-                sqlx::query("UPDATE task_contracts SET estimated_complexity = ? WHERE issue_id = ?")
+                sqlx::query("UPDATE task_contracts SET estimated_complexity = $1 WHERE issue_id = $2")
                     .bind(c)
                     .bind(issue.id)
                     .execute(pool)
@@ -2024,7 +2074,7 @@ async fn handle_task(
                 let skills_json = serde_json::to_string(
                     &s.split(',').map(|s| s.trim()).collect::<Vec<_>>(),
                 )?;
-                sqlx::query("UPDATE task_contracts SET required_skills = ? WHERE issue_id = ?")
+                sqlx::query("UPDATE task_contracts SET required_skills = $1 WHERE issue_id = $2")
                     .bind(&skills_json)
                     .bind(issue.id)
                     .execute(pool)
@@ -2036,12 +2086,13 @@ async fn handle_task(
             } else {
                 println!("Updated: {}", identifier);
             }
+            notify_change();
         }
         TaskAction::Decompose { identifier } => {
             let issue = resolve_issue(pool, &identifier).await?;
             match kanban_lib::orchestration::decomposition::create_decomposition_task(pool, issue.id).await {
                 Ok(new_id) => {
-                    let new_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = ?")
+                    let new_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
                         .bind(new_id).fetch_one(pool).await?;
                     if json {
                         println!("{}", serde_json::json!({"success": true, "data": {"decomposition_task": new_issue.identifier}}));
@@ -2057,13 +2108,14 @@ async fn handle_task(
                     }
                 }
             }
+            notify_change();
         }
     }
     Ok(())
 }
 
 async fn handle_metrics(
-    pool: &SqlitePool,
+    pool: &PgPool,
     project: Option<i64>,
     agent: Option<String>,
     json: bool,
@@ -2102,7 +2154,7 @@ async fn handle_metrics(
 }
 
 async fn handle_export(
-    pool: &SqlitePool,
+    pool: &PgPool,
     output: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let data = ExportData {
@@ -2145,7 +2197,7 @@ async fn handle_export(
 }
 
 async fn handle_import(
-    pool: &SqlitePool,
+    pool: &PgPool,
     file: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(&file)?;
@@ -2153,7 +2205,7 @@ async fn handle_import(
 
     // Import in order to satisfy foreign keys
     for m in &data.members {
-        sqlx::query("INSERT OR REPLACE INTO members (id, name, display_name, email, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO members (id, name, display_name, email, avatar_color, created_at) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, display_name = EXCLUDED.display_name, email = EXCLUDED.email, avatar_color = EXCLUDED.avatar_color, created_at = EXCLUDED.created_at")
             .bind(m.id)
             .bind(&m.name)
             .bind(&m.display_name)
@@ -2164,7 +2216,7 @@ async fn handle_import(
             .await?;
     }
     for p in &data.projects {
-        sqlx::query("INSERT OR REPLACE INTO projects (id, name, description, icon, status, prefix, issue_counter, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO projects (id, name, description, icon, status, prefix, issue_counter, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, icon = EXCLUDED.icon, status = EXCLUDED.status, prefix = EXCLUDED.prefix, issue_counter = EXCLUDED.issue_counter, created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at")
             .bind(p.id)
             .bind(&p.name)
             .bind(&p.description)
@@ -2178,7 +2230,7 @@ async fn handle_import(
             .await?;
     }
     for s in &data.statuses {
-        sqlx::query("INSERT OR REPLACE INTO statuses (id, project_id, name, category, color, icon, position) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO statuses (id, project_id, name, category, color, icon, position) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO UPDATE SET project_id = EXCLUDED.project_id, name = EXCLUDED.name, category = EXCLUDED.category, color = EXCLUDED.color, icon = EXCLUDED.icon, position = EXCLUDED.position")
             .bind(s.id)
             .bind(s.project_id)
             .bind(&s.name)
@@ -2190,7 +2242,7 @@ async fn handle_import(
             .await?;
     }
     for l in &data.labels {
-        sqlx::query("INSERT OR REPLACE INTO labels (id, project_id, name, color) VALUES (?, ?, ?, ?)")
+        sqlx::query("INSERT INTO labels (id, project_id, name, color) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET project_id = EXCLUDED.project_id, name = EXCLUDED.name, color = EXCLUDED.color")
             .bind(l.id)
             .bind(l.project_id)
             .bind(&l.name)
@@ -2199,7 +2251,7 @@ async fn handle_import(
             .await?;
     }
     for i in &data.issues {
-        sqlx::query("INSERT OR REPLACE INTO issues (id, project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO issues (id, project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) ON CONFLICT (id) DO UPDATE SET project_id = EXCLUDED.project_id, identifier = EXCLUDED.identifier, title = EXCLUDED.title, description = EXCLUDED.description, status_id = EXCLUDED.status_id, priority = EXCLUDED.priority, assignee_id = EXCLUDED.assignee_id, parent_id = EXCLUDED.parent_id, position = EXCLUDED.position, estimate = EXCLUDED.estimate, due_date = EXCLUDED.due_date, created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at")
             .bind(i.id)
             .bind(i.project_id)
             .bind(&i.identifier)
@@ -2218,14 +2270,14 @@ async fn handle_import(
             .await?;
     }
     for il in &data.issue_labels {
-        sqlx::query("INSERT OR REPLACE INTO issue_labels (issue_id, label_id) VALUES (?, ?)")
+        sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES ($1, $2) ON CONFLICT (issue_id, label_id) DO NOTHING")
             .bind(il.issue_id)
             .bind(il.label_id)
             .execute(pool)
             .await?;
     }
     for r in &data.issue_relations {
-        sqlx::query("INSERT OR REPLACE INTO issue_relations (id, source_issue_id, target_issue_id, relation_type) VALUES (?, ?, ?, ?)")
+        sqlx::query("INSERT INTO issue_relations (id, source_issue_id, target_issue_id, relation_type) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET source_issue_id = EXCLUDED.source_issue_id, target_issue_id = EXCLUDED.target_issue_id, relation_type = EXCLUDED.relation_type")
             .bind(r.id)
             .bind(r.source_issue_id)
             .bind(r.target_issue_id)
@@ -2234,7 +2286,7 @@ async fn handle_import(
             .await?;
     }
     for t in &data.issue_templates {
-        sqlx::query("INSERT OR REPLACE INTO issue_templates (id, project_id, name, description_template, default_status_id, default_priority, default_label_ids, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        sqlx::query("INSERT INTO issue_templates (id, project_id, name, description_template, default_status_id, default_priority, default_label_ids, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (id) DO UPDATE SET project_id = EXCLUDED.project_id, name = EXCLUDED.name, description_template = EXCLUDED.description_template, default_status_id = EXCLUDED.default_status_id, default_priority = EXCLUDED.default_priority, default_label_ids = EXCLUDED.default_label_ids, created_at = EXCLUDED.created_at, updated_at = EXCLUDED.updated_at")
             .bind(t.id)
             .bind(t.project_id)
             .bind(&t.name)
@@ -2259,5 +2311,6 @@ async fn handle_import(
         data.issue_relations.len(),
         data.issue_templates.len()
     );
+    notify_change();
     Ok(())
 }

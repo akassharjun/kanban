@@ -37,7 +37,7 @@ pub struct CompleteTaskInput {
 
 /// Helper: sync issues.status_id based on task state category
 async fn sync_issue_status(
-    pool: &sqlx::SqlitePool,
+    pool: &sqlx::PgPool,
     issue_id: i64,
     task_state: TaskState,
     now: &str,
@@ -46,10 +46,10 @@ async fn sync_issue_status(
     sqlx::query(
         "UPDATE issues SET status_id = (
             SELECT s.id FROM statuses s
-            WHERE s.project_id = issues.project_id AND s.category = ?
+            WHERE s.project_id = issues.project_id AND s.category = $1
             ORDER BY s.position ASC LIMIT 1
-         ), updated_at = ?
-         WHERE id = ?",
+         ), updated_at = $2
+         WHERE id = $3",
     )
     .bind(category)
     .bind(now)
@@ -83,7 +83,7 @@ pub fn create_task_contract(
 
             // 1. Create the issue (same pattern as issues.rs create_issue)
             let (counter, prefix): (i64, String) = sqlx::query_as(
-                "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix",
+                "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix",
             )
             .bind(input.project_id)
             .fetch_one(&mut *tx)
@@ -91,7 +91,7 @@ pub fn create_task_contract(
             let identifier = format!("{}-{}", prefix, counter);
 
             let max_pos: Option<f64> = sqlx::query_scalar(
-                "SELECT MAX(position) FROM issues WHERE project_id = ? AND status_id = ?",
+                "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status_id = $2",
             )
             .bind(input.project_id)
             .bind(input.status_id)
@@ -99,8 +99,8 @@ pub fn create_task_contract(
             .await?;
             let position = max_pos.unwrap_or(-1.0) + 1.0;
 
-            let result = sqlx::query(
-                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            let issue_id: i64 = sqlx::query_scalar(
+                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
             )
             .bind(input.project_id)
             .bind(&identifier)
@@ -113,10 +113,8 @@ pub fn create_task_contract(
             .bind(position)
             .bind(&now)
             .bind(&now)
-            .execute(&mut *tx)
+            .fetch_one(&mut *tx)
             .await?;
-
-            let issue_id = result.last_insert_rowid();
 
             // 2. Build context JSON
             let context = serde_json::json!({
@@ -136,7 +134,7 @@ pub fn create_task_contract(
                 serde_json::to_string(&context).unwrap_or_else(|_| "{}".to_string());
 
             sqlx::query(
-                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, 0)",
+                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4, $5, $6, $7, $8, $9, 0)",
             )
             .bind(issue_id)
             .bind(&task_type)
@@ -153,14 +151,14 @@ pub fn create_task_contract(
             // 4. If depends_on specified: resolve each identifier to issue_id, insert issue_relations
             for dep_identifier in &depends_on {
                 let dep_issue_id: i64 = sqlx::query_scalar(
-                    "SELECT id FROM issues WHERE identifier = ?",
+                    "SELECT id FROM issues WHERE identifier = $1",
                 )
                 .bind(dep_identifier)
                 .fetch_one(&mut *tx)
                 .await?;
 
                 sqlx::query(
-                    "INSERT INTO issue_relations (source_issue_id, target_issue_id, relation_type) VALUES (?, ?, 'blocks')",
+                    "INSERT INTO issue_relations (source_issue_id, target_issue_id, relation_type) VALUES ($1, $2, 'blocks')",
                 )
                 .bind(dep_issue_id)
                 .bind(issue_id)
@@ -191,7 +189,7 @@ pub fn get_task_contract(
         .rt
         .block_on(async {
             let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
                     .bind(&identifier)
                     .fetch_one(&state.pool)
                     .await?;
@@ -211,7 +209,7 @@ pub fn next_task(
     state
         .rt
         .block_on(async {
-            let agent = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE id = ?")
+            let agent = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE id = $1")
                 .bind(&agent_id)
                 .fetch_optional(&state.pool)
                 .await?
@@ -247,13 +245,13 @@ pub fn start_task(
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
             let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
                     .bind(&identifier)
                     .fetch_one(&state.pool)
                     .await?;
 
             let contract = sqlx::query_as::<_, TaskContract>(
-                "SELECT * FROM task_contracts WHERE issue_id = ?",
+                "SELECT * FROM task_contracts WHERE issue_id = $1",
             )
             .bind(issue_id)
             .fetch_one(&state.pool)
@@ -280,14 +278,14 @@ pub fn start_task(
             }
 
             // Update task_state to executing
-            sqlx::query("UPDATE task_contracts SET task_state = 'executing' WHERE issue_id = ?")
+            sqlx::query("UPDATE task_contracts SET task_state = 'executing' WHERE issue_id = $1")
                 .bind(issue_id)
                 .execute(&state.pool)
                 .await?;
 
             // Log in execution_logs
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'start', 'Task execution started', ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'start', 'Task execution started', $4)",
             )
             .bind(issue_id)
             .bind(&agent_id)
@@ -312,13 +310,13 @@ pub fn complete_task(
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
             let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
                     .bind(&input.identifier)
                     .fetch_one(&state.pool)
                     .await?;
 
             let contract = sqlx::query_as::<_, TaskContract>(
-                "SELECT * FROM task_contracts WHERE issue_id = ?",
+                "SELECT * FROM task_contracts WHERE issue_id = $1",
             )
             .bind(issue_id)
             .fetch_one(&state.pool)
@@ -350,14 +348,14 @@ pub fn complete_task(
 
             // Get full issue for project config and review task creation
             let issue = sqlx::query_as::<_, crate::models::Issue>(
-                "SELECT * FROM issues WHERE id = ?",
+                "SELECT * FROM issues WHERE id = $1",
             )
             .bind(issue_id)
             .fetch_one(&state.pool)
             .await?;
 
             let config = sqlx::query_as::<_, ProjectAgentConfig>(
-                "SELECT * FROM project_agent_configs WHERE project_id = ?",
+                "SELECT * FROM project_agent_config WHERE project_id = $1",
             )
             .bind(issue.project_id)
             .fetch_optional(&state.pool)
@@ -396,22 +394,22 @@ pub fn complete_task(
 
                     // Requeue
                     sqlx::query(
-                        "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = ?, context = ?, result = ? WHERE issue_id = ?"
+                        "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = $1, context = $2, result = $3 WHERE issue_id = $4"
                     ).bind(new_attempt).bind(context.to_string()).bind(serde_json::json!({"validation": validation.checks}).to_string()).bind(issue_id)
                     .execute(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
 
                     // Sync status to unstarted
                     let unstarted_category = crate::orchestration::state_machine::task_state_to_status_category(TaskState::Queued);
                     if let Some(sid) = sqlx::query_scalar::<_, i64>(
-                        "SELECT id FROM statuses WHERE project_id = ? AND category = ? ORDER BY position LIMIT 1"
+                        "SELECT id FROM statuses WHERE project_id = $1 AND category = $2 ORDER BY position LIMIT 1"
                     ).bind(issue.project_id).bind(unstarted_category).fetch_optional(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))? {
-                        sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
+                        sqlx::query("UPDATE issues SET status_id = $1, updated_at = $2 WHERE id = $3")
                             .bind(sid).bind(&now).bind(issue_id).execute(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
                     }
 
                     // Log validation failure
                     sqlx::query(
-                        "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES (?, ?, ?, 'result', ?, ?, ?)"
+                        "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, 'result', $4, $5, $6)"
                     ).bind(issue_id).bind(&input.agent_id).bind(new_attempt)
                     .bind(format!("Validation failed: {}", validation_summary))
                     .bind(serde_json::json!({"validation": validation.checks}).to_string())
@@ -419,7 +417,7 @@ pub fn complete_task(
                     .execute(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
 
                     // Update agent stats
-                    sqlx::query("UPDATE agent_stats SET tasks_failed = tasks_failed + 1 WHERE agent_id = ?")
+                    sqlx::query("UPDATE agent_stats SET tasks_failed = tasks_failed + 1 WHERE agent_id = $1")
                         .bind(&input.agent_id).execute(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
 
                     return Ok(serde_json::json!({
@@ -455,7 +453,7 @@ pub fn complete_task(
             if new_state == TaskState::Queued {
                 // Auto-reject: clear claimed_by/claimed_at, increment attempt_count
                 sqlx::query(
-                    "UPDATE task_contracts SET task_state = 'queued', result = ?, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = ?",
+                    "UPDATE task_contracts SET task_state = 'queued', result = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $2",
                 )
                 .bind(&result_str)
                 .bind(issue_id)
@@ -463,7 +461,7 @@ pub fn complete_task(
                 .await?;
             } else {
                 sqlx::query(
-                    "UPDATE task_contracts SET task_state = ?, result = ? WHERE issue_id = ?",
+                    "UPDATE task_contracts SET task_state = $1, result = $2 WHERE issue_id = $3",
                 )
                 .bind(new_state_str)
                 .bind(&result_str)
@@ -491,15 +489,15 @@ pub fn complete_task(
 
                 // Create review issue
                 let (counter, prefix): (i64, String) = sqlx::query_as(
-                    "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix",
+                    "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix",
                 )
                 .bind(issue.project_id)
                 .fetch_one(&state.pool)
                 .await?;
                 let review_identifier = format!("{}-{}", prefix, counter);
 
-                let review_result = sqlx::query(
-                    "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, parent_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, 0.0, ?, ?)",
+                let review_issue_id: i64 = sqlx::query_scalar(
+                    "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, NULL, 0.0, $7, $8) RETURNING id",
                 )
                 .bind(issue.project_id)
                 .bind(&review_identifier)
@@ -509,20 +507,18 @@ pub fn complete_task(
                 .bind(&issue.priority)
                 .bind(&now)
                 .bind(&now)
-                .execute(&state.pool)
+                .fetch_one(&state.pool)
                 .await?;
-
-                let review_issue_id = review_result.last_insert_rowid();
 
                 // Find an unstarted status for the review task
                 let unstarted_sid: Option<i64> = sqlx::query_scalar(
-                    "SELECT id FROM statuses WHERE project_id = ? AND category = 'unstarted' ORDER BY position LIMIT 1",
+                    "SELECT id FROM statuses WHERE project_id = $1 AND category = 'unstarted' ORDER BY position LIMIT 1",
                 )
                 .bind(issue.project_id)
                 .fetch_optional(&state.pool)
                 .await?;
                 if let Some(sid) = unstarted_sid {
-                    sqlx::query("UPDATE issues SET status_id = ? WHERE id = ?")
+                    sqlx::query("UPDATE issues SET status_id = $1 WHERE id = $2")
                         .bind(sid)
                         .bind(review_issue_id)
                         .execute(&state.pool)
@@ -531,7 +527,7 @@ pub fn complete_task(
 
                 // Create review task contract
                 sqlx::query(
-                    "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, required_skills, estimated_complexity, timeout_minutes) VALUES (?, 'review', 'queued', ?, ?, '[\"review\"]', 'small', 30)",
+                    "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, required_skills, estimated_complexity, timeout_minutes) VALUES ($1, 'review', 'queued', $2, $3, '[\"review\"]', 'small', 30)",
                 )
                 .bind(review_issue_id)
                 .bind(&review_objective)
@@ -541,7 +537,7 @@ pub fn complete_task(
 
                 // Create notification
                 sqlx::query(
-                    "INSERT INTO notifications (type, issue_id, message, read, created_at) VALUES ('low_confidence', ?, ?, 0, ?)",
+                    "INSERT INTO notifications (type, issue_id, message, read, created_at) VALUES ('low_confidence', $1, $2, FALSE, $3)",
                 )
                 .bind(issue_id)
                 .bind(format!(
@@ -555,7 +551,7 @@ pub fn complete_task(
 
             // Log result in execution_logs
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES (?, ?, ?, 'complete', ?, ?, ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, 'complete', $4, $5, $6)",
             )
             .bind(issue_id)
             .bind(&input.agent_id)
@@ -569,7 +565,7 @@ pub fn complete_task(
             // If accepted: update agent_stats
             if accepted {
                 sqlx::query(
-                    "UPDATE agent_stats SET tasks_completed = tasks_completed + 1, total_confidence = total_confidence + ? WHERE agent_id = ?",
+                    "UPDATE agent_stats SET tasks_completed = tasks_completed + 1, total_confidence = total_confidence + $1 WHERE agent_id = $2",
                 )
                 .bind(input.confidence)
                 .bind(&input.agent_id)
@@ -603,7 +599,7 @@ pub fn fail_task(
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
             let issue = sqlx::query_as::<_, crate::models::Issue>(
-                "SELECT * FROM issues WHERE identifier = ?",
+                "SELECT * FROM issues WHERE identifier = $1",
             )
             .bind(&identifier)
             .fetch_one(&state.pool)
@@ -611,7 +607,7 @@ pub fn fail_task(
             let issue_id = issue.id;
 
             let contract = sqlx::query_as::<_, TaskContract>(
-                "SELECT * FROM task_contracts WHERE issue_id = ?",
+                "SELECT * FROM task_contracts WHERE issue_id = $1",
             )
             .bind(issue_id)
             .fetch_one(&state.pool)
@@ -638,7 +634,7 @@ pub fn fail_task(
 
             // Update task_contracts: requeue, clear claimed_by/claimed_at, update attempt_count and context
             sqlx::query(
-                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = ?, context = ? WHERE issue_id = ?",
+                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = $1, context = $2 WHERE issue_id = $3",
             )
             .bind(new_attempt_count)
             .bind(&context_str)
@@ -648,7 +644,7 @@ pub fn fail_task(
 
             // Check escalation: if attempt_count >= max_attempts, block instead of requeue
             let config = sqlx::query_as::<_, ProjectAgentConfig>(
-                "SELECT * FROM project_agent_configs WHERE project_id = ?",
+                "SELECT * FROM project_agent_config WHERE project_id = $1",
             )
             .bind(issue.project_id)
             .fetch_optional(&state.pool)
@@ -658,20 +654,20 @@ pub fn fail_task(
 
             if new_attempt_count >= max_attempts {
                 // Escalate: block the task instead of requeuing
-                sqlx::query("UPDATE task_contracts SET task_state = 'blocked' WHERE issue_id = ?")
+                sqlx::query("UPDATE task_contracts SET task_state = 'blocked' WHERE issue_id = $1")
                     .bind(issue_id)
                     .execute(&state.pool)
                     .await?;
 
                 // Sync to blocked status
                 let blocked_status: Option<i64> = sqlx::query_scalar(
-                    "SELECT id FROM statuses WHERE project_id = ? AND category = 'blocked' ORDER BY position LIMIT 1",
+                    "SELECT id FROM statuses WHERE project_id = $1 AND category = 'blocked' ORDER BY position LIMIT 1",
                 )
                 .bind(issue.project_id)
                 .fetch_optional(&state.pool)
                 .await?;
                 if let Some(sid) = blocked_status {
-                    sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
+                    sqlx::query("UPDATE issues SET status_id = $1, updated_at = $2 WHERE id = $3")
                         .bind(sid)
                         .bind(&now)
                         .bind(issue_id)
@@ -681,7 +677,7 @@ pub fn fail_task(
 
                 // Create escalation notification
                 sqlx::query(
-                    "INSERT INTO notifications (type, issue_id, message, read, created_at) VALUES ('escalation', ?, ?, 0, ?)",
+                    "INSERT INTO notifications (type, issue_id, message, read, created_at) VALUES ('escalation', $1, $2, FALSE, $3)",
                 )
                 .bind(issue_id)
                 .bind(format!(
@@ -695,7 +691,7 @@ pub fn fail_task(
 
             // Log failure in execution_logs
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'fail', ?, ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'fail', $4, $5)",
             )
             .bind(issue_id)
             .bind(&agent_id)
@@ -707,7 +703,7 @@ pub fn fail_task(
 
             // Update agent_stats (tasks_failed + 1)
             sqlx::query(
-                "UPDATE agent_stats SET tasks_failed = tasks_failed + 1 WHERE agent_id = ?",
+                "UPDATE agent_stats SET tasks_failed = tasks_failed + 1 WHERE agent_id = $1",
             )
             .bind(&agent_id)
             .execute(&state.pool)
@@ -736,13 +732,13 @@ pub fn unclaim_task(
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
             let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
                     .bind(&identifier)
                     .fetch_one(&state.pool)
                     .await?;
 
             let contract = sqlx::query_as::<_, TaskContract>(
-                "SELECT * FROM task_contracts WHERE issue_id = ?",
+                "SELECT * FROM task_contracts WHERE issue_id = $1",
             )
             .bind(issue_id)
             .fetch_one(&state.pool)
@@ -760,7 +756,7 @@ pub fn unclaim_task(
 
             // Update: task_state='queued', clear claimed_by/claimed_at
             sqlx::query(
-                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL WHERE issue_id = ?",
+                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL WHERE issue_id = $1",
             )
             .bind(issue_id)
             .execute(&state.pool)
@@ -771,7 +767,7 @@ pub fn unclaim_task(
 
             // Log in execution_logs
             sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES (?, ?, ?, 'unclaim', 'Task unclaimed by agent', ?)",
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) VALUES ($1, $2, $3, 'unclaim', 'Task unclaimed by agent', $4)",
             )
             .bind(issue_id)
             .bind(&agent_id)
@@ -793,13 +789,13 @@ pub fn approve_task(state: State<AppState>, identifier: String) -> Result<(), St
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
             let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
                     .bind(&identifier)
                     .fetch_one(&state.pool)
                     .await?;
 
             let contract = sqlx::query_as::<_, TaskContract>(
-                "SELECT * FROM task_contracts WHERE issue_id = ?",
+                "SELECT * FROM task_contracts WHERE issue_id = $1",
             )
             .bind(issue_id)
             .fetch_one(&state.pool)
@@ -814,7 +810,7 @@ pub fn approve_task(state: State<AppState>, identifier: String) -> Result<(), St
             }
 
             // Update task_state to 'completed'
-            sqlx::query("UPDATE task_contracts SET task_state = 'completed' WHERE issue_id = ?")
+            sqlx::query("UPDATE task_contracts SET task_state = 'completed' WHERE issue_id = $1")
                 .bind(issue_id)
                 .execute(&state.pool)
                 .await?;
@@ -825,7 +821,7 @@ pub fn approve_task(state: State<AppState>, identifier: String) -> Result<(), St
             // If claimed_by exists: update agent_stats tasks_completed + 1
             if let Some(ref claimed_by) = contract.claimed_by {
                 sqlx::query(
-                    "UPDATE agent_stats SET tasks_completed = tasks_completed + 1 WHERE agent_id = ?",
+                    "UPDATE agent_stats SET tasks_completed = tasks_completed + 1 WHERE agent_id = $1",
                 )
                 .bind(claimed_by)
                 .execute(&state.pool)
@@ -848,13 +844,13 @@ pub fn reject_task(state: State<AppState>, identifier: String) -> Result<(), Str
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
             let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
                     .bind(&identifier)
                     .fetch_one(&state.pool)
                     .await?;
 
             let contract = sqlx::query_as::<_, TaskContract>(
-                "SELECT * FROM task_contracts WHERE issue_id = ?",
+                "SELECT * FROM task_contracts WHERE issue_id = $1",
             )
             .bind(issue_id)
             .fetch_one(&state.pool)
@@ -870,7 +866,7 @@ pub fn reject_task(state: State<AppState>, identifier: String) -> Result<(), Str
 
             // Update: task_state='queued', clear claimed_by/claimed_at, increment attempt_count
             sqlx::query(
-                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = ?",
+                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $1",
             )
             .bind(issue_id)
             .execute(&state.pool)
@@ -894,7 +890,7 @@ pub fn invalidate_task(
         .rt
         .block_on(async {
             let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
                     .bind(&identifier)
                     .fetch_one(&state.pool)
                     .await
@@ -921,7 +917,7 @@ pub fn task_graph(
         .rt
         .block_on(async {
             let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
+                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
                     .bind(&identifier)
                     .fetch_one(&state.pool)
                     .await
@@ -939,7 +935,7 @@ pub fn task_graph(
                 }
 
                 let issue = sqlx::query_as::<_, crate::models::Issue>(
-                    "SELECT * FROM issues WHERE id = ?",
+                    "SELECT * FROM issues WHERE id = $1",
                 )
                 .bind(id)
                 .fetch_one(&state.pool)
@@ -947,7 +943,7 @@ pub fn task_graph(
                 .map_err(|e| e.to_string())?;
 
                 let contract = sqlx::query_as::<_, TaskContract>(
-                    "SELECT * FROM task_contracts WHERE issue_id = ?",
+                    "SELECT * FROM task_contracts WHERE issue_id = $1",
                 )
                 .bind(id)
                 .fetch_optional(&state.pool)
@@ -964,7 +960,7 @@ pub fn task_graph(
 
                 // Children
                 let children: Vec<i64> = sqlx::query_scalar(
-                    "SELECT id FROM issues WHERE parent_id = ?",
+                    "SELECT id FROM issues WHERE parent_id = $1",
                 )
                 .bind(id)
                 .fetch_all(&state.pool)
@@ -977,7 +973,7 @@ pub fn task_graph(
 
                 // Dependency relations (blocks)
                 let blocks: Vec<(i64, i64)> = sqlx::query_as(
-                    "SELECT source_issue_id, target_issue_id FROM issue_relations WHERE (source_issue_id = ? OR target_issue_id = ?) AND relation_type = 'blocks'",
+                    "SELECT source_issue_id, target_issue_id FROM issue_relations WHERE (source_issue_id = $1 OR target_issue_id = $2) AND relation_type = 'blocks'",
                 )
                 .bind(id)
                 .bind(id)

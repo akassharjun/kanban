@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 /// Returns true if a task needs decomposition.
 ///
@@ -8,18 +8,18 @@ use sqlx::SqlitePool;
 ///   - estimated_complexity is 'large' and there are no child issues, OR
 ///   - success_criteria is empty ('[]' or '')
 pub async fn check_decomposition_needed(
-    pool: &SqlitePool,
+    pool: &PgPool,
     issue_id: i64,
 ) -> Result<bool, sqlx::Error> {
     // Fetch the task_contract for this issue (must exist and not be a decomposition task itself)
     let contract = sqlx::query_as::<_, (String, Option<String>, String)>(
-        "SELECT type, estimated_complexity, success_criteria FROM task_contracts WHERE issue_id = ?",
+        "SELECT type, estimated_complexity, success_criteria FROM task_contracts WHERE issue_id = $1",
     )
     .bind(issue_id)
     .fetch_optional(pool)
     .await?;
 
-    let (contract_type, estimated_complexity, success_criteria) = match contract {
+    let (contract_type, estimated_complexity, _success_criteria) = match contract {
         Some(c) => c,
         None => return Ok(false), // No task_contract means no decomposition needed
     };
@@ -33,7 +33,7 @@ pub async fn check_decomposition_needed(
     // Only large tasks need decomposition — small/medium tasks are atomic
     if estimated_complexity.as_deref() == Some("large") {
         let child_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE parent_id = ?")
+            sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE parent_id = $1")
                 .bind(issue_id)
                 .fetch_one(pool)
                 .await?;
@@ -54,12 +54,12 @@ pub async fn check_decomposition_needed(
 ///
 /// Returns the new decomposition issue's id.
 pub async fn create_decomposition_task(
-    pool: &SqlitePool,
+    pool: &PgPool,
     parent_issue_id: i64,
 ) -> Result<i64, sqlx::Error> {
     // 1. Get the parent issue details
     let parent = sqlx::query_as::<_, (i64, String, String, String)>(
-        "SELECT project_id, identifier, title, priority FROM issues WHERE id = ?",
+        "SELECT project_id, identifier, title, priority FROM issues WHERE id = $1",
     )
     .bind(parent_issue_id)
     .fetch_one(pool)
@@ -76,7 +76,7 @@ pub async fn create_decomposition_task(
 
     // 3. Increment project's issue_counter and get new identifier
     let (counter, prefix): (i64, String) = sqlx::query_as(
-        "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix",
+        "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix",
     )
     .bind(project_id)
     .fetch_one(&mut *tx)
@@ -85,7 +85,7 @@ pub async fn create_decomposition_task(
 
     // 4. Find an 'unstarted' category status for the project
     let status_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM statuses WHERE project_id = ? AND category = 'unstarted' ORDER BY position ASC LIMIT 1",
+        "SELECT id FROM statuses WHERE project_id = $1 AND category = 'unstarted' ORDER BY position ASC LIMIT 1",
     )
     .bind(project_id)
     .fetch_one(&mut *tx)
@@ -98,8 +98,8 @@ pub async fn create_decomposition_task(
         parent_identifier
     );
 
-    let result = sqlx::query(
-        "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 0.0, ?, ?)",
+    let new_issue_id: i64 = sqlx::query_scalar(
+        "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 0.0, $8, $9) RETURNING id",
     )
     .bind(project_id)
     .bind(&identifier)
@@ -110,10 +110,8 @@ pub async fn create_decomposition_task(
     .bind(parent_issue_id)
     .bind(&now)
     .bind(&now)
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
-
-    let new_issue_id = result.last_insert_rowid();
 
     // 6. Create the task_contract
     let objective = format!(
@@ -129,7 +127,7 @@ pub async fn create_decomposition_task(
     let context_json = serde_json::to_string(&context).unwrap_or_else(|_| "{}".to_string());
 
     sqlx::query(
-        "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES (?, 'decomposition', 'queued', ?, ?, '[]', '[]', ?, 'medium', 30, 0)",
+        "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, 'decomposition', 'queued', $2, $3, '[]', '[]', $4, 'medium', 30, 0)",
     )
     .bind(new_issue_id)
     .bind(&objective)
@@ -140,7 +138,7 @@ pub async fn create_decomposition_task(
 
     // 7. Create issue_relation: decomposition task blocks the parent
     sqlx::query(
-        "INSERT INTO issue_relations (source_issue_id, target_issue_id, relation_type) VALUES (?, ?, 'blocks')",
+        "INSERT INTO issue_relations (source_issue_id, target_issue_id, relation_type) VALUES ($1, $2, 'blocks')",
     )
     .bind(new_issue_id)
     .bind(parent_issue_id)
@@ -148,7 +146,7 @@ pub async fn create_decomposition_task(
     .await?;
 
     // 8. Set the parent's task_state to 'blocked'
-    sqlx::query("UPDATE task_contracts SET task_state = 'blocked' WHERE issue_id = ?")
+    sqlx::query("UPDATE task_contracts SET task_state = 'blocked' WHERE issue_id = $1")
         .bind(parent_issue_id)
         .execute(&mut *tx)
         .await?;

@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 /// Full task contract joined with issue data, returned by next_task.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -67,7 +67,7 @@ fn complexity_rank(c: &str) -> i32 {
 /// Returns `None` if no suitable task is available (agent at capacity,
 /// no matching tasks, or all candidates were claimed by other agents).
 pub async fn next_task(
-    pool: &SqlitePool,
+    pool: &PgPool,
     agent_id: &str,
     agent_skills: &[String],
     agent_max_complexity: &str,
@@ -75,7 +75,7 @@ pub async fn next_task(
 ) -> Result<Option<FullTaskContract>, sqlx::Error> {
     // 1. Check agent capacity
     let active_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM task_contracts WHERE claimed_by = ? AND task_state IN ('claimed', 'executing')",
+        "SELECT COUNT(*) FROM task_contracts WHERE claimed_by = $1 AND task_state IN ('claimed', 'executing')",
     )
     .bind(agent_id)
     .fetch_one(pool)
@@ -128,8 +128,8 @@ pub async fn next_task(
         // 4. Atomic claim via optimistic locking
         let now = chrono::Utc::now().to_rfc3339();
         let result = sqlx::query(
-            "UPDATE task_contracts SET claimed_by = ?, claimed_at = ?, task_state = 'claimed' \
-             WHERE issue_id = ? AND claimed_by IS NULL AND task_state = 'queued'",
+            "UPDATE task_contracts SET claimed_by = $1, claimed_at = $2, task_state = 'claimed' \
+             WHERE issue_id = $3 AND claimed_by IS NULL AND task_state = 'queued'",
         )
         .bind(agent_id)
         .bind(&now)
@@ -148,8 +148,8 @@ pub async fn next_task(
                 SELECT s.id FROM statuses s
                 WHERE s.project_id = issues.project_id AND s.category = 'started'
                 ORDER BY s.position ASC LIMIT 1
-             ), updated_at = ?
-             WHERE id = ?",
+             ), updated_at = $1
+             WHERE id = $2",
         )
         .bind(&now)
         .bind(candidate.issue_id)
@@ -159,7 +159,7 @@ pub async fn next_task(
         // 5b. Log claim in execution_logs
         sqlx::query(
             "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, timestamp) \
-             VALUES (?, ?, (SELECT attempt_count FROM task_contracts WHERE issue_id = ?), 'claim', 'Task claimed by agent', ?)",
+             VALUES ($1, $2, (SELECT attempt_count FROM task_contracts WHERE issue_id = $3), 'claim', 'Task claimed by agent', $4)",
         )
         .bind(candidate.issue_id)
         .bind(agent_id)
@@ -178,7 +178,7 @@ pub async fn next_task(
 
 /// Build a full task contract by joining task_contracts with issues.
 pub async fn build_full_contract(
-    pool: &SqlitePool,
+    pool: &PgPool,
     issue_id: i64,
 ) -> Result<Option<FullTaskContract>, sqlx::Error> {
     let row: Option<FullContractRow> = sqlx::query_as(
@@ -202,7 +202,7 @@ pub async fn build_full_contract(
             tc.attempt_count
         FROM task_contracts tc
         JOIN issues i ON tc.issue_id = i.id
-        WHERE tc.issue_id = ?
+        WHERE tc.issue_id = $1
         "#,
     )
     .bind(issue_id)

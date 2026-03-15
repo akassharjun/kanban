@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectMetrics {
@@ -32,53 +32,53 @@ pub struct AgentMetrics {
 }
 
 pub async fn project_metrics(
-    pool: &SqlitePool,
+    pool: &PgPool,
     project_id: i64,
 ) -> Result<ProjectMetrics, sqlx::Error> {
     let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ?",
+        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let completed: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'completed'",
+        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'completed'",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let queued: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'queued'",
+        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'queued'",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let in_progress: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state IN ('claimed', 'executing')",
+        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state IN ('claimed', 'executing')",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let blocked: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'blocked'",
+        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'blocked'",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let validating: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'validating'",
+        "SELECT COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'validating'",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let failed_attempts: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(tc.attempt_count), 0) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.attempt_count > 0",
+        "SELECT COALESCE(SUM(tc.attempt_count), 0) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.attempt_count > 0",
     )
     .bind(project_id)
     .fetch_one(pool)
@@ -90,21 +90,21 @@ pub async fn project_metrics(
             .await?;
 
     let avg_confidence: Option<f64> = sqlx::query_scalar(
-        "SELECT AVG(json_extract(tc.result, '$.confidence')) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? AND tc.task_state = 'completed' AND tc.result IS NOT NULL",
+        "SELECT AVG((tc.result::jsonb->>'confidence')::float) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 AND tc.task_state = 'completed' AND tc.result IS NOT NULL",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let tasks_completed_24h: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM execution_logs el JOIN issues i ON el.issue_id = i.id WHERE i.project_id = ? AND el.entry_type IN ('result', 'complete') AND el.timestamp > datetime('now', '-24 hours')",
+        "SELECT COUNT(*) FROM execution_logs el JOIN issues i ON el.issue_id = i.id WHERE i.project_id = $1 AND el.entry_type IN ('result', 'complete') AND el.timestamp::timestamptz > NOW() - interval '24 hours'",
     )
     .bind(project_id)
     .fetch_one(pool)
     .await?;
 
     let type_rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT tc.type, COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ? GROUP BY tc.type",
+        "SELECT tc.type, COUNT(*) FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = $1 GROUP BY tc.type",
     )
     .bind(project_id)
     .fetch_all(pool)
@@ -132,17 +132,17 @@ pub async fn project_metrics(
 }
 
 pub async fn agent_metrics(
-    pool: &SqlitePool,
+    pool: &PgPool,
     agent_id: &str,
 ) -> Result<AgentMetrics, sqlx::Error> {
-    let agent = sqlx::query_as::<_, crate::models::Agent>("SELECT * FROM agents WHERE id = ?")
+    let agent = sqlx::query_as::<_, crate::models::Agent>("SELECT * FROM agents WHERE id = $1")
         .bind(agent_id)
         .fetch_one(pool)
         .await?;
 
     let stats =
         sqlx::query_as::<_, crate::models::AgentStats>(
-            "SELECT * FROM agent_stats WHERE agent_id = ?",
+            "SELECT * FROM agent_stats WHERE agent_id = $1",
         )
         .bind(agent_id)
         .fetch_one(pool)
@@ -166,7 +166,7 @@ pub async fn agent_metrics(
     };
 
     let current_tasks: Vec<String> = sqlx::query_scalar(
-        "SELECT i.identifier FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE tc.claimed_by = ? AND tc.task_state IN ('claimed', 'executing')",
+        "SELECT i.identifier FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE tc.claimed_by = $1 AND tc.task_state IN ('claimed', 'executing')",
     )
     .bind(agent_id)
     .fetch_all(pool)

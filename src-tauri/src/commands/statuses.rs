@@ -24,7 +24,7 @@ pub struct UpdateStatusInput {
 #[tauri::command]
 pub fn list_statuses(state: State<AppState>, project_id: i64) -> Result<Vec<Status>, String> {
     state.rt.block_on(async {
-        sqlx::query_as::<_, Status>("SELECT * FROM statuses WHERE project_id = ? ORDER BY position")
+        sqlx::query_as::<_, Status>("SELECT * FROM statuses WHERE project_id = $1 ORDER BY position")
             .bind(project_id)
             .fetch_all(&state.pool)
             .await
@@ -35,14 +35,14 @@ pub fn list_statuses(state: State<AppState>, project_id: i64) -> Result<Vec<Stat
 pub fn create_status(state: State<AppState>, input: CreateStatusInput) -> Result<Status, String> {
     state.rt.block_on(async {
         // Get max position
-        let max_pos: Option<i64> = sqlx::query_scalar("SELECT MAX(position) FROM statuses WHERE project_id = ?")
+        let max_pos: Option<i64> = sqlx::query_scalar("SELECT MAX(position) FROM statuses WHERE project_id = $1")
             .bind(input.project_id)
             .fetch_one(&state.pool)
             .await?;
         let position = max_pos.unwrap_or(-1) + 1;
 
-        let result = sqlx::query(
-            "INSERT INTO statuses (project_id, name, category, color, icon, position) VALUES (?, ?, ?, ?, ?, ?)"
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO statuses (project_id, name, category, color, icon, position) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
         )
         .bind(input.project_id)
         .bind(&input.name)
@@ -50,11 +50,11 @@ pub fn create_status(state: State<AppState>, input: CreateStatusInput) -> Result
         .bind(&input.color)
         .bind(&input.icon)
         .bind(position)
-        .execute(&state.pool)
+        .fetch_one(&state.pool)
         .await?;
 
-        sqlx::query_as::<_, Status>("SELECT * FROM statuses WHERE id = ?")
-            .bind(result.last_insert_rowid())
+        sqlx::query_as::<_, Status>("SELECT * FROM statuses WHERE id = $1")
+            .bind(id)
             .fetch_one(&state.pool)
             .await
     }).map_err(|e| e.to_string())
@@ -64,26 +64,26 @@ pub fn create_status(state: State<AppState>, input: CreateStatusInput) -> Result
 pub fn update_status(state: State<AppState>, id: i64, input: UpdateStatusInput) -> Result<Status, String> {
     state.rt.block_on(async {
         if let Some(name) = &input.name {
-            sqlx::query("UPDATE statuses SET name = ? WHERE id = ?")
+            sqlx::query("UPDATE statuses SET name = $1 WHERE id = $2")
                 .bind(name).bind(id).execute(&state.pool).await?;
         }
         if let Some(category) = &input.category {
-            sqlx::query("UPDATE statuses SET category = ? WHERE id = ?")
+            sqlx::query("UPDATE statuses SET category = $1 WHERE id = $2")
                 .bind(category).bind(id).execute(&state.pool).await?;
         }
         if let Some(color) = &input.color {
-            sqlx::query("UPDATE statuses SET color = ? WHERE id = ?")
+            sqlx::query("UPDATE statuses SET color = $1 WHERE id = $2")
                 .bind(color).bind(id).execute(&state.pool).await?;
         }
         if let Some(icon) = &input.icon {
-            sqlx::query("UPDATE statuses SET icon = ? WHERE id = ?")
+            sqlx::query("UPDATE statuses SET icon = $1 WHERE id = $2")
                 .bind(icon).bind(id).execute(&state.pool).await?;
         }
         if let Some(position) = &input.position {
-            sqlx::query("UPDATE statuses SET position = ? WHERE id = ?")
+            sqlx::query("UPDATE statuses SET position = $1 WHERE id = $2")
                 .bind(position).bind(id).execute(&state.pool).await?;
         }
-        sqlx::query_as::<_, Status>("SELECT * FROM statuses WHERE id = ?")
+        sqlx::query_as::<_, Status>("SELECT * FROM statuses WHERE id = $1")
             .bind(id).fetch_one(&state.pool).await
     }).map_err(|e| e.to_string())
 }
@@ -92,7 +92,7 @@ pub fn update_status(state: State<AppState>, id: i64, input: UpdateStatusInput) 
 pub fn delete_status(state: State<AppState>, id: i64) -> Result<(), String> {
     state.rt.block_on(async {
         let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM issues WHERE status_id = ?"
+            "SELECT COUNT(*) FROM issues WHERE status_id = $1"
         )
         .bind(id)
         .fetch_one(&state.pool)
@@ -104,7 +104,7 @@ pub fn delete_status(state: State<AppState>, id: i64) -> Result<(), String> {
             ));
         }
 
-        sqlx::query("DELETE FROM statuses WHERE id = ?").bind(id).execute(&state.pool).await?;
+        sqlx::query("DELETE FROM statuses WHERE id = $1").bind(id).execute(&state.pool).await?;
         Ok(())
     }).map_err(|e: sqlx::Error| e.to_string())
 }
@@ -113,7 +113,7 @@ pub fn delete_status(state: State<AppState>, id: i64) -> Result<(), String> {
 pub fn reorder_statuses(state: State<AppState>, status_ids: Vec<i64>) -> Result<(), String> {
     state.rt.block_on(async {
         for (i, id) in status_ids.iter().enumerate() {
-            sqlx::query("UPDATE statuses SET position = ? WHERE id = ?")
+            sqlx::query("UPDATE statuses SET position = $1 WHERE id = $2")
                 .bind(i as i64).bind(id).execute(&state.pool).await?;
         }
         Ok(())

@@ -8,7 +8,7 @@ use state::AppState;
 use tauri::Emitter;
 use tauri::Manager;
 
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,27 +20,22 @@ pub fn run() {
             let pool = rt.block_on(db::init_db())?;
             app.manage(AppState { pool, rt });
 
-            // Watch the SQLite DB file for external modifications (CLI/MCP writes)
-            let app_handle = app.handle().clone();
+            // Redis pub/sub for real-time updates (replaces SQLite file watcher)
+            let app_handle_redis = app.handle().clone();
             std::thread::spawn(move || {
-                let db_path = dirs::home_dir()
-                    .expect("Failed to resolve home directory")
-                    .join(".kanban/data.db");
-                let mut last_modified = std::fs::metadata(&db_path)
-                    .and_then(|m| m.modified())
-                    .unwrap_or(SystemTime::UNIX_EPOCH);
-
-                loop {
-                    std::thread::sleep(Duration::from_secs(2));
-                    if let Ok(meta) = std::fs::metadata(&db_path) {
-                        if let Ok(modified) = meta.modified() {
-                            if modified > last_modified {
-                                last_modified = modified;
-                                let _ = app_handle.emit("db-changed", ());
+                let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
+                if let Ok(client) = redis::Client::open(redis_url) {
+                    if let Ok(mut conn) = client.get_connection() {
+                        let mut pubsub = conn.as_pubsub();
+                        let _ = pubsub.subscribe("kanban:db-changed");
+                        loop {
+                            if let Ok(_msg) = pubsub.get_message() {
+                                let _ = app_handle_redis.emit("db-changed", ());
                             }
                         }
                     }
                 }
+                // Fallback: if Redis unavailable, do nothing (CLI changes won't auto-refresh)
             });
 
             // Timeout recovery thread - reclaims stale tasks every 30 seconds
@@ -79,6 +74,7 @@ pub fn run() {
             commands::projects::create_project,
             commands::projects::update_project,
             commands::projects::delete_project,
+            commands::projects::restore_project,
             // Statuses
             commands::statuses::list_statuses,
             commands::statuses::create_status,
