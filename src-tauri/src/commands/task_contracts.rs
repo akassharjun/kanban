@@ -347,9 +347,9 @@ pub fn complete_task(
                 )));
             }
 
-            // Get project config for thresholds
-            let project_id: i64 = sqlx::query_scalar(
-                "SELECT project_id FROM issues WHERE id = ?",
+            // Get full issue for project config and review task creation
+            let issue = sqlx::query_as::<_, crate::models::Issue>(
+                "SELECT * FROM issues WHERE id = ?",
             )
             .bind(issue_id)
             .fetch_one(&state.pool)
@@ -358,7 +358,7 @@ pub fn complete_task(
             let config = sqlx::query_as::<_, ProjectAgentConfig>(
                 "SELECT * FROM project_agent_configs WHERE project_id = ?",
             )
-            .bind(project_id)
+            .bind(issue.project_id)
             .fetch_optional(&state.pool)
             .await?;
 
@@ -407,6 +407,84 @@ pub fn complete_task(
 
             // Sync issues.status_id
             sync_issue_status(&state.pool, issue_id, new_state, &now).await?;
+
+            // Auto-create review task when entering validating state
+            if new_state == TaskState::Validating {
+                let review_title = format!("Review: {}", &input.identifier);
+                let review_objective = format!(
+                    "Verify completion of {} (confidence: {:.2}). Check the execution log and validate the work.",
+                    &input.identifier, input.confidence
+                );
+                let review_context = serde_json::json!({
+                    "files": [],
+                    "related_tasks": [&input.identifier],
+                    "original_task_result": &result_json,
+                    "prior_attempts": []
+                });
+
+                // Create review issue
+                let (counter, prefix): (i64, String) = sqlx::query_as(
+                    "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = ? RETURNING issue_counter, prefix",
+                )
+                .bind(issue.project_id)
+                .fetch_one(&state.pool)
+                .await?;
+                let review_identifier = format!("{}-{}", prefix, counter);
+
+                let review_result = sqlx::query(
+                    "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, parent_id, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NULL, 0.0, ?, ?)",
+                )
+                .bind(issue.project_id)
+                .bind(&review_identifier)
+                .bind(&review_title)
+                .bind(&review_objective)
+                .bind(issue.status_id)
+                .bind(&issue.priority)
+                .bind(&now)
+                .bind(&now)
+                .execute(&state.pool)
+                .await?;
+
+                let review_issue_id = review_result.last_insert_rowid();
+
+                // Find an unstarted status for the review task
+                let unstarted_sid: Option<i64> = sqlx::query_scalar(
+                    "SELECT id FROM statuses WHERE project_id = ? AND category = 'unstarted' ORDER BY position LIMIT 1",
+                )
+                .bind(issue.project_id)
+                .fetch_optional(&state.pool)
+                .await?;
+                if let Some(sid) = unstarted_sid {
+                    sqlx::query("UPDATE issues SET status_id = ? WHERE id = ?")
+                        .bind(sid)
+                        .bind(review_issue_id)
+                        .execute(&state.pool)
+                        .await?;
+                }
+
+                // Create review task contract
+                sqlx::query(
+                    "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, required_skills, estimated_complexity, timeout_minutes) VALUES (?, 'review', 'queued', ?, ?, '[\"review\"]', 'small', 30)",
+                )
+                .bind(review_issue_id)
+                .bind(&review_objective)
+                .bind(review_context.to_string())
+                .execute(&state.pool)
+                .await?;
+
+                // Create notification
+                sqlx::query(
+                    "INSERT INTO notifications (type, issue_id, message, read, created_at) VALUES ('low_confidence', ?, ?, 0, ?)",
+                )
+                .bind(issue_id)
+                .bind(format!(
+                    "{} completed with {:.2} confidence, review task {} created",
+                    &input.identifier, input.confidence, &review_identifier
+                ))
+                .bind(&now)
+                .execute(&state.pool)
+                .await?;
+            }
 
             // Log result in execution_logs
             sqlx::query(
@@ -457,11 +535,13 @@ pub fn fail_task(
         .block_on(async {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
-            let issue_id: i64 =
-                sqlx::query_scalar("SELECT id FROM issues WHERE identifier = ?")
-                    .bind(&identifier)
-                    .fetch_one(&state.pool)
-                    .await?;
+            let issue = sqlx::query_as::<_, crate::models::Issue>(
+                "SELECT * FROM issues WHERE identifier = ?",
+            )
+            .bind(&identifier)
+            .fetch_one(&state.pool)
+            .await?;
+            let issue_id = issue.id;
 
             let contract = sqlx::query_as::<_, TaskContract>(
                 "SELECT * FROM task_contracts WHERE issue_id = ?",
@@ -498,6 +578,53 @@ pub fn fail_task(
             .bind(issue_id)
             .execute(&state.pool)
             .await?;
+
+            // Check escalation: if attempt_count >= max_attempts, block instead of requeue
+            let config = sqlx::query_as::<_, ProjectAgentConfig>(
+                "SELECT * FROM project_agent_configs WHERE project_id = ?",
+            )
+            .bind(issue.project_id)
+            .fetch_optional(&state.pool)
+            .await?;
+
+            let max_attempts = config.as_ref().map(|c| c.max_attempts).unwrap_or(3);
+
+            if new_attempt_count >= max_attempts {
+                // Escalate: block the task instead of requeuing
+                sqlx::query("UPDATE task_contracts SET task_state = 'blocked' WHERE issue_id = ?")
+                    .bind(issue_id)
+                    .execute(&state.pool)
+                    .await?;
+
+                // Sync to blocked status
+                let blocked_status: Option<i64> = sqlx::query_scalar(
+                    "SELECT id FROM statuses WHERE project_id = ? AND category = 'blocked' ORDER BY position LIMIT 1",
+                )
+                .bind(issue.project_id)
+                .fetch_optional(&state.pool)
+                .await?;
+                if let Some(sid) = blocked_status {
+                    sqlx::query("UPDATE issues SET status_id = ?, updated_at = ? WHERE id = ?")
+                        .bind(sid)
+                        .bind(&now)
+                        .bind(issue_id)
+                        .execute(&state.pool)
+                        .await?;
+                }
+
+                // Create escalation notification
+                sqlx::query(
+                    "INSERT INTO notifications (type, issue_id, message, read, created_at) VALUES ('escalation', ?, ?, 0, ?)",
+                )
+                .bind(issue_id)
+                .bind(format!(
+                    "{} has failed {} times. Human intervention required.",
+                    &identifier, new_attempt_count
+                ))
+                .bind(&now)
+                .execute(&state.pool)
+                .await?;
+            }
 
             // Log failure in execution_logs
             sqlx::query(
