@@ -4,7 +4,10 @@ pub mod models;
 mod state;
 
 use state::AppState;
+use tauri::Emitter;
 use tauri::Manager;
+
+use std::time::{Duration, SystemTime};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -15,6 +18,30 @@ pub fn run() {
             let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
             let pool = rt.block_on(db::init_db())?;
             app.manage(AppState { pool, rt });
+
+            // Watch the SQLite DB file for external modifications (CLI/MCP writes)
+            let app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let db_path = dirs::home_dir()
+                    .expect("Failed to resolve home directory")
+                    .join(".kanban/data.db");
+                let mut last_modified = std::fs::metadata(&db_path)
+                    .and_then(|m| m.modified())
+                    .unwrap_or(SystemTime::UNIX_EPOCH);
+
+                loop {
+                    std::thread::sleep(Duration::from_secs(2));
+                    if let Ok(meta) = std::fs::metadata(&db_path) {
+                        if let Ok(modified) = meta.modified() {
+                            if modified > last_modified {
+                                last_modified = modified;
+                                let _ = app_handle.emit("db-changed", ());
+                            }
+                        }
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

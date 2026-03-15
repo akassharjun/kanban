@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "./components/Sidebar";
 import { ProjectHeader, type ViewMode } from "./components/ProjectHeader";
 import { BoardView } from "./components/BoardView";
@@ -124,6 +125,17 @@ function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [selectedIssueId, showSearch, showCreateIssue, showCreateProject, showNotifications, refreshIssues, refreshStatuses, refreshProjects]);
+
+  // Listen for external DB changes (CLI/MCP writes) and refresh all data
+  useEffect(() => {
+    const unlisten = listen("db-changed", () => {
+      refreshProjects();
+      refreshIssues();
+      refreshStatuses();
+      refreshLabels();
+    });
+    return () => { unlisten.then(fn => fn()); };
+  }, [refreshProjects, refreshIssues, refreshStatuses, refreshLabels]);
 
   const handleQuickCreate = async (statusId: number, title: string) => {
     if (!selectedProjectId) return;
