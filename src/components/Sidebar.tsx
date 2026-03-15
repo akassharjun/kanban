@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Users, Settings, ChevronDown, FolderKanban } from "lucide-react";
+import { Plus, Users, Settings, ChevronDown, FolderKanban, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/types";
 
@@ -10,6 +10,7 @@ interface SidebarProps {
   onCreateProject: () => void;
   onOpenMembers: () => void;
   onOpenSettings: () => void;
+  onOpenAgents?: () => void;
   collapsed: boolean;
 }
 
@@ -20,6 +21,7 @@ export function Sidebar({
   onCreateProject,
   onOpenMembers,
   onOpenSettings,
+  onOpenAgents,
   collapsed,
 }: SidebarProps) {
   const [projectsExpanded, setProjectsExpanded] = useState(true);
@@ -80,6 +82,13 @@ export function Sidebar({
         >
           <Users className="h-4 w-4" />
           Members
+        </button>
+        <button
+          onClick={onOpenAgents}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+        >
+          <Bot className="h-4 w-4" />
+          Agent Ops
         </button>
         <button
           onClick={onOpenSettings}

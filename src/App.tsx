@@ -14,6 +14,8 @@ import { MembersView } from "./components/MembersView";
 import { SearchDialog } from "./components/SearchDialog";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 import { ProjectSettingsView } from "./components/ProjectSettingsView";
+import { AgentDashboard } from "@/components/AgentDashboard";
+import { ReplayViewer } from "@/components/ReplayViewer";
 import { useProjects } from "./hooks/use-projects";
 import { useIssues } from "./hooks/use-issues";
 import { useMembers } from "./hooks/use-members";
@@ -22,7 +24,7 @@ import { useLabels } from "./hooks/use-labels";
 import * as api from "./tauri/commands";
 import type { IssueTemplate } from "./types";
 
-type Page = "project" | "members" | "settings";
+type Page = "project" | "members" | "settings" | "agents";
 
 function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
@@ -38,6 +40,7 @@ function App() {
   const [templates, setTemplates] = useState<IssueTemplate[]>([]);
   const [createIssueStatusId, setCreateIssueStatusId] = useState<number | undefined>();
   const [filters, setFilters] = useState<Filters>({});
+  const [replayIdentifier, setReplayIdentifier] = useState<string | null>(null);
 
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return document.documentElement.classList.contains("dark") ? "dark" : "light";
@@ -174,6 +177,7 @@ function App() {
         onCreateProject={() => setShowCreateProject(true)}
         onOpenMembers={() => { setPage("members"); setSelectedIssueId(null); }}
         onOpenSettings={() => setPage("settings")}
+        onOpenAgents={() => setPage("agents")}
         collapsed={sidebarCollapsed}
       />
 
@@ -268,6 +272,10 @@ function App() {
             Select a project to view settings
           </div>
         )}
+
+        {page === "agents" && (
+          <AgentDashboard projectId={selectedProjectId} />
+        )}
       </div>
 
       {selectedIssueId && (
@@ -316,6 +324,14 @@ function App() {
       )}
 
       {showNotifications && <NotificationsPanel onClose={() => setShowNotifications(false)} />}
+
+      {replayIdentifier && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8">
+          <div className="w-full max-w-4xl h-full max-h-[90vh] rounded-xl overflow-hidden">
+            <ReplayViewer identifier={replayIdentifier} onClose={() => setReplayIdentifier(null)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
