@@ -30,7 +30,7 @@ pub fn list_members(state: State<AppState>) -> Result<Vec<Member>, String> {
 #[tauri::command]
 pub fn create_member(state: State<AppState>, input: CreateMemberInput) -> Result<Member, String> {
     state.rt.block_on(async {
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
         let color = input.avatar_color.unwrap_or_else(|| {
             let colors = ["#6366f1", "#ec4899", "#f59e0b", "#10b981", "#3b82f6", "#8b5cf6", "#ef4444", "#14b8a6"];
             colors[rand_color_index(&input.name) % colors.len()].to_string()

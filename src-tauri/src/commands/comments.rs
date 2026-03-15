@@ -31,7 +31,7 @@ pub fn create_comment(state: State<AppState>, input: CreateCommentInput) -> Resu
         return Err("content cannot be empty".to_string());
     }
     state.rt.block_on(async {
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
         let result = sqlx::query(
             "INSERT INTO comments (issue_id, member_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
         )
@@ -63,7 +63,7 @@ pub fn update_comment(state: State<AppState>, id: i64, input: UpdateCommentInput
         return Err("content cannot be empty".to_string());
     }
     state.rt.block_on(async {
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
         let result = sqlx::query("UPDATE comments SET content = ?, updated_at = ? WHERE id = ?")
             .bind(&input.content)
             .bind(&now)

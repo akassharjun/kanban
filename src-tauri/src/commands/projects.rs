@@ -41,7 +41,7 @@ pub fn get_project(state: State<AppState>, id: i64) -> Result<Project, String> {
 #[tauri::command]
 pub fn create_project(state: State<AppState>, input: CreateProjectInput) -> Result<Project, String> {
     state.rt.block_on(async {
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
         // Insert project
         let result = sqlx::query(
@@ -103,7 +103,7 @@ pub fn create_project(state: State<AppState>, input: CreateProjectInput) -> Resu
 #[tauri::command]
 pub fn update_project(state: State<AppState>, id: i64, input: UpdateProjectInput) -> Result<Project, String> {
     state.rt.block_on(async {
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
         // Get old state for undo
         let old_project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
@@ -151,7 +151,7 @@ pub fn update_project(state: State<AppState>, id: i64, input: UpdateProjectInput
 #[tauri::command]
 pub fn delete_project(state: State<AppState>, id: i64) -> Result<(), String> {
     state.rt.block_on(async {
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
         let old_project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = ?")
             .bind(id).fetch_one(&state.pool).await?;
         let old_snapshot = serde_json::to_string(&old_project).unwrap_or_default();

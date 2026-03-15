@@ -289,7 +289,7 @@ async fn handle_project(
             description,
             icon,
         } => {
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let result = sqlx::query(
                 "INSERT INTO projects (name, description, icon, status, prefix, issue_counter, created_at, updated_at) VALUES (?, ?, ?, 'active', ?, 0, ?, ?)",
             )
@@ -340,7 +340,7 @@ async fn handle_project(
             description,
             status,
         } => {
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             if let Some(n) = &name {
                 sqlx::query("UPDATE projects SET name = ?, updated_at = ? WHERE id = ?")
                     .bind(n)
@@ -442,7 +442,7 @@ async fn handle_issue(
             assignee,
             parent,
         } => {
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let prio = priority.unwrap_or_else(|| "none".to_string());
 
             let mut tx = pool.begin().await?;
@@ -502,7 +502,7 @@ async fn handle_issue(
             assignee,
             description,
         } => {
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
                 .bind(&identifier)
                 .fetch_one(pool)
@@ -664,7 +664,7 @@ async fn handle_member(
             email,
             display_name,
         } => {
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let color = "#6366f1";
             let result = sqlx::query(
                 "INSERT INTO members (name, display_name, email, avatar_color, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -819,7 +819,7 @@ async fn handle_comment(
         CommentAction::Add { identifier, content, member } => {
             let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
                 .bind(&identifier).fetch_one(pool).await?;
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let result = sqlx::query("INSERT INTO comments (issue_id, member_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
                 .bind(issue.id).bind(member).bind(&content).bind(&now).bind(&now)
                 .execute(pool).await?;

@@ -33,7 +33,7 @@ pub fn list_templates(state: State<AppState>, project_id: i64) -> Result<Vec<Iss
 #[tauri::command]
 pub fn create_template(state: State<AppState>, input: CreateTemplateInput) -> Result<IssueTemplate, String> {
     state.rt.block_on(async {
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
         let priority = input.default_priority.unwrap_or_else(|| "none".to_string());
         let label_ids = input.default_label_ids.map(|ids| serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string())).unwrap_or_else(|| "[]".to_string());
 
@@ -52,7 +52,7 @@ pub fn create_template(state: State<AppState>, input: CreateTemplateInput) -> Re
 #[tauri::command]
 pub fn update_template(state: State<AppState>, id: i64, input: UpdateTemplateInput) -> Result<IssueTemplate, String> {
     state.rt.block_on(async {
-        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
         if let Some(ref name) = input.name {
             sqlx::query("UPDATE issue_templates SET name = ?, updated_at = ? WHERE id = ?")
                 .bind(name).bind(&now).bind(id).execute(&state.pool).await?;

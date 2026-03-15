@@ -241,7 +241,7 @@ async fn handle_tool_call(
             let assignee_id = args.get("assignee_id").and_then(|v| v.as_i64());
             let parent_id = args.get("parent_id").and_then(|v| v.as_i64());
 
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
             let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
@@ -295,7 +295,7 @@ async fn handle_tool_call(
         }
         "update_issue" => {
             let identifier = args["identifier"].as_str().ok_or("identifier required")?;
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let issue = sqlx::query_as::<_, Issue>(
                 "SELECT * FROM issues WHERE identifier = ?",
             )
@@ -454,7 +454,7 @@ async fn handle_tool_call(
         }
         "move_issue" => {
             let identifier = args["identifier"].as_str().ok_or("identifier required")?;
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let issue = sqlx::query_as::<_, Issue>(
                 "SELECT * FROM issues WHERE identifier = ?",
             )
@@ -506,7 +506,7 @@ async fn handle_tool_call(
         "bulk_update" => {
             let identifiers =
                 args["identifiers"].as_array().ok_or("identifiers required")?;
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let mut updated_issues = vec![];
             for ident_val in identifiers {
                 let ident =
@@ -656,7 +656,7 @@ async fn handle_tool_call(
             let name = args["name"].as_str().ok_or("name required")?;
             let email = args.get("email").and_then(|v| v.as_str());
             let display_name = args.get("display_name").and_then(|v| v.as_str());
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let result = sqlx::query(
                 "INSERT INTO members (name, display_name, email, avatar_color, created_at) VALUES (?, ?, ?, '#6366f1', ?)",
             )
@@ -689,7 +689,7 @@ async fn handle_tool_call(
             let member_id = args.get("member_id").and_then(|v| v.as_i64());
             let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = ?")
                 .bind(identifier).fetch_one(pool).await.map_err(|e| e.to_string())?;
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let result = sqlx::query("INSERT INTO comments (issue_id, member_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
                 .bind(issue.id).bind(member_id).bind(content).bind(&now).bind(&now)
                 .execute(pool).await.map_err(|e| e.to_string())?;
