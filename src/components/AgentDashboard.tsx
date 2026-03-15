@@ -220,33 +220,59 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
             <div className="text-sm text-zinc-500 font-mono">No activity yet. Agent actions will appear here in real-time.</div>
           </div>
         ) : (
-          <div className="rounded-lg border border-zinc-700 bg-zinc-900 divide-y divide-zinc-800 max-h-96 overflow-y-auto">
-            {activityLogs.map((log) => {
-              const style = ENTRY_TYPE_STYLES[log.entry_type] || "bg-zinc-500/20 text-zinc-400";
-              const identifier = issueIdentifiers[log.issue_id];
-              const agentName = agents.find(a => a.id === log.agent_id)?.name || log.agent_id.slice(0, 8);
-              return (
-                <div
-                  key={log.id}
-                  className={`flex items-start gap-3 px-3 py-2 hover:bg-zinc-800/50 ${onViewReplay && identifier ? "cursor-pointer" : ""}`}
-                  onClick={() => { if (onViewReplay && identifier) onViewReplay(identifier); }}
-                >
-                  <span className="text-[10px] font-mono text-zinc-600 mt-0.5 shrink-0 w-16">
-                    {formatTime(log.timestamp)}
-                  </span>
-                  {identifier && (
-                    <span className="text-[10px] font-mono text-amber-500 mt-0.5 shrink-0">
-                      {identifier}
+          <div className="rounded-lg border border-zinc-700 bg-zinc-900 overflow-hidden">
+            {/* Header */}
+            <div className="grid grid-cols-[3.5rem_4rem_5.5rem_7rem_1fr] gap-2 px-3 py-1.5 border-b border-zinc-700 bg-zinc-800/50 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+              <span>Time</span>
+              <span>Task</span>
+              <span>Action</span>
+              <span>Agent</span>
+              <span>Details</span>
+            </div>
+            {/* Rows */}
+            <div className="max-h-96 overflow-y-auto divide-y divide-zinc-800/50">
+              {activityLogs.map((log) => {
+                const style = ENTRY_TYPE_STYLES[log.entry_type] || "bg-zinc-500/20 text-zinc-400";
+                const identifier = issueIdentifiers[log.issue_id];
+                const agent = agents.find(a => a.id === log.agent_id);
+                const agentName = agent?.name || log.agent_id.slice(0, 8);
+                const agentType = agent?.agent_type || "system";
+                const icons: Record<string, string> = {
+                  claim: "🤖", start: "▶️", reasoning: "💭", file_read: "📖",
+                  file_edit: "✏️", command: "⚡", discovery: "🔍", error: "❌",
+                  result: "✅", complete: "✅", fail: "❌", checkpoint: "📌",
+                  timeout: "⏰", unblocked: "🔓", approve: "✅", reject: "❌",
+                  unclaim: "↩️", reclaim: "🔄",
+                };
+                const icon = icons[log.entry_type] || "•";
+
+                return (
+                  <div
+                    key={log.id}
+                    className={`grid grid-cols-[3.5rem_4rem_5.5rem_7rem_1fr] gap-2 px-3 py-2 hover:bg-zinc-800/50 items-start ${onViewReplay && identifier ? "cursor-pointer" : ""}`}
+                    onClick={() => { if (onViewReplay && identifier) onViewReplay(identifier); }}
+                  >
+                    <span className="text-[10px] font-mono text-zinc-600 tabular-nums">
+                      {formatTime(log.timestamp)}
                     </span>
-                  )}
-                  <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded shrink-0 ${style}`}>
-                    {log.entry_type}
-                  </span>
-                  <span className="text-xs text-amber-400 font-mono shrink-0">{agentName}</span>
-                  <span className="text-sm text-zinc-300 truncate flex-1">{log.message}</span>
-                </div>
-              );
-            })}
+                    <span className="text-[10px] font-mono text-amber-500 truncate">
+                      {identifier || "—"}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="text-xs">{icon}</span>
+                      <span className={`text-[10px] font-mono uppercase px-1 py-0.5 rounded leading-none ${style}`}>
+                        {log.entry_type.length > 7 ? log.entry_type.slice(0, 7) : log.entry_type}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-1 min-w-0">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${agentType === 'claude' ? 'bg-orange-500' : agentType === 'codex' ? 'bg-green-500' : agentType === 'gemini' ? 'bg-blue-500' : 'bg-purple-500'}`} />
+                      <span className="text-[11px] font-mono text-zinc-300 truncate">{agentName}</span>
+                    </span>
+                    <span className="text-xs text-zinc-400 truncate">{log.message}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
