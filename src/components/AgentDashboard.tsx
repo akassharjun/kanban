@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { AgentMetrics, ExecutionLog } from "@/types";
 import { useAgents, useProjectMetrics } from "@/hooks/use-agents";
-import { getAgentStats, recentActivity, getIssue } from "@/tauri/commands";
+import { getAgentStats, recentActivity, getIssue, deregisterAgent } from "@/tauri/commands";
 
 interface AgentDashboardProps {
   projectId: number | null;
@@ -59,6 +59,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
   const [activityLogs, setActivityLogs] = useState<ExecutionLog[]>([]);
   const [activityLoading, setActivityLoading] = useState(true);
   const [issueIdentifiers, setIssueIdentifiers] = useState<Record<number, string>>({});
+  const [showInactive, setShowInactive] = useState(false);
 
   // Fetch per-agent stats
   useEffect(() => {
@@ -138,21 +139,45 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
 
       {/* Agents */}
       <div>
-        <h2 className="text-xs uppercase tracking-wider text-zinc-500 mb-3">Agents</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs uppercase tracking-wider text-zinc-500">Agents</h2>
+          <button
+            onClick={() => setShowInactive(!showInactive)}
+            className="text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors px-2 py-1 rounded border border-zinc-700 hover:border-zinc-500"
+          >
+            {showInactive ? "Hide inactive" : "Show inactive"}
+            <span className="ml-1 text-zinc-600">
+              ({agents.filter(a => a.status === "offline").length})
+            </span>
+          </button>
+        </div>
         {agentsLoading ? (
           <div className="text-sm text-zinc-500">Loading agents...</div>
         ) : agents.length === 0 ? (
           <div className="text-sm text-zinc-500">No agents registered.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {agents.map((agent) => {
+            {agents
+              .filter(agent => {
+                if (showInactive) return true;
+                return agent.status !== "offline";
+              })
+              .map((agent) => {
               const isOnline = agent.status === "online" || agent.status === "busy" || agent.status === "idle";
               const stats = agentStats[agent.id];
               const agentType = agent.agent_type || "custom";
               const typeStyle = AGENT_TYPE_COLORS[agentType] || AGENT_TYPE_COLORS.custom;
-
-              // Skills are already a parsed JSON value from Postgres JSONB
               const skills: string[] = Array.isArray(agent.skills) ? agent.skills : [];
+
+              const handleDelete = async () => {
+                if (!window.confirm(`Remove agent "${agent.name}"? Its active tasks will be requeued.`)) return;
+                try {
+                  await deregisterAgent(agent.id);
+                  refreshAgents();
+                } catch (e) {
+                  console.error("Failed to deregister agent", e);
+                }
+              };
 
               return (
                 <div
@@ -161,19 +186,37 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
                     isOnline ? "border-l-2 border-l-amber-500 shadow-lg shadow-amber-500/10" : "opacity-50"
                   }`}
                 >
+                  {/* Header: name + type + status */}
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-sm">{agent.name}</span>
-                      <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border ${typeStyle}`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-semibold text-sm truncate">{agent.name}</span>
+                      <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border shrink-0 ${typeStyle}`}>
                         {agentType}
                       </span>
                     </div>
-                    <span className="flex items-center gap-1.5 text-xs">
-                      <span className={`inline-block h-2 w-2 rounded-full ${isOnline ? "bg-green-500 animate-pulse" : "bg-zinc-600"}`} />
-                      <span className="text-zinc-400 font-mono">{agent.status}</span>
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="flex items-center gap-1.5 text-xs">
+                        <span className={`inline-block h-2 w-2 rounded-full ${isOnline ? "bg-green-500 animate-pulse" : "bg-zinc-600"}`} />
+                        <span className="text-zinc-400 font-mono">{agent.status}</span>
+                      </span>
+                      <button
+                        onClick={handleDelete}
+                        className="text-zinc-600 hover:text-red-400 transition-colors p-0.5"
+                        title="Remove agent"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                    </div>
                   </div>
 
+                  {/* Model info */}
+                  <div className="text-[10px] font-mono text-zinc-500">
+                    model: <span className="text-zinc-400">{agentType}</span>
+                    {" · "}concurrency: <span className="text-zinc-400">{agent.max_concurrent}</span>
+                    {" · "}max: <span className="text-zinc-400">{agent.max_complexity}</span>
+                  </div>
+
+                  {/* Skills */}
                   {skills.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {skills.map((skill: string) => (
@@ -182,6 +225,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
                     </div>
                   )}
 
+                  {/* Stats */}
                   {stats && (
                     <div className="text-xs font-mono text-zinc-400">
                       completed: <span className="text-green-500">{stats.tasks_completed}</span>
@@ -190,6 +234,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
                     </div>
                   )}
 
+                  {/* Active tasks */}
                   {stats && stats.current_tasks && stats.current_tasks.length > 0 && (
                     <div className="space-y-0.5">
                       {stats.current_tasks.map((task: string) => (
@@ -198,8 +243,9 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
                     </div>
                   )}
 
-                  <div className="text-xs text-zinc-600 font-mono">
-                    heartbeat: {formatTime(agent.last_heartbeat)}
+                  {/* Last activity */}
+                  <div className="text-[10px] text-zinc-600 font-mono">
+                    last active: {formatTime(agent.last_heartbeat)}
                   </div>
                 </div>
               );

@@ -221,3 +221,4 @@ export const taskReplay = (identifier: string) => invoke<ExecutionLog[]>("task_r
 export const getTaskContract = (identifier: string) => invoke<FullTaskContract>("get_task_contract", { identifier });
 export const taskGraph = (identifier: string) => invoke<TaskGraph>("task_graph", { identifier });
 export const recentActivity = (projectId: number, limit?: number) => invoke<ExecutionLog[]>("recent_activity", { projectId, limit });
+export const deregisterAgent = (agentId: string) => invoke<void>("deregister_agent", { agentId });
