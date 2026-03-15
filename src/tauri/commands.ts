@@ -12,6 +12,8 @@ import type {
   UndoLogEntry,
   Notification,
   Comment,
+  CustomField,
+  CustomFieldValue,
 } from "@/types";
 
 // Health
@@ -181,3 +183,26 @@ export const updateComment = (id: number, input: {
 }) => invoke<Comment>("update_comment", { id, input });
 export const deleteComment = (id: number) => invoke<void>("delete_comment", { id });
 export const commentCount = (issueId: number) => invoke<number>("comment_count", { issueId });
+
+// Custom Fields
+export const listCustomFields = (projectId: number) =>
+  invoke<CustomField[]>("list_custom_fields", { projectId });
+export const createCustomField = (input: {
+  project_id: number;
+  name: string;
+  field_type?: string;
+  options?: string;
+  position?: number;
+}) => invoke<CustomField>("create_custom_field", { input });
+export const updateCustomField = (id: number, input: {
+  name?: string;
+  field_type?: string;
+  options?: string;
+  position?: number;
+}) => invoke<CustomField>("update_custom_field", { id, input });
+export const deleteCustomField = (id: number) =>
+  invoke<void>("delete_custom_field", { id });
+export const getIssueCustomValues = (issueId: number) =>
+  invoke<CustomFieldValue[]>("get_issue_custom_values", { issueId });
+export const setIssueCustomValue = (issueId: number, fieldId: number, value: string | null) =>
+  invoke<void>("set_issue_custom_value", { issueId, fieldId, value });

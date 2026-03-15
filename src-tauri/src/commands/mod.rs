@@ -1,4 +1,5 @@
 pub mod comments;
+pub mod custom_fields;
 pub mod health;
 pub mod issues;
 pub mod labels;

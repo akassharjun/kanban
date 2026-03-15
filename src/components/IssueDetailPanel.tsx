@@ -3,7 +3,7 @@ import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalL
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment } from "@/types";
+import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, CustomField, CustomFieldValue } from "@/types";
 import * as api from "@/tauri/commands";
 
 interface IssueDetailPanelProps {
@@ -53,6 +53,8 @@ export function IssueDetailPanel({
   const [estimateValue, setEstimateValue] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [customValues, setCustomValues] = useState<CustomFieldValue[]>([]);
 
   useEffect(() => {
     loadIssue();
@@ -71,6 +73,10 @@ export function IssueDetailPanel({
       setSubIssues(subs);
       const comms = await api.listComments(issueId);
       setComments(comms);
+      const fields = await api.listCustomFields(data.project_id);
+      setCustomFields(fields);
+      const vals = await api.getIssueCustomValues(issueId);
+      setCustomValues(vals);
     } catch (e) {
       console.error("Failed to load issue", e);
     }
@@ -355,6 +361,102 @@ export function IssueDetailPanel({
             />
           </div>
         </div>
+
+        {/* Custom Fields */}
+        {customFields.length > 0 && (
+          <div className="mt-4 space-y-3 px-4">
+            <h3 className="text-xs font-medium text-muted-foreground">Custom Fields</h3>
+            {customFields.map((field) => {
+              const cv = customValues.find((v) => v.field_id === field.id);
+              const currentValue = cv?.value ?? "";
+              return (
+                <div key={field.id} className="flex items-center gap-3 text-sm">
+                  <span className="w-20 text-muted-foreground truncate" title={field.name}>
+                    {field.name}
+                  </span>
+                  {field.field_type === "select" ? (
+                    <select
+                      value={currentValue}
+                      onChange={async (e) => {
+                        const val = e.target.value || null;
+                        await api.setIssueCustomValue(issueId, field.id, val);
+                        await loadIssue();
+                      }}
+                      className="rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
+                    >
+                      <option value="">None</option>
+                      {(() => {
+                        try {
+                          const opts: string[] = JSON.parse(field.options || "[]");
+                          return opts.map((o) => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ));
+                        } catch {
+                          return null;
+                        }
+                      })()}
+                    </select>
+                  ) : field.field_type === "date" ? (
+                    <input
+                      type="date"
+                      value={currentValue}
+                      onChange={async (e) => {
+                        const val = e.target.value || null;
+                        await api.setIssueCustomValue(issueId, field.id, val);
+                        await loadIssue();
+                      }}
+                      className="rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
+                    />
+                  ) : field.field_type === "number" ? (
+                    <input
+                      type="number"
+                      value={currentValue}
+                      onBlur={async (e) => {
+                        const val = e.target.value || null;
+                        await api.setIssueCustomValue(issueId, field.id, val);
+                        await loadIssue();
+                      }}
+                      onChange={(e) => {
+                        setCustomValues((prev) =>
+                          prev.some((v) => v.field_id === field.id)
+                            ? prev.map((v) =>
+                                v.field_id === field.id ? { ...v, value: e.target.value } : v
+                              )
+                            : [...prev, { id: 0, issue_id: issueId, field_id: field.id, value: e.target.value }]
+                        );
+                      }}
+                      placeholder="0"
+                      className="w-24 rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={currentValue}
+                      onBlur={async (e) => {
+                        const val = e.target.value || null;
+                        await api.setIssueCustomValue(issueId, field.id, val);
+                        await loadIssue();
+                      }}
+                      onChange={(e) => {
+                        setCustomValues((prev) =>
+                          prev.some((v) => v.field_id === field.id)
+                            ? prev.map((v) =>
+                                v.field_id === field.id ? { ...v, value: e.target.value } : v
+                              )
+                            : [...prev, { id: 0, issue_id: issueId, field_id: field.id, value: e.target.value }]
+                        );
+                      }}
+                      placeholder="Enter value..."
+                      className="flex-1 rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Description */}
         <div className="mt-6 border-t border-border px-4 pt-4">

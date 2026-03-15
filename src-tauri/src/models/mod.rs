@@ -168,3 +168,21 @@ pub struct Comment {
     pub created_at: String,
     pub updated_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CustomField {
+    pub id: i64,
+    pub project_id: i64,
+    pub name: String,
+    pub field_type: String,
+    pub options: Option<String>,
+    pub position: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CustomFieldValue {
+    pub id: i64,
+    pub issue_id: i64,
+    pub field_id: i64,
+    pub value: Option<String>,
+}
