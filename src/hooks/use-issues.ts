@@ -22,24 +22,24 @@ export function useIssues(projectId: number | null) {
 
   const create = async (input: Parameters<typeof api.createIssue>[0]) => {
     const issue = await api.createIssue(input);
-    await refresh();
+    setIssues(prev => [...prev, issue]);
     return issue;
   };
 
   const update = async (id: number, input: Parameters<typeof api.updateIssue>[1]) => {
     const issue = await api.updateIssue(id, input);
-    await refresh();
+    setIssues(prev => prev.map(i => i.id === id ? issue : i));
     return issue;
   };
 
   const remove = async (id: number) => {
     await api.deleteIssue(id);
-    await refresh();
+    setIssues(prev => prev.filter(i => i.id !== id));
   };
 
   const duplicate = async (id: number) => {
     const issue = await api.duplicateIssue(id);
-    await refresh();
+    setIssues(prev => [...prev, issue]);
     return issue;
   };
 

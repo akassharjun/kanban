@@ -21,19 +21,19 @@ export function useMembers() {
 
   const create = async (input: Parameters<typeof api.createMember>[0]) => {
     const member = await api.createMember(input);
-    await refresh();
+    setMembers(prev => [...prev, member]);
     return member;
   };
 
   const update = async (id: number, input: Parameters<typeof api.updateMember>[1]) => {
     const member = await api.updateMember(id, input);
-    await refresh();
+    setMembers(prev => prev.map(m => m.id === id ? member : m));
     return member;
   };
 
   const remove = async (id: number) => {
     await api.deleteMember(id);
-    await refresh();
+    setMembers(prev => prev.filter(m => m.id !== id));
   };
 
   return { members, loading, refresh, create, update, remove };
