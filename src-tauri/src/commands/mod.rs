@@ -1,5 +1,7 @@
+pub mod agents;
 pub mod comments;
 pub mod custom_fields;
+pub mod execution_logs;
 pub mod health;
 pub mod issues;
 pub mod labels;
@@ -8,5 +10,6 @@ pub mod notifications;
 pub mod projects;
 pub mod relations;
 pub mod statuses;
+pub mod task_contracts;
 pub mod templates;
 pub mod undo;

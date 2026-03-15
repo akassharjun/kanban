@@ -114,6 +114,12 @@ pub fn run() {
             commands::custom_fields::delete_custom_field,
             commands::custom_fields::get_issue_custom_values,
             commands::custom_fields::set_issue_custom_value,
+            // Agents
+            commands::agents::register_agent,
+            commands::agents::agent_heartbeat,
+            commands::agents::deregister_agent,
+            commands::agents::list_agents,
+            commands::agents::get_agent_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
