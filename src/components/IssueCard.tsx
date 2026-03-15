@@ -34,8 +34,8 @@ export function IssueCard({ issue, member, labels, issues, onClick, isDragging }
       )}
     >
       {parent && (
-        <div className="flex items-center gap-1 mb-1">
-          <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+        <div className="flex items-center gap-1 mb-1 overflow-hidden">
+          <span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">
             ↑ {parent.identifier}
           </span>
           <span className="text-[10px] text-muted-foreground truncate">{parent.title}</span>
