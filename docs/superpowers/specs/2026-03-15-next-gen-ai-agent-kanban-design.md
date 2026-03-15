@@ -68,9 +68,9 @@ task:
       - "SEACR spec v2.1 - section 4.3"
     prior_attempts:
       - agent: codex-1
+        attempt_number: 1
         result: failed
         reason: "Missing schema migration, FK constraint error"
-        execution_log_id: log-882
 
   # Boundaries
   constraints:
@@ -90,7 +90,15 @@ task:
     estimated_complexity: medium
 
   # Execution state
-  state: queued | claimed | executing | validating | completed | failed | blocked | cancelled
+  # task_state is the agent-facing state, kept in task_contracts table.
+  # It maps to existing issues.status_id as follows:
+  #   queued/blocked    -> status category "unstarted"
+  #   claimed/executing -> status category "started"
+  #   validating        -> status category "started" (custom status "Validating" auto-created)
+  #   completed         -> status category "completed"
+  #   cancelled         -> status category "discarded"
+  # The system keeps both in sync: changing task_state updates status_id and vice versa.
+  task_state: queued | claimed | executing | validating | completed | blocked | cancelled
   claimed_by: null
   claimed_at: null
   timeout_minutes: 30
@@ -105,9 +113,11 @@ task:
         ref: feature/kan-42-seacr-validation
       - type: pr
         ref: "#182"
-    execution_log_id: null
 
   # Relationships
+  # depends_on/blocks use the existing issue_relations table with
+  # relation_type = 'blocks' / 'blocked_by'. The agent layer reads
+  # these relations to determine dependency resolution.
   parent_id: KAN-40
   depends_on: [KAN-41]
   blocks: [KAN-43, KAN-44]
@@ -125,7 +135,8 @@ task:
 - **Success criteria are machine-evaluable where possible.** `tests_pass: true` means the system can run `cargo test` and verify.
 - **Prior attempts accumulate.** Every failed attempt stays on the contract. The third agent to attempt a task has the full failure history of the first two.
 - **Constraints are natural language but structured.** Agents read them as instructions. The system validates via success criteria.
-- **Timeout recovery is built in.** If `claimed_at + timeout_minutes` passes without completion, the system reclaims the task.
+- **Timeout recovery is built in.** If `claimed_at + timeout_minutes` passes without completion, the system reclaims the task. Effective timeout is `min(task.timeout_minutes, agent.limits.max_task_timeout)`.
+- **Dependencies use existing issue_relations.** The `depends_on` / `blocks` fields map to the existing `issue_relations` table with `relation_type = 'blocks'` / `'blocked_by'`. No new dependency table is needed.
 
 ### Task State Machine
 
@@ -133,7 +144,7 @@ task:
                     +----------+
                     |  queued  |<------------------+
                     +----+-----+                   |
-                         | agent claims            | timeout / reclaim
+                         | agent claims            | timeout / reclaim / fail
                     +----v-----+                   |
                     | claimed  |------------------>+
                     +----+-----+                   |
@@ -145,13 +156,41 @@ task:
                     +----v------+                  |
                     |validating |---- fail ------->+
                     +----+------+
-                         | criteria met
+                         | criteria met OR
+                         | human approves
                     +----v-----+
                     |completed |
                     +----------+
 ```
 
 Additional transitions: any state -> `cancelled` (human), any state -> `blocked` (dependency detected), `blocked` -> `queued` (dependency resolved).
+
+Note: there is no terminal `failed` state. Failed tasks are always re-queued (back to `queued`) with failure context appended. After `max_attempts` failures, the task is moved to `blocked` with a `needs-human` label and an escalation notification. Humans can unblock it manually or cancel it.
+
+### State-to-Status Mapping
+
+The `task_state` field in `task_contracts` is the agent-facing state machine. It maps to the existing `issues.status_id` via status categories:
+
+| Task State | Status Category | Notes |
+|------------|----------------|-------|
+| `queued` | unstarted | Maps to project's "Todo" status |
+| `claimed` | started | Maps to "In Progress" |
+| `executing` | started | Maps to "In Progress" |
+| `validating` | started | Auto-created "Validating" status |
+| `completed` | completed | Maps to "Done" |
+| `blocked` | blocked | Maps to "Blocked" |
+| `cancelled` | discarded | Maps to "Discarded" |
+
+The system keeps both in sync bidirectionally. Changing `task_state` updates `status_id`. Changing `status_id` from the human board updates `task_state`. The task state machine is authoritative for agent operations; `status_id` is authoritative for human board display.
+
+### Human Intervention Commands
+
+For tasks in `validating` state (low confidence), humans can:
+
+```bash
+kanban task approve <IDENTIFIER>     # validating -> completed
+kanban task reject <IDENTIFIER>      # validating -> queued (re-queue for another attempt)
+```
 
 ---
 
@@ -220,11 +259,38 @@ All queued tasks
   +- Return top task with full contract + context pack
 ```
 
+### Atomic Claiming (Concurrency Control)
+
+SQLite serializes writes, so concurrent `next_task` calls from multiple agents are safe when implemented correctly. The claiming operation uses a single atomic SQL statement:
+
+```sql
+UPDATE task_contracts
+SET claimed_by = ?agent_id, claimed_at = datetime('now'), task_state = 'claimed'
+WHERE issue_id = ?candidate_id AND claimed_by IS NULL
+RETURNING *;
+```
+
+If the `RETURNING` clause returns no rows, the task was already claimed by another agent between the routing query and the claim attempt. The system retries with the next candidate from the routing pipeline.
+
+The full `next_task` flow:
+1. Run the routing filter/sort query to produce a ranked candidate list.
+2. Attempt atomic claiming on the top candidate.
+3. If claim succeeds, return the full task contract.
+4. If claim fails (already taken), try the next candidate.
+5. If all candidates exhausted, return null (no work available).
+
+All write operations use `BEGIN IMMEDIATE` transactions to prevent write starvation under high concurrency.
+
+### Timeout Calculation
+
+The effective timeout for a claimed task is: `min(task.timeout_minutes, agent.limits.max_task_timeout)`. The system uses this value when checking for stale claims.
+
 ### Design Decisions
 
 - **Agents self-declare capabilities.** The system trusts the registration. Stats can inform routing later.
-- **`next_task` is the primary interface.** It returns a task AND claims it in one atomic operation. No window for races.
+- **`next_task` is the primary interface.** It produces a candidate list from routing, then attempts atomic claiming. No race window.
 - **Capacity is agent-declared.** Claude Code might handle 3 concurrent tasks (via subagents), Codex might handle 1.
+- **Dependency depth sort** uses the count of all transitive downstream tasks that are currently blocked. Tasks that unblock the most work get priority.
 
 ---
 
@@ -252,7 +318,7 @@ decomposition_rules:
   - condition: success_criteria is empty
     action: create_decomposition_task
 
-  - condition: created_by == "human" AND type != "decomposition"
+  - condition: created_by == "human" AND type != "decomposition" AND (complexity == "large" OR success_criteria is empty)
     action: create_decomposition_task
 
   - condition: agent_requests_decomposition
@@ -269,8 +335,7 @@ When an agent completes a decomposition task, the system validates:
 
 1. All sub-tasks have complete contracts (objective, success criteria, skill requirements).
 2. Dependency graph is a DAG (no circular dependencies).
-3. At least one sub-task is immediately unblocked.
-4. Coverage: sub-tasks collectively address the parent objective.
+3. At least one sub-task is immediately unblocked (work can begin).
 
 ### Discovered Work Pattern
 
@@ -444,7 +509,12 @@ Thresholds are project-configurable.
 - 2nd failure: increase priority, add context about prior failures.
 - 3rd failure: escalate to human, mark as blocked, add `needs-human` label.
 
-**5. Cascading failure.** Completed task later discovered to be wrong. System invalidates it, recursively blocks all downstream tasks, logs the cascade.
+**5. Cascading failure.** Completed task later discovered to be wrong. System invalidates it with defined scope:
+- All downstream tasks in `queued`, `claimed`, or `blocked` state are moved to `blocked`.
+- Downstream tasks currently `executing` are left to finish but get a warning log entry; on completion they receive an automatic review task.
+- Downstream tasks already `completed` get a review task created to verify their work is still valid.
+- Artifact rollback (branches, PRs) is out of scope for the system; agents or humans handle this manually.
+- The full cascade is logged with lineage for debugging.
 
 ### Validation Pipeline
 
@@ -497,6 +567,8 @@ kanban task complete <IDENTIFIER> --confidence <0.0-1.0> --summary "..." \
 kanban task fail <IDENTIFIER> --reason "..."
 kanban task unclaim <IDENTIFIER>
 kanban task invalidate <IDENTIFIER> --reason "..."
+kanban task approve <IDENTIFIER>           # human approves validating task -> completed
+kanban task reject <IDENTIFIER>            # human rejects validating task -> re-queued
 
 # Execution Logging
 kanban task log <IDENTIFIER> --type <TYPE> --message "..." [--meta '<JSON>']
@@ -551,6 +623,8 @@ kanban export | import
 - fail_task: { agent_id, identifier, reason } -> { requeued, attempt_number }
 - unclaim_task: { agent_id, identifier } -> { success }
 - invalidate_task: { identifier, reason } -> { tasks_blocked[] }
+- approve_task: { identifier } -> { success }
+- reject_task: { identifier } -> { requeued }
 
 # Execution Logging
 - log_task_activity: { identifier, type, message, metadata? } -> { log_entry_id }
@@ -567,17 +641,6 @@ kanban export | import
 - task_attempts: { identifier } -> { attempts[] }
 - agent_stats: { agent_id } -> { stats }
 - system_metrics: { project_id } -> { metrics }
-```
-
-### MCP Resources
-
-```
-kanban://agents
-kanban://agent/{id}
-kanban://task/{identifier}
-kanban://task/{identifier}/replay
-kanban://project/{id}/graph
-kanban://project/{id}/metrics
 ```
 
 ### JSON Output Contract
@@ -624,9 +687,11 @@ Added to the existing schema. All existing tables remain unchanged.
 
 ```sql
 -- Agent registry
+-- Agent ID is a UUID v4 generated by the system at registration time.
+-- Agent name must be unique (used for human display and bootstrap protocol).
 CREATE TABLE agents (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
+    id TEXT PRIMARY KEY,  -- UUID v4, system-generated
+    name TEXT NOT NULL UNIQUE,
     type TEXT,
     skills JSON NOT NULL DEFAULT '[]',
     task_types JSON NOT NULL DEFAULT '[]',
@@ -644,13 +709,17 @@ CREATE TABLE agent_stats (
     tasks_failed INTEGER NOT NULL DEFAULT 0,
     total_confidence REAL NOT NULL DEFAULT 0.0,
     total_completion_time_seconds INTEGER NOT NULL DEFAULT 0,
-    skills_breakdown JSON NOT NULL DEFAULT '{}'
+    skills_breakdown JSON NOT NULL DEFAULT '{}'  -- Phase 3+: per-skill success rates
 );
 
--- Task contracts (extends existing issues table)
+-- Task contracts (extends existing issues table via 1:1 relationship)
+-- Dependencies use the existing issue_relations table (relation_type = 'blocks'/'blocked_by').
+-- Prior attempts are stored in the context JSON field and auto-appended on failure.
+-- Execution logs are looked up via (issue_id, attempt_number) composite key, not a single log ID.
 CREATE TABLE task_contracts (
     issue_id INTEGER PRIMARY KEY REFERENCES issues(id) ON DELETE CASCADE,
     type TEXT NOT NULL DEFAULT 'implementation',
+    task_state TEXT NOT NULL DEFAULT 'queued',  -- queued|claimed|executing|validating|completed|blocked|cancelled
     objective TEXT NOT NULL DEFAULT '',
     context JSON NOT NULL DEFAULT '{}',
     constraints JSON NOT NULL DEFAULT '[]',
@@ -663,6 +732,9 @@ CREATE TABLE task_contracts (
     result JSON,
     attempt_count INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE INDEX idx_task_contracts_state ON task_contracts(task_state);
+CREATE INDEX idx_task_contracts_claimed_by ON task_contracts(claimed_by);
 
 -- Execution logs
 CREATE TABLE execution_logs (
@@ -788,9 +860,9 @@ CREATE TABLE project_agent_config (
 
 ### New Additions
 
-- 4 new database tables (agents, agent_stats, task_contracts, execution_logs, project_agent_config)
-- ~15 new CLI commands (agent + task work loop)
-- ~12 new MCP tools
+- 5 new database tables (agents, agent_stats, task_contracts, execution_logs, project_agent_config)
+- ~17 new CLI commands (agent + task work loop + approve/reject)
+- ~14 new MCP tools
 - 3 new frontend views (Agent Ops dashboard, dependency graph, replay viewer)
-- 3 background system threads (heartbeat monitor, timeout recovery, decomposition trigger)
+- 3 background system threads (heartbeat monitor, timeout recovery, decomposition trigger) — these run in the Tauri app process; the app must be running for agent coordination. As a fallback, the CLI performs lazy timeout checks on each `next_task` call, so agents can still operate without the desktop app running (just without proactive timeout recovery).
 - Routing engine, state machine, confidence gating logic in Rust backend
