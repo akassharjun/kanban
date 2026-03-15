@@ -120,6 +120,16 @@ pub fn run() {
             commands::agents::deregister_agent,
             commands::agents::list_agents,
             commands::agents::get_agent_stats,
+            // Task Contracts
+            commands::task_contracts::create_task_contract,
+            commands::task_contracts::get_task_contract,
+            commands::task_contracts::next_task,
+            commands::task_contracts::start_task,
+            commands::task_contracts::complete_task,
+            commands::task_contracts::fail_task,
+            commands::task_contracts::unclaim_task,
+            commands::task_contracts::approve_task,
+            commands::task_contracts::reject_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
