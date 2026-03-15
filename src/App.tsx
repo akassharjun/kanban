@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ProjectHeader, type ViewMode } from "./components/ProjectHeader";
 import { BoardView } from "./components/BoardView";
 import { ListView } from "./components/ListView";
 import { TreeView } from "./components/TreeView";
 import { IssueDetailPanel } from "./components/IssueDetailPanel";
+import { FilterBar, type Filters } from "./components/FilterBar";
 import { CreateProjectDialog } from "./components/CreateProjectDialog";
 import { CreateIssueDialog } from "./components/CreateIssueDialog";
 import { MembersView } from "./components/MembersView";
@@ -34,6 +35,7 @@ function App() {
   const [notificationCount, setNotificationCount] = useState(0);
   const [templates, setTemplates] = useState<IssueTemplate[]>([]);
   const [createIssueStatusId, setCreateIssueStatusId] = useState<number | undefined>();
+  const [filters, setFilters] = useState<Filters>({});
 
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return document.documentElement.classList.contains("dark") ? "dark" : "light";
@@ -136,7 +138,17 @@ function App() {
     setSelectedProjectId(id);
     setPage("project");
     setSelectedIssueId(null);
+    setFilters({});
   };
+
+  const filteredIssues = useMemo(() => {
+    return issues.filter(issue => {
+      if (filters.status_id && issue.status_id !== filters.status_id) return false;
+      if (filters.priority && issue.priority !== filters.priority) return false;
+      if (filters.assignee_id && issue.assignee_id !== filters.assignee_id) return false;
+      return true;
+    });
+  }, [issues, filters]);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
 
@@ -167,10 +179,18 @@ function App() {
               onToggleTheme={toggleTheme}
             />
 
+            <FilterBar
+              statuses={statuses}
+              members={members}
+              labels={labels}
+              filters={filters}
+              onFiltersChange={setFilters}
+            />
+
             <div className="flex flex-1 overflow-hidden">
               {viewMode === "board" && (
                 <BoardView
-                  issues={issues}
+                  issues={filteredIssues}
                   statuses={statuses}
                   members={members}
                   labels={labels}
@@ -181,7 +201,7 @@ function App() {
               )}
               {viewMode === "list" && (
                 <ListView
-                  issues={issues}
+                  issues={filteredIssues}
                   statuses={statuses}
                   members={members}
                   labels={labels}
@@ -190,7 +210,7 @@ function App() {
               )}
               {viewMode === "tree" && (
                 <TreeView
-                  issues={issues}
+                  issues={filteredIssues}
                   statuses={statuses}
                   members={members}
                   onClickIssue={(issue) => setSelectedIssueId(issue.id)}
