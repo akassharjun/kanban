@@ -63,6 +63,18 @@ pub async fn run_validation_pipeline(
             .map(|e| e.contains("exit_code == 0"))
             .unwrap_or(true);
 
+        // Reject commands with shell metacharacters to prevent injection
+        if !is_safe_command(command) {
+            all_passed = false;
+            checks.push(ValidationCheck {
+                name: check_name,
+                passed: false,
+                output: None,
+                error: Some("Command rejected: contains unsafe shell characters".to_string()),
+            });
+            continue;
+        }
+
         // Run the command with a 5-minute timeout
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(300),
@@ -128,6 +140,12 @@ pub async fn run_validation_pipeline(
     }
 
     Ok(ValidationResult { all_passed, checks })
+}
+
+/// Reject shell metacharacters that enable command injection.
+fn is_safe_command(cmd: &str) -> bool {
+    let dangerous = [";", "&&", "||", "|", "`", "$(", "${", ">", "<", "\n", "\r"];
+    !dangerous.iter().any(|d| cmd.contains(d))
 }
 
 /// Check if a task has runnable validation criteria (has "command" fields).
