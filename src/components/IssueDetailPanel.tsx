@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip } from "@/components/ui/tooltip";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, CustomField, CustomFieldValue, FullTaskContract } from "@/types";
+import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, CustomField, CustomFieldValue, FullTaskContract, ExecutionLog } from "@/types";
 import * as api from "@/tauri/commands";
 
 interface IssueDetailPanelProps {
@@ -67,6 +67,7 @@ export function IssueDetailPanel({
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customValues, setCustomValues] = useState<CustomFieldValue[]>([]);
   const [contract, setContract] = useState<FullTaskContract | null>(null);
+  const [executionLogs, setExecutionLogs] = useState<ExecutionLog[]>([]);
 
   useEffect(() => {
     loadIssue();
@@ -94,7 +95,9 @@ export function IssueDetailPanel({
       try {
         const tc = await api.getTaskContract(data.identifier);
         setContract(tc);
-      } catch { setContract(null); }
+        const logs = await api.taskReplay(data.identifier);
+        setExecutionLogs(logs);
+      } catch { setContract(null); setExecutionLogs([]); }
     } catch (e) {
       console.error("Failed to load issue", e);
     }
@@ -613,6 +616,89 @@ export function IssueDetailPanel({
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Execution Trace */}
+        {executionLogs.length > 0 && (
+          <div className="mt-6 border-t border-border px-4 pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+              Execution Trace ({executionLogs.length})
+            </h3>
+            <div className="space-y-0.5 max-h-64 overflow-y-auto">
+              {executionLogs.map((log) => {
+                const time = log.timestamp.length >= 19 ? log.timestamp.slice(11, 19) : log.timestamp;
+
+                const typeConfig: Record<string, { label: string; color: string; icon: string }> = {
+                  claim:     { label: "CLAIM",    color: "text-blue-400",    icon: "🤖" },
+                  start:     { label: "START",    color: "text-blue-400",    icon: "▶️" },
+                  reasoning: { label: "THINK",    color: "text-purple-400",  icon: "💭" },
+                  file_read: { label: "READ",     color: "text-cyan-400",    icon: "📖" },
+                  file_edit: { label: "EDIT",     color: "text-yellow-400",  icon: "✏️" },
+                  command:   { label: "RUN",      color: "text-orange-400",  icon: "⚡" },
+                  discovery: { label: "DISCOVER", color: "text-emerald-400", icon: "🔍" },
+                  error:     { label: "ERROR",    color: "text-red-400",     icon: "❌" },
+                  result:    { label: "RESULT",   color: "text-green-400",   icon: "✅" },
+                  complete:  { label: "DONE",     color: "text-green-400",   icon: "✅" },
+                  fail:      { label: "FAIL",     color: "text-red-400",     icon: "❌" },
+                  checkpoint:{ label: "CHECK",    color: "text-zinc-400",    icon: "📌" },
+                  timeout:   { label: "TIMEOUT",  color: "text-red-400",     icon: "⏰" },
+                  unblocked: { label: "UNBLOCK",  color: "text-emerald-400", icon: "🔓" },
+                  approve:   { label: "APPROVE",  color: "text-green-400",   icon: "✅" },
+                  reject:    { label: "REJECT",   color: "text-red-400",     icon: "❌" },
+                  unclaim:   { label: "UNCLAIM",  color: "text-zinc-400",    icon: "↩️" },
+                  reclaim:   { label: "RECLAIM",  color: "text-yellow-400",  icon: "🔄" },
+                };
+
+                const cfg = typeConfig[log.entry_type] || { label: log.entry_type.toUpperCase(), color: "text-zinc-400", icon: "•" };
+
+                const metadata = log.metadata ? (typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata) : null;
+                const file = metadata?.file;
+                const exitCode = metadata?.exit_code;
+
+                return (
+                  <div key={log.id} className="flex items-start gap-2 py-1 text-xs hover:bg-muted/30 rounded px-1 -mx-1">
+                    <span className="font-mono text-muted-foreground shrink-0 w-14 mt-0.5">{time}</span>
+                    <span className="shrink-0 w-4 mt-0.5">{cfg.icon}</span>
+                    <span className={`font-mono font-medium shrink-0 w-16 ${cfg.color}`}>{cfg.label}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-foreground">{log.message}</span>
+                      {file && (
+                        <span className="ml-1 font-mono text-muted-foreground text-[10px]">({file})</span>
+                      )}
+                      {exitCode !== undefined && (
+                        <span className={`ml-1 font-mono text-[10px] ${exitCode === 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          exit:{exitCode}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Files Changed summary */}
+            {(() => {
+              const files = executionLogs
+                .filter(l => l.entry_type === 'file_edit' || l.entry_type === 'file_read')
+                .map(l => {
+                  const meta = l.metadata ? (typeof l.metadata === 'string' ? JSON.parse(l.metadata) : l.metadata) : null;
+                  return meta?.file;
+                })
+                .filter((f): f is string => !!f);
+              const uniqueFiles = [...new Set(files)];
+              if (uniqueFiles.length === 0) return null;
+              return (
+                <div className="mt-3 pt-3 border-t border-border/50">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Files Touched</span>
+                  <div className="mt-1 space-y-0.5">
+                    {uniqueFiles.map(f => (
+                      <div key={f} className="text-[11px] font-mono text-muted-foreground">📄 {f}</div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
