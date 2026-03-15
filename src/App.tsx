@@ -208,6 +208,7 @@ function App() {
               {viewMode === "board" && (
                 <BoardView
                   issues={filteredIssues}
+                  allIssues={issues}
                   statuses={statuses}
                   members={members}
                   labels={labels}

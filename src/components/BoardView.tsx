@@ -15,6 +15,7 @@ import type { Issue, Status, Member, Label } from "@/types";
 
 interface BoardViewProps {
   issues: Issue[];
+  allIssues?: Issue[];
   statuses: Status[];
   members: Member[];
   labels: Label[];
@@ -25,6 +26,7 @@ interface BoardViewProps {
 
 export function BoardView({
   issues,
+  allIssues,
   statuses,
   members,
   labels,
@@ -121,7 +123,7 @@ export function BoardView({
               key={status.id}
               status={status}
               issues={columnIssues}
-              allIssues={issues}
+              allIssues={allIssues || issues}
               members={members}
               labels={labels}
               onClickIssue={onClickIssue}
