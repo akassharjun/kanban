@@ -130,6 +130,10 @@ pub fn run() {
             commands::task_contracts::unclaim_task,
             commands::task_contracts::approve_task,
             commands::task_contracts::reject_task,
+            // Execution Logs
+            commands::execution_logs::log_task_activity,
+            commands::execution_logs::task_replay,
+            commands::execution_logs::task_attempts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
