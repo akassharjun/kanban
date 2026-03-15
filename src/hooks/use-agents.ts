@@ -27,7 +27,7 @@ export function useProjectMetrics(projectId: number | null) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    if (projectId === null) return;
+    if (projectId === null) { setLoading(false); return; }
     try {
       const data = await api.projectMetrics(projectId);
       setMetrics(data);
