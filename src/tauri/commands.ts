@@ -14,6 +14,12 @@ import type {
   Comment,
   CustomField,
   CustomFieldValue,
+  Agent,
+  AgentMetrics,
+  ProjectMetrics,
+  ExecutionLog,
+  FullTaskContract,
+  TaskGraph,
 } from "@/types";
 
 // Health
@@ -206,3 +212,11 @@ export const getIssueCustomValues = (issueId: number) =>
   invoke<CustomFieldValue[]>("get_issue_custom_values", { issueId });
 export const setIssueCustomValue = (issueId: number, fieldId: number, value: string | null) =>
   invoke<void>("set_issue_custom_value", { issueId, fieldId, value });
+
+// Agent Orchestration
+export const listAgents = () => invoke<Agent[]>("list_agents");
+export const getAgentStats = (agentId: string) => invoke<AgentMetrics>("agent_metrics_cmd", { agentId });
+export const projectMetrics = (projectId: number) => invoke<ProjectMetrics>("project_metrics", { projectId });
+export const taskReplay = (identifier: string) => invoke<ExecutionLog[]>("task_replay", { identifier });
+export const getTaskContract = (identifier: string) => invoke<FullTaskContract>("get_task_contract", { identifier });
+export const taskGraph = (identifier: string) => invoke<TaskGraph>("task_graph", { identifier });

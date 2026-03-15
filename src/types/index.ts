@@ -142,3 +142,99 @@ export interface CustomFieldValue {
   field_id: number;
   value: string | null;
 }
+
+// Agent Orchestration Types
+
+export type TaskState = "queued" | "claimed" | "executing" | "validating" | "completed" | "blocked" | "cancelled";
+export type TaskType = "implementation" | "research" | "testing" | "review" | "decomposition";
+export type AgentStatus = "idle" | "busy" | "offline" | "online";
+
+export interface Agent {
+  id: string;
+  name: string;
+  type: string | null;
+  skills: string; // JSON array
+  task_types: string; // JSON array
+  max_concurrent: number;
+  max_complexity: string;
+  status: AgentStatus;
+  registered_at: string;
+  last_heartbeat: string;
+}
+
+export interface AgentMetrics {
+  agent_id: string;
+  name: string;
+  status: string;
+  tasks_completed: number;
+  tasks_failed: number;
+  success_rate: number;
+  avg_confidence: number;
+  avg_completion_time_minutes: number;
+  current_tasks: string[];
+  skills_success_rate: Record<string, unknown>;
+}
+
+export interface ProjectMetrics {
+  total_tasks: number;
+  completed: number;
+  queued: number;
+  in_progress: number;
+  blocked: number;
+  validating: number;
+  failed_attempts: number;
+  agents_online: number;
+  avg_confidence: number | null;
+  avg_completion_time_minutes: number | null;
+  tasks_completed_24h: number;
+  task_type_breakdown: Record<string, { count: number }>;
+}
+
+export interface ExecutionLog {
+  id: number;
+  issue_id: number;
+  agent_id: string;
+  attempt_number: number;
+  entry_type: string;
+  message: string;
+  metadata: string | null;
+  timestamp: string;
+}
+
+export interface FullTaskContract {
+  identifier: string;
+  title: string;
+  description: string | null;
+  priority: string;
+  parent_id: number | null;
+  issue_id: number;
+  type: TaskType;
+  task_state: TaskState;
+  objective: string;
+  context: Record<string, unknown>;
+  constraints: unknown[];
+  success_criteria: unknown[];
+  required_skills: string[];
+  estimated_complexity: string | null;
+  timeout_minutes: number;
+  attempt_count: number;
+}
+
+export interface GraphNode {
+  id: number;
+  identifier: string;
+  title: string;
+  state: string;
+  type?: string;
+}
+
+export interface GraphEdge {
+  from: number;
+  to: number;
+  type: string;
+}
+
+export interface TaskGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
