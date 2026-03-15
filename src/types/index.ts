@@ -126,3 +126,19 @@ export interface Notification {
   read: boolean;
   created_at: string;
 }
+
+export interface CustomField {
+  id: number;
+  project_id: number;
+  name: string;
+  field_type: "text" | "number" | "date" | "select";
+  options: string | null;
+  position: number;
+}
+
+export interface CustomFieldValue {
+  id: number;
+  issue_id: number;
+  field_id: number;
+  value: string | null;
+}
