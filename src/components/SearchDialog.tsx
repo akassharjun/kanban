@@ -11,7 +11,7 @@ interface SearchDialogProps {
   onSelectProject: (id: number) => void;
 }
 
-export function SearchDialog({ projects, currentProjectId, onClose, onSelectIssue, onSelectProject }: SearchDialogProps) {
+export function SearchDialog({ projects, currentProjectId: _currentProjectId, onClose, onSelectIssue, onSelectProject }: SearchDialogProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Issue[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -23,13 +23,17 @@ export function SearchDialog({ projects, currentProjectId, onClose, onSelectIssu
   useEffect(() => {
     if (!query.trim()) { setResults([]); return; }
     const timeout = setTimeout(async () => {
-      if (currentProjectId) {
-        const data = await api.searchIssues(currentProjectId, query);
-        setResults(data);
+      try {
+        const allResults = await Promise.all(
+          projects.map(p => api.searchIssues(p.id, query))
+        );
+        setResults(allResults.flat());
+      } catch (e) {
+        console.error("Search failed", e);
       }
     }, 200);
     return () => clearTimeout(timeout);
-  }, [query, currentProjectId]);
+  }, [query, projects]);
 
   const filteredProjects = projects.filter(p =>
     p.name.toLowerCase().includes(query.toLowerCase())
