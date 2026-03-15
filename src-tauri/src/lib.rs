@@ -17,7 +17,18 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-            let pool = rt.block_on(db::init_db())?;
+            let pool = match rt.block_on(db::init_db()) {
+                Ok(pool) => pool,
+                Err(e) => {
+                    eprintln!("Database connection failed: {}", e);
+                    eprintln!("Make sure Docker is running: docker compose up -d");
+                    eprintln!("Expected: Postgres on localhost:5433, Redis on localhost:6379");
+                    return Err(Box::from(format!(
+                        "Failed to connect to database. Make sure Docker is running (docker compose up -d).\n\nError: {}",
+                        e
+                    )));
+                }
+            };
             app.manage(AppState { pool, rt });
 
             // Redis pub/sub for real-time updates (replaces SQLite file watcher)
