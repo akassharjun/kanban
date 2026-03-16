@@ -21,6 +21,7 @@ export interface Project {
   issue_counter: number;
   created_at: string;
   updated_at: string;
+  path: string | null;
 }
 
 export interface Status {
@@ -161,6 +162,8 @@ export interface Agent {
   status: AgentStatus;
   registered_at: string;
   last_heartbeat: string;
+  last_activity_at: string | null;
+  worktree_path: string | null;
 }
 
 export interface AgentMetrics {

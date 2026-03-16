@@ -6,7 +6,7 @@ import * as api from "@/tauri/commands";
 
 interface ProjectSettingsViewProps {
   project: Project;
-  onUpdateProject: (id: number, input: { name?: string; description?: string; icon?: string; status?: string }) => Promise<unknown>;
+  onUpdateProject: (id: number, input: { name?: string; description?: string; icon?: string; status?: string; path?: string }) => Promise<unknown>;
   onRefreshStatuses: () => void;
   onRefreshLabels: () => void;
   onDeleteProject: (id: number) => Promise<void>;
@@ -39,6 +39,7 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
   const [description, setDescription] = useState(project.description || "");
   const [icon, setIcon] = useState(project.icon || "");
   const [projectStatus, setProjectStatus] = useState(project.status);
+  const [path, setPath] = useState(project.path || "");
 
   // Status form
   const [showAddStatus, setShowAddStatus] = useState(false);
@@ -81,6 +82,7 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
       description: description || undefined,
       icon,
       status: projectStatus,
+      path: path || undefined,
     });
   };
 
@@ -172,7 +174,12 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
   return (
     <div className="flex-1 overflow-auto p-6">
       <div className="max-w-2xl">
-        <h1 className="text-xl font-semibold mb-6">Project Settings</h1>
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold">Project Settings</h1>
+          {project.path && (
+            <div className="text-xs text-muted-foreground font-mono mt-1">{project.prefix} &middot; {project.path}</div>
+          )}
+        </div>
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b border-border">
@@ -219,6 +226,11 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
             <div>
               <label className="block text-sm text-muted-foreground mb-1">Prefix</label>
               <input value={project.prefix} disabled className="w-32 rounded-md border border-border bg-background/50 px-3 py-2 text-sm text-muted-foreground" />
+            </div>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">Project Path</label>
+              <input value={path} onChange={e => setPath(e.target.value)} placeholder="/path/to/project" className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary font-mono" />
+              <p className="text-xs text-muted-foreground mt-1">Local directory for this project. Used by agents to access the codebase.</p>
             </div>
             <button onClick={handleSaveGeneral} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
               Save Changes

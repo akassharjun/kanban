@@ -68,6 +68,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
     async function fetchStats() {
       const results: Record<string, AgentMetrics> = {};
       for (const agent of agents) {
+        if (cancelled) return;
         try {
           const stats = await getAgentStats(agent.id);
           if (!cancelled) results[agent.id] = stats;
@@ -215,6 +216,11 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
                     {" · "}concurrency: <span className="text-zinc-400">{agent.max_concurrent}</span>
                     {" · "}max: <span className="text-zinc-400">{agent.max_complexity}</span>
                   </div>
+                  {agent.worktree_path && (
+                    <div className="text-[10px] font-mono text-zinc-500 truncate">
+                      worktree: <span className="text-zinc-400">{agent.worktree_path}</span>
+                    </div>
+                  )}
 
                   {/* Skills */}
                   {skills.length > 0 && (
@@ -245,7 +251,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
 
                   {/* Last activity */}
                   <div className="text-[10px] text-zinc-600 font-mono">
-                    last active: {formatTime(agent.last_heartbeat)}
+                    last active: {formatTime(agent.last_activity_at || agent.last_heartbeat)}
                   </div>
                 </div>
               );
