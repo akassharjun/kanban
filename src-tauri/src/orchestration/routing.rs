@@ -1,4 +1,5 @@
-use sqlx::PgPool;
+use sqlx::AnyPool;
+use crate::models::agent::parse_json;
 
 /// Full task contract joined with issue data, returned by next_task.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -19,6 +20,8 @@ pub struct FullTaskContract {
     pub estimated_complexity: Option<String>,
     pub timeout_minutes: i64,
     pub attempt_count: i64,
+    pub claimed_by: Option<String>,
+    pub claimed_at: Option<String>,
 }
 
 /// Intermediate row for candidate task queries.
@@ -28,7 +31,7 @@ struct CandidateRow {
     issue_id: i64,
     identifier: String,
     priority: String,
-    required_skills: serde_json::Value,
+    required_skills: String,
     estimated_complexity: Option<String>,
 }
 
@@ -44,13 +47,15 @@ struct FullContractRow {
     r#type: String,
     task_state: String,
     objective: String,
-    context: serde_json::Value,
-    constraints: serde_json::Value,
-    success_criteria: serde_json::Value,
-    required_skills: serde_json::Value,
+    context: String,
+    constraints: String,
+    success_criteria: String,
+    required_skills: String,
     estimated_complexity: Option<String>,
     timeout_minutes: i64,
     attempt_count: i64,
+    claimed_by: Option<String>,
+    claimed_at: Option<String>,
 }
 
 fn complexity_rank(c: &str) -> i32 {
@@ -62,12 +67,37 @@ fn complexity_rank(c: &str) -> i32 {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn complexity_rank_small() {
+        assert_eq!(complexity_rank("small"), 1);
+    }
+
+    #[test]
+    fn complexity_rank_medium() {
+        assert_eq!(complexity_rank("medium"), 2);
+    }
+
+    #[test]
+    fn complexity_rank_large() {
+        assert_eq!(complexity_rank("large"), 3);
+    }
+
+    #[test]
+    fn complexity_rank_unknown() {
+        assert_eq!(complexity_rank("unknown"), 99);
+    }
+}
+
 /// Find and atomically claim the next best task for the given agent.
 ///
 /// Returns `None` if no suitable task is available (agent at capacity,
 /// no matching tasks, or all candidates were claimed by other agents).
 pub async fn next_task(
-    pool: &PgPool,
+    pool: &AnyPool,
     agent_id: &str,
     agent_skills: &[String],
     agent_max_complexity: &str,
@@ -118,7 +148,7 @@ pub async fn next_task(
         }
 
         // 3. Filter: skills subset check
-        let task_skills: Vec<String> = serde_json::from_value(candidate.required_skills.clone())
+        let task_skills: Vec<String> = serde_json::from_str(&candidate.required_skills)
             .unwrap_or_default();
         let all_skills_met = task_skills.iter().all(|s| agent_skills.contains(s));
         if !all_skills_met {
@@ -178,7 +208,7 @@ pub async fn next_task(
 
 /// Build a full task contract by joining task_contracts with issues.
 pub async fn build_full_contract(
-    pool: &PgPool,
+    pool: &AnyPool,
     issue_id: i64,
 ) -> Result<Option<FullTaskContract>, sqlx::Error> {
     let row: Option<FullContractRow> = sqlx::query_as(
@@ -199,7 +229,9 @@ pub async fn build_full_contract(
             tc.required_skills,
             tc.estimated_complexity,
             tc.timeout_minutes,
-            tc.attempt_count
+            tc.attempt_count,
+            tc.claimed_by,
+            tc.claimed_at
         FROM task_contracts tc
         JOIN issues i ON tc.issue_id = i.id
         WHERE tc.issue_id = $1
@@ -219,12 +251,14 @@ pub async fn build_full_contract(
         r#type: r.r#type,
         task_state: r.task_state,
         objective: r.objective,
-        context: r.context,
-        constraints: r.constraints,
-        success_criteria: r.success_criteria,
-        required_skills: r.required_skills,
+        context: parse_json(&r.context),
+        constraints: parse_json(&r.constraints),
+        success_criteria: parse_json(&r.success_criteria),
+        required_skills: parse_json(&r.required_skills),
         estimated_complexity: r.estimated_complexity,
         timeout_minutes: r.timeout_minutes,
         attempt_count: r.attempt_count,
+        claimed_by: r.claimed_by,
+        claimed_at: r.claimed_at,
     }))
 }

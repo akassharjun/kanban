@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::AnyPool;
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,7 +14,7 @@ pub struct CascadeResult {
 /// - Blocks downstream queued/claimed/blocked tasks (recursively)
 /// - Warns executing downstream tasks
 /// - Creates review tasks for completed downstream tasks
-pub async fn invalidate_task(pool: &PgPool, issue_id: i64, reason: &str) -> Result<CascadeResult, sqlx::Error> {
+pub async fn invalidate_task(pool: &AnyPool, issue_id: i64, reason: &str) -> Result<CascadeResult, sqlx::Error> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
     // Get the issue for project context
@@ -28,7 +28,7 @@ pub async fn invalidate_task(pool: &PgPool, issue_id: i64, reason: &str) -> Resu
 
     // Requeue the invalidated task
     let new_attempt = contract.attempt_count + 1;
-    let mut context: serde_json::Value = contract.context.clone();
+    let mut context: serde_json::Value = contract.context_json();
     let entry = serde_json::json!({
         "agent": contract.claimed_by,
         "attempt_number": new_attempt,

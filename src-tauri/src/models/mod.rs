@@ -50,8 +50,10 @@ pub struct Project {
     pub status: String,
     pub prefix: String,
     pub issue_counter: i64,
+    pub deleted_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

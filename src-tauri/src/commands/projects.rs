@@ -17,6 +17,7 @@ pub struct UpdateProjectInput {
     pub description: Option<String>,
     pub icon: Option<String>,
     pub status: Option<String>,
+    pub path: Option<String>,
 }
 
 #[tauri::command]
@@ -128,6 +129,10 @@ pub fn update_project(state: State<AppState>, id: i64, input: UpdateProjectInput
         if let Some(status) = &input.status {
             qb.push(", status = ");
             qb.push_bind(status);
+        }
+        if let Some(path) = &input.path {
+            qb.push(", path = ");
+            qb.push_bind(path);
         }
 
         qb.push(" WHERE id = ");

@@ -1,7 +1,8 @@
 use crate::models::agent::{Agent, AgentStats};
 use crate::state::AppState;
+use crate::db::compat::jsonb_cast;
 use serde::Deserialize;
-use tauri::State;
+use tauri::{Emitter, State};
 
 #[derive(Deserialize)]
 pub struct RegisterAgentInput {
@@ -11,10 +12,11 @@ pub struct RegisterAgentInput {
     pub task_types: Vec<String>,
     pub max_concurrent: Option<i64>,
     pub max_complexity: Option<String>,
+    pub worktree_path: Option<String>,
 }
 
 #[tauri::command]
-pub fn register_agent(state: State<AppState>, input: RegisterAgentInput) -> Result<Agent, String> {
+pub fn register_agent(app: tauri::AppHandle, state: State<AppState>, input: RegisterAgentInput) -> Result<Agent, String> {
     state.rt.block_on(async {
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
@@ -53,8 +55,9 @@ pub fn register_agent(state: State<AppState>, input: RegisterAgentInput) -> Resu
         .fetch_one(&mut *tx)
         .await?;
 
+        let jb = jsonb_cast(&state.backend);
         sqlx::query(
-            "INSERT INTO agents (id, name, agent_type, skills, task_types, max_concurrent, max_complexity, member_id, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, 'idle', $9, $10)"
+            &format!("INSERT INTO agents (id, name, agent_type, skills, task_types, max_concurrent, max_complexity, member_id, status, registered_at, last_heartbeat, worktree_path) VALUES ($1, $2, $3, $4{jb}, $5{jb}, $6, $7, $8, 'idle', $9, $10, $11)")
         )
         .bind(&id)
         .bind(&agent_name)
@@ -66,11 +69,12 @@ pub fn register_agent(state: State<AppState>, input: RegisterAgentInput) -> Resu
         .bind(member_id)
         .bind(&now)
         .bind(&now)
+        .bind(&input.worktree_path)
         .execute(&mut *tx)
         .await?;
 
         sqlx::query(
-            "INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES ($1, 0, 0, 0.0, 0, '{}'::jsonb)"
+            &format!("INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES ($1, 0, 0, 0.0, 0, '{{}}'{jb})")
         )
         .bind(&id)
         .execute(&mut *tx)
@@ -83,12 +87,13 @@ pub fn register_agent(state: State<AppState>, input: RegisterAgentInput) -> Resu
 
         tx.commit().await?;
 
+        let _ = app.emit("db-changed", ());
         Ok(agent)
     }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
-pub fn agent_heartbeat(state: State<AppState>, agent_id: String) -> Result<Agent, String> {
+pub fn agent_heartbeat(app: tauri::AppHandle, state: State<AppState>, agent_id: String) -> Result<Agent, String> {
     state.rt.block_on(async {
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
@@ -126,12 +131,13 @@ pub fn agent_heartbeat(state: State<AppState>, agent_id: String) -> Result<Agent
             .fetch_one(&state.pool)
             .await?;
 
+        let _ = app.emit("db-changed", ());
         Ok(updated)
     }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
-pub fn deregister_agent(state: State<AppState>, agent_id: String) -> Result<(), String> {
+pub fn deregister_agent(app: tauri::AppHandle, state: State<AppState>, agent_id: String) -> Result<(), String> {
     state.rt.block_on(async {
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
@@ -164,12 +170,60 @@ pub fn deregister_agent(state: State<AppState>, agent_id: String) -> Result<(), 
             .await?;
         }
 
-        // Delete the agent (cascade deletes agent_stats)
-        sqlx::query("DELETE FROM agents WHERE id = $1")
+        // Reassign agent's member to canonical agent-type member before deleting
+        let agent = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE id = $1")
             .bind(&agent_id)
-            .execute(&state.pool)
+            .fetch_one(&state.pool)
             .await?;
 
+        if let Some(member_id) = agent.member_id {
+            let agent_type_str = agent.agent_type.as_deref().unwrap_or("custom");
+            let canonical_name = match agent_type_str {
+                "claude" | "claude-code" => "[claude] Claude",
+                "codex" => "[codex] Codex",
+                "gemini" => "[gemini] Gemini",
+                _ => "[custom] Agent",
+            };
+            let avatar_color = match agent_type_str {
+                "claude" | "claude-code" => "#f97316",
+                "codex" => "#22c55e",
+                "gemini" => "#3b82f6",
+                _ => "#8b5cf6",
+            };
+
+            let canonical_id: i64 = match sqlx::query_scalar::<_, i64>("SELECT id FROM members WHERE name = $1")
+                .bind(canonical_name).fetch_optional(&state.pool).await? {
+                Some(id) => id,
+                None => {
+                    sqlx::query_scalar("INSERT INTO members (name, display_name, avatar_color, created_at) VALUES ($1, $2, $3, $4) RETURNING id")
+                        .bind(canonical_name)
+                        .bind(canonical_name.split("] ").last().unwrap_or("Agent"))
+                        .bind(avatar_color)
+                        .bind(&now)
+                        .fetch_one(&state.pool).await?
+                }
+            };
+
+            if member_id != canonical_id {
+                sqlx::query("UPDATE issues SET assignee_id = $1 WHERE assignee_id = $2")
+                    .bind(canonical_id).bind(member_id).execute(&state.pool).await?;
+                sqlx::query("UPDATE comments SET member_id = $1 WHERE member_id = $2")
+                    .bind(canonical_id).bind(member_id).execute(&state.pool).await?;
+            }
+
+            sqlx::query("DELETE FROM agents WHERE id = $1")
+                .bind(&agent_id).execute(&state.pool).await?;
+
+            if member_id != canonical_id {
+                sqlx::query("DELETE FROM members WHERE id = $1")
+                    .bind(member_id).execute(&state.pool).await?;
+            }
+        } else {
+            sqlx::query("DELETE FROM agents WHERE id = $1")
+                .bind(&agent_id).execute(&state.pool).await?;
+        }
+
+        let _ = app.emit("db-changed", ());
         Ok(())
     }).map_err(|e: sqlx::Error| e.to_string())
 }
@@ -190,5 +244,79 @@ pub fn get_agent_stats(state: State<AppState>, agent_id: String) -> Result<Agent
             .bind(&agent_id)
             .fetch_one(&state.pool)
             .await
+    }).map_err(|e: sqlx::Error| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_project_agent_config(state: State<AppState>, project_id: i64) -> Result<crate::models::ProjectAgentConfig, String> {
+    state.rt.block_on(async {
+        match sqlx::query_as::<_, crate::models::ProjectAgentConfig>(
+            "SELECT * FROM project_agent_config WHERE project_id = $1"
+        )
+        .bind(project_id)
+        .fetch_optional(&state.pool)
+        .await? {
+            Some(config) => Ok(config),
+            None => {
+                sqlx::query("INSERT INTO project_agent_config (project_id) VALUES ($1) ON CONFLICT DO NOTHING")
+                    .bind(project_id)
+                    .execute(&state.pool)
+                    .await?;
+                sqlx::query_as::<_, crate::models::ProjectAgentConfig>(
+                    "SELECT * FROM project_agent_config WHERE project_id = $1"
+                )
+                .bind(project_id)
+                .fetch_one(&state.pool)
+                .await
+            }
+        }
+    }).map_err(|e: sqlx::Error| e.to_string())
+}
+
+#[derive(Deserialize)]
+pub struct UpdateAgentConfigInput {
+    pub auto_accept_threshold: Option<f64>,
+    pub human_review_threshold: Option<f64>,
+    pub max_attempts: Option<i64>,
+    pub heartbeat_interval_seconds: Option<i64>,
+    pub missed_heartbeats_before_offline: Option<i64>,
+}
+
+#[tauri::command]
+pub fn update_project_agent_config(state: State<AppState>, project_id: i64, input: UpdateAgentConfigInput) -> Result<crate::models::ProjectAgentConfig, String> {
+    state.rt.block_on(async {
+        sqlx::query("INSERT INTO project_agent_config (project_id) VALUES ($1) ON CONFLICT DO NOTHING")
+            .bind(project_id)
+            .execute(&state.pool)
+            .await?;
+
+        let mut qb = sqlx::QueryBuilder::new("UPDATE project_agent_config SET project_id = ");
+        qb.push_bind(project_id);
+
+        if let Some(v) = input.auto_accept_threshold {
+            qb.push(", auto_accept_threshold = "); qb.push_bind(v);
+        }
+        if let Some(v) = input.human_review_threshold {
+            qb.push(", human_review_threshold = "); qb.push_bind(v);
+        }
+        if let Some(v) = input.max_attempts {
+            qb.push(", max_attempts = "); qb.push_bind(v);
+        }
+        if let Some(v) = input.heartbeat_interval_seconds {
+            qb.push(", heartbeat_interval_seconds = "); qb.push_bind(v);
+        }
+        if let Some(v) = input.missed_heartbeats_before_offline {
+            qb.push(", missed_heartbeats_before_offline = "); qb.push_bind(v);
+        }
+
+        qb.push(" WHERE project_id = "); qb.push_bind(project_id);
+        qb.build().execute(&state.pool).await?;
+
+        sqlx::query_as::<_, crate::models::ProjectAgentConfig>(
+            "SELECT * FROM project_agent_config WHERE project_id = $1"
+        )
+        .bind(project_id)
+        .fetch_one(&state.pool)
+        .await
     }).map_err(|e: sqlx::Error| e.to_string())
 }

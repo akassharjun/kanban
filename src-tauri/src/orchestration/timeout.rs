@@ -1,4 +1,6 @@
-use sqlx::PgPool;
+use sqlx::AnyPool;
+use crate::db::DbBackend;
+use crate::db::compat;
 
 /// Row type for timed-out task queries.
 #[derive(Debug, sqlx::FromRow)]
@@ -6,7 +8,7 @@ struct TimedOutTask {
     issue_id: i64,
     claimed_by: Option<String>,
     attempt_count: i64,
-    context: serde_json::Value,
+    context: String,
 }
 
 /// Row type for offline agent queries.
@@ -21,7 +23,7 @@ const DEFAULT_OFFLINE_THRESHOLD_SECONDS: i64 = 600;
 
 /// Update agent's last_activity_at timestamp based on task activity.
 /// Also sets the agent back to 'online' if it was previously 'offline'.
-pub async fn update_agent_activity(pool: &PgPool, agent_id: &str) {
+pub async fn update_agent_activity(pool: &AnyPool, agent_id: &str) {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
     let _ = sqlx::query(
         "UPDATE agents SET last_activity_at = $1, status = CASE WHEN status = 'offline' THEN 'online' ELSE status END WHERE id = $2",
@@ -33,39 +35,24 @@ pub async fn update_agent_activity(pool: &PgPool, agent_id: &str) {
 }
 
 /// Reclaim tasks that have timed out (claimed_at + timeout_minutes has elapsed).
-///
-/// For each timed-out task:
-/// - Increments attempt_count
-/// - Appends a timeout entry to prior_attempts in context JSON
-/// - Requeues the task (or blocks it if max_attempts exceeded)
-/// - Syncs the issue status
-/// - Inserts an execution_log entry
-///
-/// Returns the list of reclaimed issue_ids.
-pub async fn reclaim_timed_out_tasks(pool: &PgPool) -> Result<Vec<i64>, sqlx::Error> {
+pub async fn reclaim_timed_out_tasks(pool: &AnyPool, backend: &DbBackend) -> Result<Vec<i64>, sqlx::Error> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
-    // Find tasks where claimed_at + timeout_minutes has elapsed
     let timed_out: Vec<TimedOutTask> = sqlx::query_as(
-        r#"
-        SELECT tc.issue_id, tc.claimed_by, tc.attempt_count, tc.context
-        FROM task_contracts tc
-        WHERE tc.task_state IN ('claimed', 'executing')
-          AND tc.claimed_at IS NOT NULL
-          AND tc.claimed_at::timestamptz + (tc.timeout_minutes * interval '1 minute') < NOW()
-        "#,
+        compat::timed_out_tasks_query(backend),
     )
     .fetch_all(pool)
     .await?;
 
     let mut reclaimed_ids = Vec::new();
+    let jcast = compat::jsonb_cast(backend);
 
     for task in &timed_out {
         let new_attempt_count = task.attempt_count + 1;
         let agent_id = task.claimed_by.as_deref().unwrap_or("unknown");
 
         // Parse context JSON, append to prior_attempts
-        let mut context: serde_json::Value = task.context.clone();
+        let mut context: serde_json::Value = serde_json::from_str(&task.context).unwrap_or(serde_json::json!({}));
         let attempt_entry = serde_json::json!({
             "agent": agent_id,
             "attempt_number": new_attempt_count,
@@ -103,9 +90,11 @@ pub async fn reclaim_timed_out_tasks(pool: &PgPool) -> Result<Vec<i64>, sqlx::Er
         let status_category = if should_block { "blocked" } else { "unstarted" };
 
         // Update task_contracts: requeue or block, clear claimed_by/claimed_at
-        sqlx::query(
-            "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3::jsonb WHERE issue_id = $4",
-        )
+        let update_q = format!(
+            "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3{} WHERE issue_id = $4",
+            jcast
+        );
+        sqlx::query(&update_q)
         .bind(new_state)
         .bind(new_attempt_count)
         .bind(&context_str)
@@ -146,35 +135,18 @@ pub async fn reclaim_timed_out_tasks(pool: &PgPool) -> Result<Vec<i64>, sqlx::Er
 }
 
 /// Reclaim tasks from agents that have gone offline (missed heartbeats).
-///
-/// An agent is considered offline when its last_heartbeat is older than the
-/// configured threshold (heartbeat_interval_seconds * missed_heartbeats_before_offline).
-/// Uses a global default of 180 seconds if no project_agent_config exists.
-///
-/// For each offline agent:
-/// - Sets agent status to 'offline'
-/// - Reclaims all their claimed/executing tasks (same logic as timed-out tasks)
-///
-/// Returns the list of agent IDs that went offline.
-pub async fn reclaim_offline_agents(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
+pub async fn reclaim_offline_agents(pool: &AnyPool, backend: &DbBackend) -> Result<Vec<String>, sqlx::Error> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
 
-    // Use default threshold; no per-agent config since agents are global
-    // Detect offline agents based on last_activity_at (activity-based monitoring)
     let offline_agents: Vec<OfflineAgentRow> = sqlx::query_as(
-        r#"
-        SELECT a.id
-        FROM agents a
-        WHERE a.status != 'offline'
-          AND a.last_activity_at IS NOT NULL
-          AND a.last_activity_at::timestamptz + ($1 * interval '1 second') < NOW()
-        "#,
+        compat::offline_agents_query(backend),
     )
     .bind(DEFAULT_OFFLINE_THRESHOLD_SECONDS)
     .fetch_all(pool)
     .await?;
 
     let mut offline_ids = Vec::new();
+    let jcast = compat::jsonb_cast(backend);
 
     for agent in &offline_agents {
         // Set agent status to offline
@@ -200,7 +172,7 @@ pub async fn reclaim_offline_agents(pool: &PgPool) -> Result<Vec<String>, sqlx::
             let new_attempt_count = task.attempt_count + 1;
 
             // Parse context JSON, append to prior_attempts
-            let mut context: serde_json::Value = task.context.clone();
+            let mut context: serde_json::Value = serde_json::from_str(&task.context).unwrap_or(serde_json::json!({}));
             let attempt_entry = serde_json::json!({
                 "agent": agent.id,
                 "attempt_number": new_attempt_count,
@@ -238,9 +210,11 @@ pub async fn reclaim_offline_agents(pool: &PgPool) -> Result<Vec<String>, sqlx::
             let status_category = if should_block { "blocked" } else { "unstarted" };
 
             // Update task_contracts
-            sqlx::query(
-                "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3::jsonb WHERE issue_id = $4",
-            )
+            let update_q = format!(
+                "UPDATE task_contracts SET task_state = $1, claimed_by = NULL, claimed_at = NULL, attempt_count = $2, context = $3{} WHERE issue_id = $4",
+                jcast
+            );
+            sqlx::query(&update_q)
             .bind(new_state)
             .bind(new_attempt_count)
             .bind(&context_str)

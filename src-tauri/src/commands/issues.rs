@@ -57,7 +57,7 @@ pub struct IssueWithLabels {
 }
 
 // Helper to log activity
-async fn log_activity(pool: &sqlx::PgPool, issue_id: i64, field: &str, old_val: Option<String>, new_val: Option<String>) -> Result<(), sqlx::Error> {
+async fn log_activity(pool: &sqlx::AnyPool, issue_id: i64, field: &str, old_val: Option<String>, new_val: Option<String>) -> Result<(), sqlx::Error> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
     sqlx::query("INSERT INTO activity_log (issue_id, field_changed, old_value, new_value, timestamp) VALUES ($1, $2, $3, $4, $5)")
         .bind(issue_id).bind(field).bind(old_val).bind(new_val).bind(&now)
@@ -66,7 +66,7 @@ async fn log_activity(pool: &sqlx::PgPool, issue_id: i64, field: &str, old_val: 
 }
 
 // Helper to log undo
-async fn log_undo(pool: &sqlx::PgPool, op_type: &str, entity_type: &str, entity_id: i64, before: Option<String>, after: Option<String>) -> Result<(), sqlx::Error> {
+async fn log_undo(pool: &sqlx::AnyPool, op_type: &str, entity_type: &str, entity_id: i64, before: Option<String>, after: Option<String>) -> Result<(), sqlx::Error> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
     // Clear any undone entries after the current position (new operation invalidates redo stack)
     sqlx::query("DELETE FROM undo_log WHERE undone = TRUE")
@@ -172,7 +172,7 @@ pub fn get_issue_by_identifier(state: State<AppState>, identifier: String) -> Re
 #[tauri::command]
 pub fn list_issues(state: State<AppState>, filter: ListIssuesFilter) -> Result<Vec<Issue>, String> {
     state.rt.block_on(async {
-        let mut qb: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new("SELECT i.* FROM issues i");
+        let mut qb: sqlx::QueryBuilder<sqlx::Any> = sqlx::QueryBuilder::new("SELECT i.* FROM issues i");
 
         if filter.label_id.is_some() {
             qb.push(" JOIN issue_labels il ON i.id = il.issue_id");
@@ -488,7 +488,7 @@ pub fn bulk_update_issues(state: State<AppState>, input: BulkUpdateInput) -> Res
         }
 
         // Fetch updated issues
-        let mut qb: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new("SELECT * FROM issues WHERE id IN (");
+        let mut qb: sqlx::QueryBuilder<sqlx::Any> = sqlx::QueryBuilder::new("SELECT * FROM issues WHERE id IN (");
         let mut separated = qb.separated(", ");
         for id in &input.issue_ids {
             separated.push_bind(*id);

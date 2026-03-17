@@ -111,7 +111,7 @@ pub fn task_attempts(
             .await?;
 
             // Parse context JSON, extract prior_attempts
-            let context: serde_json::Value = contract.context.clone();
+            let context: serde_json::Value = contract.context_json();
             let prior_attempts = context
                 .get("prior_attempts")
                 .cloned()

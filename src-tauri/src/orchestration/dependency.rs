@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::AnyPool;
 
 /// When a task completes, find all downstream tasks that were blocked and can
 /// now be unblocked (i.e. all their blockers are completed). Atomically
@@ -7,7 +7,7 @@ use sqlx::PgPool;
 ///
 /// Returns the list of issue IDs that were newly unblocked.
 pub async fn resolve_downstream(
-    pool: &PgPool,
+    pool: &AnyPool,
     completed_issue_id: i64,
 ) -> Result<Vec<i64>, sqlx::Error> {
     let now = chrono::Utc::now().to_rfc3339();

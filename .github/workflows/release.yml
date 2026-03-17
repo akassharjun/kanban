@@ -1,0 +1,291 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm run test:run
+
+      - name: Run Rust tests
+        working-directory: src-tauri
+        run: cargo test
+
+  build-macos-arm64:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target aarch64-apple-darwin
+
+      - name: Package binary tarball
+        run: |
+          cd src-tauri/target/aarch64-apple-darwin/release
+          tar czf kanban-macos-aarch64.tar.gz kanban
+          mv kanban-macos-aarch64.tar.gz ../../../../
+
+      - name: Find DMG
+        id: find-dmg
+        run: |
+          DMG=$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -name '*.dmg' | head -1)
+          echo "path=$DMG" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: |
+            kanban-macos-aarch64.tar.gz
+            ${{ steps.find-dmg.outputs.path }}
+
+  build-macos-x86_64:
+    needs: test
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target x86_64-apple-darwin
+
+      - name: Package binary tarball
+        run: |
+          cd src-tauri/target/x86_64-apple-darwin/release
+          tar czf kanban-macos-x86_64.tar.gz kanban
+          mv kanban-macos-x86_64.tar.gz ../../../../
+
+      - name: Find DMG
+        id: find-dmg
+        run: |
+          DMG=$(find src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -name '*.dmg' | head -1)
+          echo "path=$DMG" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x86_64
+          path: |
+            kanban-macos-x86_64.tar.gz
+            ${{ steps.find-dmg.outputs.path }}
+
+  build-linux-x86_64:
+    needs: test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Package binary tarball
+        run: |
+          cd src-tauri/target/release
+          tar czf kanban-linux-x86_64.tar.gz kanban
+          mv kanban-linux-x86_64.tar.gz ../../../
+
+      - name: Find deb
+        id: find-deb
+        run: |
+          DEB=$(find src-tauri/target/release/bundle/deb -name '*.deb' | head -1)
+          echo "path=$DEB" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: |
+            kanban-linux-x86_64.tar.gz
+            ${{ steps.find-deb.outputs.path }}
+
+  release:
+    needs: [build-macos-arm64, build-macos-x86_64, build-linux-x86_64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release files
+        run: |
+          mkdir release-files
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.dmg' -o -name '*.deb' \) -exec cp {} release-files/ \;
+          ls -la release-files/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-files/*
+          generate_release_notes: true
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      TAG_NAME: ${{ github.ref_name }}
+      REPO_NAME: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download tarballs
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Update Homebrew formula
+        run: |
+          VERSION="${TAG_NAME#v}"
+          SHA_ARM64=$(sha256sum artifacts/macos-arm64/kanban-macos-aarch64.tar.gz | awk '{print $1}')
+          SHA_X86=$(sha256sum artifacts/macos-x86_64/kanban-macos-x86_64.tar.gz | awk '{print $1}')
+          SHA_LINUX=$(sha256sum artifacts/linux-x86_64/kanban-linux-x86_64.tar.gz | awk '{print $1}')
+
+          cat > Formula/kanban.rb << FORMULA
+          class Kanban < Formula
+            desc "Desktop project management for AI agent orchestration"
+            homepage "https://github.com/${REPO_NAME}"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/${REPO_NAME}/releases/download/v${VERSION}/kanban-macos-aarch64.tar.gz"
+                sha256 "${SHA_ARM64}"
+              else
+                url "https://github.com/${REPO_NAME}/releases/download/v${VERSION}/kanban-macos-x86_64.tar.gz"
+                sha256 "${SHA_X86}"
+              end
+            end
+
+            on_linux do
+              url "https://github.com/${REPO_NAME}/releases/download/v${VERSION}/kanban-linux-x86_64.tar.gz"
+              sha256 "${SHA_LINUX}"
+            end
+
+            def install
+              bin.install "kanban"
+            end
+
+            test do
+              assert_match "Kanban", shell_output("#{bin}/kanban --help")
+            end
+          end
+          FORMULA
+
+      - name: Commit formula update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/kanban.rb
+          git diff --cached --quiet || git commit -m "chore: update Homebrew formula to ${TAG_NAME}"
+          git push

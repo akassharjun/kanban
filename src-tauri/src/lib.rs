@@ -3,7 +3,10 @@ pub mod db;
 pub mod models;
 pub mod orchestration;
 mod state;
+pub mod cli;
+pub mod mcp;
 
+use db::DbBackend;
 use state::AppState;
 use tauri::Emitter;
 use tauri::Manager;
@@ -12,45 +15,62 @@ use std::time::Duration;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    run_gui(None)
+}
+
+pub fn run_gui(database_url: Option<String>) {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
-        .setup(|app| {
+        .setup(move |app| {
             let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-            let pool = match rt.block_on(db::init_db()) {
-                Ok(pool) => pool,
+            let (pool, backend) = match rt.block_on(db::init_db(database_url.as_deref())) {
+                Ok(result) => result,
                 Err(e) => {
                     eprintln!("Database connection failed: {}", e);
-                    eprintln!("Make sure Docker is running: docker compose up -d");
-                    eprintln!("Expected: Postgres on localhost:5433, Redis on localhost:6379");
+                    if database_url.as_deref().map_or(false, |u| u.starts_with("postgres")) {
+                        eprintln!("Make sure Docker is running: docker compose up -d");
+                        eprintln!("Expected: Postgres on localhost:5433");
+                    }
                     return Err(Box::from(format!(
-                        "Failed to connect to database. Make sure Docker is running (docker compose up -d).\n\nError: {}",
+                        "Failed to connect to database.\n\nError: {}",
                         e
                     )));
                 }
             };
-            app.manage(AppState { pool, rt });
+            app.manage(AppState { pool, backend, rt });
 
-            // Redis pub/sub for real-time updates (replaces SQLite file watcher)
-            let app_handle_redis = app.handle().clone();
-            std::thread::spawn(move || {
-                let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string());
-                if let Ok(client) = redis::Client::open(redis_url) {
-                    if let Ok(mut conn) = client.get_connection() {
-                        let mut pubsub = conn.as_pubsub();
-                        let _ = pubsub.subscribe("kanban:db-changed");
-                        loop {
-                            if let Ok(_msg) = pubsub.get_message() {
-                                let _ = app_handle_redis.emit("db-changed", ());
+            // Cross-process change detection
+            match backend {
+                DbBackend::Sqlite => {
+                    db::watcher::spawn_wal_watcher(app.handle().clone());
+                }
+                DbBackend::Postgres => {
+                    #[cfg(feature = "redis-sync")]
+                    {
+                        let app_handle_redis = app.handle().clone();
+                        std::thread::spawn(move || {
+                            let redis_url = std::env::var("REDIS_URL")
+                                .unwrap_or_else(|_| "redis://localhost:6379".to_string());
+                            if let Ok(client) = redis::Client::open(redis_url) {
+                                if let Ok(mut conn) = client.get_connection() {
+                                    let mut pubsub = conn.as_pubsub();
+                                    let _ = pubsub.subscribe("kanban:db-changed");
+                                    loop {
+                                        if let Ok(_msg) = pubsub.get_message() {
+                                            let _ = app_handle_redis.emit("db-changed", ());
+                                        }
+                                    }
+                                }
                             }
-                        }
+                        });
                     }
                 }
-                // Fallback: if Redis unavailable, do nothing (CLI changes won't auto-refresh)
-            });
+            }
 
             // Timeout recovery thread - reclaims stale tasks every 30 seconds
             let pool_clone = app.state::<AppState>().pool.clone();
+            let backend_clone = backend;
             let app_handle2 = app.handle().clone();
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().expect("Failed to create timeout runtime");
@@ -59,13 +79,13 @@ pub fn run() {
                     let pool = pool_clone.clone();
                     rt.block_on(async {
                         // Reclaim timed-out tasks
-                        if let Ok(reclaimed) = crate::orchestration::timeout::reclaim_timed_out_tasks(&pool).await {
+                        if let Ok(reclaimed) = crate::orchestration::timeout::reclaim_timed_out_tasks(&pool, &backend_clone).await {
                             if !reclaimed.is_empty() {
                                 let _ = app_handle2.emit("db-changed", ());
                             }
                         }
                         // Reclaim offline agents' tasks
-                        if let Ok(offline) = crate::orchestration::timeout::reclaim_offline_agents(&pool).await {
+                        if let Ok(offline) = crate::orchestration::timeout::reclaim_offline_agents(&pool, &backend_clone).await {
                             if !offline.is_empty() {
                                 let _ = app_handle2.emit("db-changed", ());
                             }
@@ -152,6 +172,12 @@ pub fn run() {
             commands::agents::deregister_agent,
             commands::agents::list_agents,
             commands::agents::get_agent_stats,
+            // Hooks
+            commands::hooks::list_hooks,
+            commands::hooks::create_hook,
+            commands::hooks::delete_hook,
+            commands::agents::get_project_agent_config,
+            commands::agents::update_project_agent_config,
             // Task Contracts
             commands::task_contracts::create_task_contract,
             commands::task_contracts::get_task_contract,

@@ -1,6 +1,8 @@
-use sqlx::PgPool;
+use sqlx::AnyPool;
+use crate::db::DbBackend;
 
 pub struct AppState {
-    pub pool: PgPool,
+    pub pool: AnyPool,
+    pub backend: DbBackend,
     pub rt: tokio::runtime::Runtime,
 }

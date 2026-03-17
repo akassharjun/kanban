@@ -1,8 +1,9 @@
 use clap::{Parser, Subcommand};
-use kanban_lib::models::*;
-use kanban_lib::orchestration;
-use sqlx::{QueryBuilder, Row, Postgres, PgPool};
+use crate::models::*;
+use crate::orchestration;
+use sqlx::{QueryBuilder, Row, Any, AnyPool};
 
+#[cfg(feature = "redis-sync")]
 fn notify_change() {
     if let Ok(redis_url) = std::env::var("REDIS_URL") {
         if let Ok(client) = redis::Client::open(redis_url) {
@@ -13,19 +14,22 @@ fn notify_change() {
     }
 }
 
+#[cfg(not(feature = "redis-sync"))]
+fn notify_change() {}
+
 #[derive(Parser)]
 #[command(name = "kanban", about = "Kanban - Desktop Project Management CLI")]
-struct Cli {
+pub struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    pub command: Commands,
 
     /// Output as JSON
     #[arg(long, global = true)]
-    json: bool,
+    pub json: bool,
 }
 
 #[derive(Subcommand)]
-enum Commands {
+pub enum Commands {
     /// Manage projects
     Project {
         #[command(subcommand)]
@@ -87,7 +91,7 @@ enum Commands {
 }
 
 #[derive(Subcommand)]
-enum ProjectAction {
+pub enum ProjectAction {
     /// List all projects
     List,
     /// Create a new project
@@ -115,7 +119,7 @@ enum ProjectAction {
 }
 
 #[derive(Subcommand)]
-enum IssueAction {
+pub enum IssueAction {
     /// List issues
     List {
         #[arg(short, long)]
@@ -187,7 +191,7 @@ enum IssueAction {
 }
 
 #[derive(Subcommand)]
-enum MemberAction {
+pub enum MemberAction {
     /// List all members
     List,
     /// Add a new member
@@ -203,7 +207,7 @@ enum MemberAction {
 }
 
 #[derive(Subcommand)]
-enum LabelAction {
+pub enum LabelAction {
     /// List labels for a project
     List {
         #[arg(short, long)]
@@ -223,7 +227,7 @@ enum LabelAction {
 }
 
 #[derive(Subcommand)]
-enum NotificationAction {
+pub enum NotificationAction {
     /// List recent notifications
     List,
     /// Clear all notifications
@@ -231,7 +235,7 @@ enum NotificationAction {
 }
 
 #[derive(Subcommand)]
-enum CommentAction {
+pub enum CommentAction {
     /// List comments on an issue
     List {
         /// Issue identifier (e.g. KAN-42)
@@ -256,7 +260,7 @@ enum CommentAction {
 }
 
 #[derive(Subcommand)]
-enum AgentAction {
+pub enum AgentAction {
     /// Register a new agent
     Register {
         #[arg(long, default_value = "")]
@@ -294,7 +298,7 @@ enum AgentAction {
 }
 
 #[derive(Subcommand)]
-enum TaskAction {
+pub enum TaskAction {
     /// Get next available task for an agent
     Next {
         #[arg(long)]
@@ -476,39 +480,30 @@ struct ExportData {
     issue_templates: Vec<IssueTemplate>,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse();
-
-    dotenvy::dotenv().ok();
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://kanban:kanban@localhost:5433/kanban".to_string());
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(5)
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to database");
-    sqlx::migrate!("./migrations").run(&pool).await.expect("Failed to run migrations");
-
-    match cli.command {
-        Commands::Project { action } => handle_project(&pool, action, cli.json).await?,
-        Commands::Issue { action } => handle_issue(&pool, action, cli.json).await?,
-        Commands::Member { action } => handle_member(&pool, action, cli.json).await?,
-        Commands::Label { action } => handle_label(&pool, action, cli.json).await?,
-        Commands::Notifications { action } => handle_notifications(&pool, action, cli.json).await?,
-        Commands::Comment { action } => handle_comment(&pool, action, cli.json).await?,
-        Commands::Agent { action } => handle_agent(&pool, action, cli.json).await?,
-        Commands::Task { action } => handle_task(&pool, action, cli.json).await?,
-        Commands::Metrics { project, agent } => handle_metrics(&pool, project, agent, cli.json).await?,
-        Commands::Export { output } => handle_export(&pool, output).await?,
-        Commands::Import { file } => handle_import(&pool, file).await?,
+pub async fn run(
+    pool: &AnyPool,
+    backend: &crate::db::DbBackend,
+    command: Commands,
+    json: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        Commands::Project { action } => handle_project(pool, action, json).await?,
+        Commands::Issue { action } => handle_issue(pool, action, json).await?,
+        Commands::Member { action } => handle_member(pool, action, json).await?,
+        Commands::Label { action } => handle_label(pool, action, json).await?,
+        Commands::Notifications { action } => handle_notifications(pool, action, json).await?,
+        Commands::Comment { action } => handle_comment(pool, action, json).await?,
+        Commands::Agent { action } => handle_agent(pool, backend, action, json).await?,
+        Commands::Task { action } => handle_task(pool, backend, action, json).await?,
+        Commands::Metrics { project, agent } => handle_metrics(pool, backend, project, agent, json).await?,
+        Commands::Export { output } => handle_export(pool, output).await?,
+        Commands::Import { file } => handle_import(pool, file).await?,
     }
-
     Ok(())
 }
 
 async fn handle_project(
-    pool: &PgPool,
+    pool: &AnyPool,
     action: ProjectAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -631,7 +626,7 @@ async fn handle_project(
 }
 
 async fn handle_issue(
-    pool: &PgPool,
+    pool: &AnyPool,
     action: IssueAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -892,7 +887,7 @@ async fn handle_issue(
 }
 
 async fn handle_member(
-    pool: &PgPool,
+    pool: &AnyPool,
     action: MemberAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -955,7 +950,7 @@ async fn handle_member(
 }
 
 async fn handle_label(
-    pool: &PgPool,
+    pool: &AnyPool,
     action: LabelAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1012,7 +1007,7 @@ async fn handle_label(
 }
 
 async fn handle_notifications(
-    pool: &PgPool,
+    pool: &AnyPool,
     action: NotificationAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1048,7 +1043,7 @@ async fn handle_notifications(
 }
 
 async fn handle_comment(
-    pool: &PgPool,
+    pool: &AnyPool,
     action: CommentAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1100,7 +1095,7 @@ async fn handle_comment(
 }
 
 /// Helper: resolve an issue identifier (e.g. "KAN-42") to the issue row.
-async fn resolve_issue(pool: &PgPool, identifier: &str) -> Result<Issue, Box<dyn std::error::Error>> {
+async fn resolve_issue(pool: &AnyPool, identifier: &str) -> Result<Issue, Box<dyn std::error::Error>> {
     let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
         .bind(identifier)
         .fetch_one(pool)
@@ -1109,7 +1104,7 @@ async fn resolve_issue(pool: &PgPool, identifier: &str) -> Result<Issue, Box<dyn
 }
 
 /// Helper: sync an issue's status_id to a status matching the given category.
-async fn sync_issue_status_to_category(pool: &PgPool, issue_id: i64, category: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn sync_issue_status_to_category(pool: &AnyPool, issue_id: i64, category: &str) -> Result<(), Box<dyn std::error::Error>> {
     let now = chrono::Utc::now().to_rfc3339();
     sqlx::query(
         "UPDATE issues SET status_id = (
@@ -1130,7 +1125,7 @@ async fn sync_issue_status_to_category(pool: &PgPool, issue_id: i64, category: &
 }
 
 /// Helper: auto-comment on an issue as an agent
-async fn cli_auto_comment(pool: &PgPool, issue_id: i64, agent_id: &str, content: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn cli_auto_comment(pool: &AnyPool, issue_id: i64, agent_id: &str, content: &str) -> Result<(), Box<dyn std::error::Error>> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
     let agent_member_id: Option<i64> = sqlx::query_scalar(
         "SELECT member_id FROM agents WHERE id = $1"
@@ -1143,7 +1138,8 @@ async fn cli_auto_comment(pool: &PgPool, issue_id: i64, agent_id: &str, content:
 }
 
 async fn handle_agent(
-    pool: &PgPool,
+    pool: &AnyPool,
+    backend: &crate::db::DbBackend,
     action: AgentAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1198,9 +1194,10 @@ async fn handle_agent(
             .fetch_one(pool)
             .await?;
 
-            sqlx::query(
-                "INSERT INTO agents (id, name, agent_type, skills, task_types, max_concurrent, max_complexity, member_id, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, 'online', $9, $10)",
-            )
+            let jb = crate::db::compat::jsonb_cast(backend);
+            sqlx::query(&format!(
+                "INSERT INTO agents (id, name, agent_type, skills, task_types, max_concurrent, max_complexity, member_id, status, registered_at, last_heartbeat) VALUES ($1, $2, $3, $4{jb}, $5{jb}, $6, $7, $8, 'online', $9, $10)",
+            ))
             .bind(&id)
             .bind(&agent_name)
             .bind(&agent_type)
@@ -1214,9 +1211,9 @@ async fn handle_agent(
             .execute(pool)
             .await?;
 
-            sqlx::query(
-                "INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES ($1, 0, 0, 0.0, 0, '{}'::jsonb)",
-            )
+            sqlx::query(&format!(
+                "INSERT INTO agent_stats (agent_id, tasks_completed, tasks_failed, total_confidence, total_completion_time_seconds, skills_breakdown) VALUES ($1, 0, 0, 0.0, 0, '{{}}'{jb})",
+            ))
             .bind(&id)
             .execute(pool)
             .await?;
@@ -1318,7 +1315,7 @@ async fn handle_agent(
                     "total_tasks": total,
                     "avg_confidence": avg_confidence,
                     "total_completion_time_seconds": stats.total_completion_time_seconds,
-                    "skills_breakdown": stats.skills_breakdown,
+                    "skills_breakdown": stats.skills_breakdown_json(),
                 }));
             } else {
                 let avg = if stats.tasks_completed > 0 {
@@ -1338,14 +1335,15 @@ async fn handle_agent(
 }
 
 async fn handle_task(
-    pool: &PgPool,
+    pool: &AnyPool,
+    backend: &crate::db::DbBackend,
     action: TaskAction,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         TaskAction::Next { agent, skills } => {
             // Lazy timeout recovery - reclaim stale tasks before routing
-            let _ = kanban_lib::orchestration::timeout::reclaim_timed_out_tasks(&pool).await;
+            let _ = crate::orchestration::timeout::reclaim_timed_out_tasks(pool, backend).await;
 
             let agent_row = sqlx::query_as::<_, Agent>("SELECT * FROM agents WHERE id = $1")
                 .bind(&agent)
@@ -1354,7 +1352,7 @@ async fn handle_task(
             let skill_list: Vec<String> = if let Some(ref s) = skills {
                 s.split(',').map(|s| s.trim().to_string()).collect()
             } else {
-                serde_json::from_value(agent_row.skills.clone()).unwrap_or_default()
+                serde_json::from_str(&agent_row.skills).unwrap_or_default()
             };
             let result = orchestration::routing::next_task(
                 pool,
@@ -1461,15 +1459,20 @@ async fn handle_task(
                 "artifacts": artifacts.as_ref().and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok()),
             });
 
+            let jb = crate::db::compat::jsonb_cast(backend);
             if new_state == "queued" {
                 // Auto-reject: requeue with cleared claim
-                sqlx::query("UPDATE task_contracts SET task_state = 'queued', result = $1::jsonb, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $2")
+                sqlx::query(&format!(
+                    "UPDATE task_contracts SET task_state = 'queued', result = $1{jb}, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $2"
+                ))
                     .bind(result_json.to_string())
                     .bind(issue.id)
                     .execute(pool)
                     .await?;
             } else {
-                sqlx::query("UPDATE task_contracts SET task_state = $1, result = $2::jsonb WHERE issue_id = $3")
+                sqlx::query(&format!(
+                    "UPDATE task_contracts SET task_state = $1, result = $2{jb} WHERE issue_id = $3"
+                ))
                     .bind(new_state)
                     .bind(result_json.to_string())
                     .bind(issue.id)
@@ -1514,7 +1517,7 @@ async fn handle_task(
 
             // Auto-unblock downstream tasks when completed
             if new_state == "completed" {
-                let _ = kanban_lib::orchestration::dependency::resolve_downstream(pool, issue.id).await;
+                let _ = crate::orchestration::dependency::resolve_downstream(pool, issue.id).await;
             }
 
             if json {
@@ -1537,7 +1540,7 @@ async fn handle_task(
             let now = chrono::Utc::now().to_rfc3339();
 
             // Append to prior_attempts in context
-            let mut context: serde_json::Value = tc.context.clone();
+            let mut context: serde_json::Value = tc.context_json();
             if let Some(obj) = context.as_object_mut() {
                 let arr = obj.entry("prior_attempts").or_insert(serde_json::json!([]));
                 if let Some(a) = arr.as_array_mut() {
@@ -1550,10 +1553,11 @@ async fn handle_task(
                 }
             }
 
+            let jb = crate::db::compat::jsonb_cast(backend);
             // Requeue
-            sqlx::query(
-                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1, context = $1::jsonb WHERE issue_id = $2",
-            )
+            sqlx::query(&format!(
+                "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1, context = $1{jb} WHERE issue_id = $2",
+            ))
             .bind(context.to_string())
             .bind(issue.id)
             .execute(pool)
@@ -1635,9 +1639,10 @@ async fn handle_task(
             .fetch_one(pool)
             .await?;
             let now = chrono::Utc::now().to_rfc3339();
-            sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)",
-            )
+            let jb = crate::db::compat::jsonb_cast(backend);
+            sqlx::query(&format!(
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, $4, $5, $6{jb}, $7)",
+            ))
             .bind(issue.id)
             .bind(&agent)
             .bind(attempt_count.0)
@@ -1735,9 +1740,10 @@ async fn handle_task(
                 context_obj["files"] = serde_json::json!(cf);
             }
 
-            sqlx::query(
-                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, 0)",
-            )
+            let jb = crate::db::compat::jsonb_cast(backend);
+            sqlx::query(&format!(
+                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4{jb}, $5{jb}, $6{jb}, $7{jb}, $8, $9, 0)",
+            ))
             .bind(issue_id)
             .bind(&tt)
             .bind(&objective)
@@ -1769,8 +1775,8 @@ async fn handle_task(
             tx.commit().await?;
 
             // Check if this task needs decomposition
-            if let Ok(true) = kanban_lib::orchestration::decomposition::check_decomposition_needed(pool, issue_id).await {
-                let _ = kanban_lib::orchestration::decomposition::create_decomposition_task(pool, issue_id).await;
+            if let Ok(true) = crate::orchestration::decomposition::check_decomposition_needed(pool, issue_id).await {
+                let _ = crate::orchestration::decomposition::create_decomposition_task(pool, issue_id).await;
             }
 
             let contract = orchestration::routing::build_full_contract(pool, issue_id).await?;
@@ -1820,6 +1826,7 @@ async fn handle_task(
                 println!("{}: {}", identifier, issue.title);
                 if let Some(ref c) = contract {
                     let confidence = c.result.as_ref()
+                        .map(|s| crate::models::agent::parse_json(s))
                         .and_then(|v| v.get("confidence").and_then(|c| c.as_f64()));
                     println!("State: {} | Attempts: {}{}", c.task_state, c.attempt_count,
                         confidence.map(|c| format!(" | Confidence: {:.2}", c)).unwrap_or_default());
@@ -1852,7 +1859,7 @@ async fn handle_task(
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
-            let context: serde_json::Value = tc.context.clone();
+            let context: serde_json::Value = tc.context_json();
             let attempts = context.get("prior_attempts").cloned().unwrap_or(serde_json::json!([]));
             if json {
                 println!("{}", serde_json::to_string_pretty(&serde_json::json!({
@@ -1881,7 +1888,7 @@ async fn handle_task(
             agent,
             available,
         } => {
-            let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
+            let mut qb: QueryBuilder<Any> = QueryBuilder::new(
                 "SELECT i.identifier, i.title, i.priority, tc.task_state, tc.claimed_by, tc.estimated_complexity FROM task_contracts tc JOIN issues i ON tc.issue_id = i.id WHERE i.project_id = ",
             );
             qb.push_bind(project);
@@ -1980,7 +1987,7 @@ async fn handle_task(
             .await?;
 
             // Auto-unblock downstream tasks
-            let _ = kanban_lib::orchestration::dependency::resolve_downstream(pool, issue.id).await;
+            let _ = crate::orchestration::dependency::resolve_downstream(pool, issue.id).await;
 
             if json {
                 println!("{}", serde_json::json!({"status": "completed", "identifier": identifier}));
@@ -2024,7 +2031,7 @@ async fn handle_task(
         }
         TaskAction::Invalidate { identifier, reason } => {
             let issue = resolve_issue(pool, &identifier).await?;
-            let result = kanban_lib::orchestration::cascade::invalidate_task(pool, issue.id, &reason).await?;
+            let result = crate::orchestration::cascade::invalidate_task(pool, issue.id, &reason).await?;
             if json {
                 println!("{}", serde_json::json!({"success": true, "data": result}));
             } else {
@@ -2135,7 +2142,10 @@ async fn handle_task(
                 let skills_json = serde_json::to_string(
                     &s.split(',').map(|s| s.trim()).collect::<Vec<_>>(),
                 )?;
-                sqlx::query("UPDATE task_contracts SET required_skills = $1::jsonb WHERE issue_id = $2")
+                let jb = crate::db::compat::jsonb_cast(backend);
+                sqlx::query(&format!(
+                    "UPDATE task_contracts SET required_skills = $1{jb} WHERE issue_id = $2"
+                ))
                     .bind(&skills_json)
                     .bind(issue.id)
                     .execute(pool)
@@ -2151,7 +2161,7 @@ async fn handle_task(
         }
         TaskAction::Decompose { identifier } => {
             let issue = resolve_issue(pool, &identifier).await?;
-            match kanban_lib::orchestration::decomposition::create_decomposition_task(pool, issue.id).await {
+            match crate::orchestration::decomposition::create_decomposition_task(pool, issue.id).await {
                 Ok(new_id) => {
                     let new_issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
                         .bind(new_id).fetch_one(pool).await?;
@@ -2176,13 +2186,14 @@ async fn handle_task(
 }
 
 async fn handle_metrics(
-    pool: &PgPool,
+    pool: &AnyPool,
+    backend: &crate::db::DbBackend,
     project: Option<i64>,
     agent: Option<String>,
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref agent_id) = agent {
-        let metrics = kanban_lib::orchestration::metrics::agent_metrics(pool, agent_id).await?;
+        let metrics = crate::orchestration::metrics::agent_metrics(pool, backend, agent_id).await?;
         if json {
             println!("{}", serde_json::json!({"success": true, "data": metrics}));
         } else {
@@ -2195,7 +2206,7 @@ async fn handle_metrics(
             }
         }
     } else if let Some(pid) = project {
-        let metrics = kanban_lib::orchestration::metrics::project_metrics(pool, pid).await?;
+        let metrics = crate::orchestration::metrics::project_metrics(pool, backend, pid).await?;
         if json {
             println!("{}", serde_json::json!({"success": true, "data": metrics}));
         } else {
@@ -2215,7 +2226,7 @@ async fn handle_metrics(
 }
 
 async fn handle_export(
-    pool: &PgPool,
+    pool: &AnyPool,
     output: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let data = ExportData {
@@ -2258,7 +2269,7 @@ async fn handle_export(
 }
 
 async fn handle_import(
-    pool: &PgPool,
+    pool: &AnyPool,
     file: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(&file)?;

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::AnyPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidationCheck {
@@ -19,7 +19,7 @@ pub struct ValidationResult {
 /// Criteria with "command" and "expect" fields are executed as shell commands.
 /// Returns ValidationResult with per-check pass/fail.
 pub async fn run_validation_pipeline(
-    pool: &PgPool,
+    pool: &AnyPool,
     issue_id: i64,
 ) -> Result<ValidationResult, sqlx::Error> {
     let contract = sqlx::query_as::<_, crate::models::TaskContract>(
@@ -29,7 +29,7 @@ pub async fn run_validation_pipeline(
     .fetch_one(pool)
     .await?;
 
-    let criteria: serde_json::Value = contract.success_criteria.clone();
+    let criteria: serde_json::Value = contract.success_criteria_json();
 
     let criteria_arr = match criteria.as_array() {
         Some(arr) => arr.clone(),
@@ -154,4 +154,57 @@ pub fn has_runnable_criteria(success_criteria: &serde_json::Value) -> bool {
         .as_array()
         .map(|arr| arr.iter().any(|c| c.get("command").is_some()))
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn is_safe_command_rejects_semicolon() {
+        assert!(!is_safe_command("echo hello; rm -rf /"));
+    }
+
+    #[test]
+    fn is_safe_command_rejects_pipe() {
+        assert!(!is_safe_command("cat file | grep secret"));
+    }
+
+    #[test]
+    fn is_safe_command_rejects_dollar_paren() {
+        assert!(!is_safe_command("echo $(whoami)"));
+    }
+
+    #[test]
+    fn is_safe_command_rejects_redirect() {
+        assert!(!is_safe_command("echo data > /etc/passwd"));
+    }
+
+    #[test]
+    fn is_safe_command_allows_safe_commands() {
+        assert!(is_safe_command("cargo test --lib"));
+    }
+
+    #[test]
+    fn has_runnable_criteria_true_with_command() {
+        let criteria = json!([
+            { "check": "tests pass", "command": "cargo test" }
+        ]);
+        assert!(has_runnable_criteria(&criteria));
+    }
+
+    #[test]
+    fn has_runnable_criteria_false_without_command() {
+        let criteria = json!([
+            { "check": "code compiles", "description": "must compile" }
+        ]);
+        assert!(!has_runnable_criteria(&criteria));
+    }
+
+    #[test]
+    fn has_runnable_criteria_false_for_non_array() {
+        let criteria = json!("not an array");
+        assert!(!has_runnable_criteria(&criteria));
+    }
 }

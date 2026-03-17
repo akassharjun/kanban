@@ -1,3 +1,4 @@
+use crate::db::compat::jsonb_cast;
 use crate::models::agent::{Agent, ProjectAgentConfig, TaskContract};
 use crate::orchestration::routing::{build_full_contract, FullTaskContract};
 use crate::orchestration::state_machine::{task_state_to_status_category, TaskState};
@@ -5,7 +6,7 @@ use crate::orchestration::timeout::update_agent_activity;
 use crate::state::AppState;
 use serde::Deserialize;
 use std::collections::{HashSet, VecDeque};
-use tauri::State;
+use tauri::{Emitter, State};
 
 #[derive(Deserialize)]
 pub struct CreateTaskContractInput {
@@ -37,7 +38,7 @@ pub struct CompleteTaskInput {
 }
 
 /// Helper: auto-comment on an issue as an agent
-async fn auto_comment(pool: &sqlx::PgPool, issue_id: i64, agent_id: &str, content: &str) -> Result<(), sqlx::Error> {
+async fn auto_comment(pool: &sqlx::AnyPool, issue_id: i64, agent_id: &str, content: &str) -> Result<(), sqlx::Error> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
     let agent_member_id: Option<i64> = sqlx::query_scalar(
         "SELECT member_id FROM agents WHERE id = $1"
@@ -51,7 +52,7 @@ async fn auto_comment(pool: &sqlx::PgPool, issue_id: i64, agent_id: &str, conten
 
 /// Helper: sync issues.status_id based on task state category
 async fn sync_issue_status(
-    pool: &sqlx::PgPool,
+    pool: &sqlx::AnyPool,
     issue_id: i64,
     task_state: TaskState,
     now: &str,
@@ -75,6 +76,7 @@ async fn sync_issue_status(
 
 #[tauri::command]
 pub fn create_task_contract(
+    app: tauri::AppHandle,
     state: State<AppState>,
     input: CreateTaskContractInput,
 ) -> Result<FullTaskContract, String> {
@@ -147,9 +149,10 @@ pub fn create_task_contract(
             let context_json =
                 serde_json::to_string(&context).unwrap_or_else(|_| "{}".to_string());
 
-            sqlx::query(
-                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, 0)",
-            )
+            let jb = jsonb_cast(&state.backend);
+            sqlx::query(&format!(
+                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4{jb}, $5{jb}, $6{jb}, $7{jb}, $8, $9, 0)"
+            ))
             .bind(issue_id)
             .bind(&task_type)
             .bind(&input.objective)
@@ -189,7 +192,9 @@ pub fn create_task_contract(
 
             // 5. Return full contract
             let contract = build_full_contract(&state.pool, issue_id).await?;
-            contract.ok_or_else(|| sqlx::Error::RowNotFound)
+            let result = contract.ok_or_else(|| sqlx::Error::RowNotFound)?;
+            let _ = app.emit("db-changed", ());
+            Ok(result)
         })
         .map_err(|e: sqlx::Error| e.to_string())
 }
@@ -234,7 +239,7 @@ pub fn next_task(
             let skills: Vec<String> = if let Some(override_skills) = skills_override {
                 override_skills
             } else {
-                serde_json::from_value(agent.skills.clone()).unwrap_or_default()
+                serde_json::from_value(agent.skills_json()).unwrap_or_default()
             };
 
             let result = crate::orchestration::routing::next_task(
@@ -257,6 +262,7 @@ pub fn next_task(
 
 #[tauri::command]
 pub fn start_task(
+    app: tauri::AppHandle,
     state: State<AppState>,
     agent_id: String,
     identifier: String,
@@ -320,6 +326,7 @@ pub fn start_task(
 
             let _ = auto_comment(&state.pool, issue_id, &agent_id, "\u{1F527} Execution started.").await;
 
+            let _ = app.emit("db-changed", ());
             Ok(())
         })
         .map_err(|e: sqlx::Error| e.to_string())
@@ -327,6 +334,7 @@ pub fn start_task(
 
 #[tauri::command]
 pub fn complete_task(
+    app: tauri::AppHandle,
     state: State<AppState>,
     input: CompleteTaskInput,
 ) -> Result<serde_json::Value, String> {
@@ -396,7 +404,7 @@ pub fn complete_task(
             let human_review = config.as_ref().map(|c| c.human_review_threshold).unwrap_or(0.50);
 
             // Run validation pipeline if task has runnable success criteria
-            if crate::orchestration::validation::has_runnable_criteria(&contract.success_criteria) {
+            if crate::orchestration::validation::has_runnable_criteria(&contract.success_criteria_json()) {
                 let validation = crate::orchestration::validation::run_validation_pipeline(&state.pool, issue_id).await
                     .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
 
@@ -409,7 +417,7 @@ pub fn complete_task(
                         .join(", ");
 
                     // Append to prior_attempts
-                    let mut context: serde_json::Value = contract.context.clone();
+                    let mut context: serde_json::Value = contract.context_json();
                     let attempt_entry = serde_json::json!({
                         "agent": &input.agent_id,
                         "attempt_number": new_attempt,
@@ -424,9 +432,10 @@ pub fn complete_task(
                     }
 
                     // Requeue
-                    sqlx::query(
-                        "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = $1, context = $2::jsonb, result = $3::jsonb WHERE issue_id = $4"
-                    ).bind(new_attempt).bind(context.to_string()).bind(serde_json::json!({"validation": validation.checks}).to_string()).bind(issue_id)
+                    let jb = jsonb_cast(&state.backend);
+                    sqlx::query(&format!(
+                        "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL, attempt_count = $1, context = $2{jb}, result = $3{jb} WHERE issue_id = $4"
+                    )).bind(new_attempt).bind(context.to_string()).bind(serde_json::json!({"validation": validation.checks}).to_string()).bind(issue_id)
                     .execute(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
 
                     // Sync status to unstarted
@@ -439,9 +448,10 @@ pub fn complete_task(
                     }
 
                     // Log validation failure
-                    sqlx::query(
-                        "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, 'result', $4, $5::jsonb, $6)"
-                    ).bind(issue_id).bind(&input.agent_id).bind(new_attempt)
+                    let jb = jsonb_cast(&state.backend);
+                    sqlx::query(&format!(
+                        "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, 'result', $4, $5{jb}, $6)"
+                    )).bind(issue_id).bind(&input.agent_id).bind(new_attempt)
                     .bind(format!("Validation failed: {}", validation_summary))
                     .bind(serde_json::json!({"validation": validation.checks}).to_string())
                     .bind(&now)
@@ -451,6 +461,7 @@ pub fn complete_task(
                     sqlx::query("UPDATE agent_stats SET tasks_failed = tasks_failed + 1 WHERE agent_id = $1")
                         .bind(&input.agent_id).execute(&state.pool).await.map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
 
+                    let _ = app.emit("db-changed", ());
                     return Ok(serde_json::json!({
                         "accepted": false,
                         "new_state": "queued",
@@ -481,19 +492,20 @@ pub fn complete_task(
 
             let new_state_str = new_state.as_str();
 
+            let jb = jsonb_cast(&state.backend);
             if new_state == TaskState::Queued {
                 // Auto-reject: clear claimed_by/claimed_at, increment attempt_count
-                sqlx::query(
-                    "UPDATE task_contracts SET task_state = 'queued', result = $1::jsonb, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $2",
-                )
+                sqlx::query(&format!(
+                    "UPDATE task_contracts SET task_state = 'queued', result = $1{jb}, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1 WHERE issue_id = $2"
+                ))
                 .bind(&result_str)
                 .bind(issue_id)
                 .execute(&state.pool)
                 .await?;
             } else {
-                sqlx::query(
-                    "UPDATE task_contracts SET task_state = $1, result = $2::jsonb WHERE issue_id = $3",
-                )
+                sqlx::query(&format!(
+                    "UPDATE task_contracts SET task_state = $1, result = $2{jb} WHERE issue_id = $3"
+                ))
                 .bind(new_state_str)
                 .bind(&result_str)
                 .bind(issue_id)
@@ -557,9 +569,10 @@ pub fn complete_task(
                 }
 
                 // Create review task contract
-                sqlx::query(
-                    "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, required_skills, estimated_complexity, timeout_minutes) VALUES ($1, 'review', 'queued', $2, $3::jsonb, '[\"review\"]'::jsonb, 'small', 30)",
-                )
+                let jb = jsonb_cast(&state.backend);
+                sqlx::query(&format!(
+                    "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, required_skills, estimated_complexity, timeout_minutes) VALUES ($1, 'review', 'queued', $2, $3{jb}, '[\"review\"]{jb}', 'small', 30)"
+                ))
                 .bind(review_issue_id)
                 .bind(&review_objective)
                 .bind(review_context.to_string())
@@ -581,9 +594,10 @@ pub fn complete_task(
             }
 
             // Log result in execution_logs
-            sqlx::query(
-                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, 'complete', $4, $5::jsonb, $6)",
-            )
+            let jb = jsonb_cast(&state.backend);
+            sqlx::query(&format!(
+                "INSERT INTO execution_logs (issue_id, agent_id, attempt_number, entry_type, message, metadata, timestamp) VALUES ($1, $2, $3, 'complete', $4, $5{jb}, $6)"
+            ))
             .bind(issue_id)
             .bind(&input.agent_id)
             .bind(contract.attempt_count)
@@ -616,6 +630,7 @@ pub fn complete_task(
                 let _ = crate::orchestration::dependency::resolve_downstream(&state.pool, issue_id).await;
             }
 
+            let _ = app.emit("db-changed", ());
             Ok(serde_json::json!({
                 "accepted": accepted,
                 "new_state": new_state_str,
@@ -626,6 +641,7 @@ pub fn complete_task(
 
 #[tauri::command]
 pub fn fail_task(
+    app: tauri::AppHandle,
     state: State<AppState>,
     agent_id: String,
     identifier: String,
@@ -656,7 +672,7 @@ pub fn fail_task(
             let new_attempt_count = contract.attempt_count + 1;
 
             // Parse context JSON, append to prior_attempts
-            let mut context: serde_json::Value = contract.context.clone();
+            let mut context: serde_json::Value = contract.context_json();
             let attempt_entry = serde_json::json!({
                 "agent": agent_id,
                 "attempt_number": new_attempt_count,
@@ -682,9 +698,10 @@ pub fn fail_task(
             let max_attempts = config.as_ref().map(|c| c.max_attempts).unwrap_or(3);
 
             // Atomic update: requeue or block in a single UPDATE
-            sqlx::query(
-                "UPDATE task_contracts SET task_state = CASE WHEN attempt_count + 1 >= $1 THEN 'blocked' ELSE 'queued' END, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1, context = $2::jsonb WHERE issue_id = $3",
-            )
+            let jb = jsonb_cast(&state.backend);
+            sqlx::query(&format!(
+                "UPDATE task_contracts SET task_state = CASE WHEN attempt_count + 1 >= $1 THEN 'blocked' ELSE 'queued' END, claimed_by = NULL, claimed_at = NULL, attempt_count = attempt_count + 1, context = $2{jb} WHERE issue_id = $3"
+            ))
             .bind(max_attempts)
             .bind(&context_str)
             .bind(issue_id)
@@ -757,6 +774,7 @@ pub fn fail_task(
 
             let _ = auto_comment(&state.pool, issue_id, &agent_id, &format!("\u{274C} Task failed: {}", reason)).await;
 
+            let _ = app.emit("db-changed", ());
             Ok(serde_json::json!({
                 "requeued": true,
                 "attempt_number": new_attempt_count,
@@ -767,6 +785,7 @@ pub fn fail_task(
 
 #[tauri::command]
 pub fn unclaim_task(
+    app: tauri::AppHandle,
     state: State<AppState>,
     agent_id: String,
     identifier: String,
@@ -825,13 +844,14 @@ pub fn unclaim_task(
 
             let _ = auto_comment(&state.pool, issue_id, &agent_id, "\u{21A9}\u{FE0F} Task unclaimed and returned to queue.").await;
 
+            let _ = app.emit("db-changed", ());
             Ok(())
         })
         .map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
-pub fn approve_task(state: State<AppState>, identifier: String) -> Result<(), String> {
+pub fn approve_task(app: tauri::AppHandle, state: State<AppState>, identifier: String) -> Result<(), String> {
     state
         .rt
         .block_on(async {
@@ -880,13 +900,14 @@ pub fn approve_task(state: State<AppState>, identifier: String) -> Result<(), St
             // Auto-unblock downstream tasks
             let _ = crate::orchestration::dependency::resolve_downstream(&state.pool, issue_id).await;
 
+            let _ = app.emit("db-changed", ());
             Ok(())
         })
         .map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
-pub fn reject_task(state: State<AppState>, identifier: String) -> Result<(), String> {
+pub fn reject_task(app: tauri::AppHandle, state: State<AppState>, identifier: String) -> Result<(), String> {
     state
         .rt
         .block_on(async {
@@ -924,6 +945,7 @@ pub fn reject_task(state: State<AppState>, identifier: String) -> Result<(), Str
             // Sync issues.status_id to 'unstarted' category
             sync_issue_status(&state.pool, issue_id, TaskState::Queued, &now).await?;
 
+            let _ = app.emit("db-changed", ());
             Ok(())
         })
         .map_err(|e: sqlx::Error| e.to_string())
@@ -1058,7 +1080,7 @@ pub fn project_metrics(
     state
         .rt
         .block_on(async {
-            let metrics = crate::orchestration::metrics::project_metrics(&state.pool, project_id)
+            let metrics = crate::orchestration::metrics::project_metrics(&state.pool, &state.backend, project_id)
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(serde_json::json!(metrics))
@@ -1073,7 +1095,7 @@ pub fn agent_metrics_cmd(
     state
         .rt
         .block_on(async {
-            let metrics = crate::orchestration::metrics::agent_metrics(&state.pool, &agent_id)
+            let metrics = crate::orchestration::metrics::agent_metrics(&state.pool, &state.backend, &agent_id)
                 .await
                 .map_err(|e| e.to_string())?;
             Ok(serde_json::json!(metrics))

@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::AnyPool;
 
 /// Returns true if a task needs decomposition.
 ///
@@ -8,7 +8,7 @@ use sqlx::PgPool;
 ///   - estimated_complexity is 'large' and there are no child issues, OR
 ///   - success_criteria is empty ('[]' or '')
 pub async fn check_decomposition_needed(
-    pool: &PgPool,
+    pool: &AnyPool,
     issue_id: i64,
 ) -> Result<bool, sqlx::Error> {
     // Fetch the task_contract for this issue (must exist and not be a decomposition task itself)
@@ -54,7 +54,7 @@ pub async fn check_decomposition_needed(
 ///
 /// Returns the new decomposition issue's id.
 pub async fn create_decomposition_task(
-    pool: &PgPool,
+    pool: &AnyPool,
     parent_issue_id: i64,
 ) -> Result<i64, sqlx::Error> {
     // 1. Get the parent issue details
