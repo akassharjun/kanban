@@ -3,6 +3,7 @@ pub mod comments;
 pub mod custom_fields;
 pub mod execution_logs;
 pub mod health;
+pub mod hooks;
 pub mod issues;
 pub mod labels;
 pub mod members;

@@ -1,0 +1,73 @@
+@startuml architecture
+!theme plain
+skinparam backgroundColor transparent
+
+title Kanban - System Architecture
+
+package "Frontend" {
+  [React 18 + TypeScript] as Frontend
+  [Vite Dev Server] as Vite
+}
+
+package "Tauri Shell" {
+  [Tauri v2 Runtime] as Tauri
+  [Tauri Commands API] as Commands
+}
+
+package "Rust Backend" {
+  [Command Handlers] as Handlers
+  [Orchestration Engine] as Orchestration
+  [State Machine] as StateMachine
+  [Routing / Task Matcher] as Routing
+  [Validation Pipeline] as Validation
+  [Timeout Monitor] as Timeout
+  [Cascade / Decomposition] as Cascade
+  [Metrics Collector] as Metrics
+}
+
+package "Data Layer" {
+  database "PostgreSQL" as DB {
+    [projects]
+    [issues]
+    [statuses]
+    [members]
+    [agents]
+    [task_contracts]
+    [execution_logs]
+    [agent_stats]
+    [project_agent_config]
+  }
+}
+
+package "External Interfaces" {
+  [MCP Server (JSON-RPC)] as MCP
+  [CLI (clap)] as CLI
+}
+
+package "AI Agents" {
+  [Claude Agent] as Claude
+  [Codex Agent] as Codex
+  [Gemini Agent] as Gemini
+}
+
+Frontend --> Tauri : invoke()
+Tauri --> Commands : IPC bridge
+Commands --> Handlers
+Handlers --> DB : sqlx queries
+Handlers --> Orchestration
+Orchestration --> StateMachine
+Orchestration --> Routing
+Orchestration --> Validation
+Orchestration --> Timeout
+Orchestration --> Cascade
+Orchestration --> Metrics
+
+MCP --> DB : sqlx direct
+CLI --> DB : sqlx direct
+
+Claude --> MCP : JSON-RPC stdio
+Codex --> MCP : JSON-RPC stdio
+Gemini --> MCP : JSON-RPC stdio
+
+Tauri --> Frontend : events (db-changed)
+@enduml

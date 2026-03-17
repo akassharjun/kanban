@@ -1,0 +1,71 @@
+@startuml task-claim
+!theme plain
+skinparam backgroundColor transparent
+
+title Task Claim Flow (next_task)
+
+actor "AI Agent" as Agent
+participant "Routing Engine\n(next_task)" as Router
+database "PostgreSQL" as DB
+
+Agent -> Router : next_task(agent_id, skills,\n  max_complexity, max_concurrent)
+activate Router
+
+== Step 1: Check Agent Capacity ==
+
+Router -> DB : SELECT COUNT(*) FROM task_contracts\nWHERE claimed_by = $agent_id\nAND task_state IN ('claimed', 'executing')
+DB --> Router : active_count
+
+alt active_count >= max_concurrent
+  Router --> Agent : None (at capacity)
+end
+
+== Step 2: Query Candidate Tasks ==
+
+Router -> DB : SELECT tc.issue_id, i.identifier,\n  i.priority, tc.required_skills,\n  tc.estimated_complexity\nFROM task_contracts tc\nJOIN issues i ON tc.issue_id = i.id\nWHERE tc.task_state = 'queued'\n  AND no unresolved blockers\nORDER BY priority ASC, created_at ASC
+DB --> Router : candidates[]
+
+== Step 3: Filter & Match ==
+
+loop for each candidate
+  Router -> Router : Check complexity_rank(estimated)\n  <= complexity_rank(agent_max)
+
+  alt complexity too high
+    Router -> Router : skip candidate
+  end
+
+  Router -> Router : Check required_skills\n  is subset of agent_skills
+
+  alt skills not met
+    Router -> Router : skip candidate
+  end
+
+  == Step 4: Optimistic Locking Claim ==
+
+  Router -> DB : UPDATE task_contracts\nSET claimed_by = $agent_id,\n  claimed_at = NOW(),\n  task_state = 'claimed'\nWHERE issue_id = $candidate\n  AND claimed_by IS NULL\n  AND task_state = 'queued'
+  DB --> Router : rows_affected
+
+  alt rows_affected == 0
+    Router -> Router : Another agent claimed it,\ntry next candidate
+  else rows_affected == 1
+
+    == Step 5: Post-Claim Sync ==
+
+    Router -> DB : UPDATE issues\nSET status_id = (first 'started' status)\nWHERE id = $issue_id
+    DB --> Router : OK
+
+    Router -> DB : INSERT INTO execution_logs\n(issue_id, agent_id, attempt_number,\n entry_type='claim', message)
+    DB --> Router : OK
+
+    == Step 6: Build Full Contract ==
+
+    Router -> DB : SELECT i.*, tc.*\nFROM task_contracts tc\nJOIN issues i ON tc.issue_id = i.id\nWHERE tc.issue_id = $issue_id
+    DB --> Router : FullContractRow
+
+    Router --> Agent : FullTaskContract {\n  identifier, title, objective,\n  context, constraints,\n  success_criteria, required_skills,\n  estimated_complexity, timeout_minutes\n}
+  end
+end
+
+Router --> Agent : None (no suitable task found)
+deactivate Router
+@enduml

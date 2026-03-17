@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Pencil, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Project, Status, Label, IssueTemplate } from "@/types";
+import type { Project, Status, Label, IssueTemplate, Hook, ProjectAgentConfig } from "@/types";
 import * as api from "@/tauri/commands";
 
 interface ProjectSettingsViewProps {
@@ -9,10 +9,9 @@ interface ProjectSettingsViewProps {
   onUpdateProject: (id: number, input: { name?: string; description?: string; icon?: string; status?: string; path?: string }) => Promise<unknown>;
   onRefreshStatuses: () => void;
   onRefreshLabels: () => void;
-  onDeleteProject: (id: number) => Promise<void>;
 }
 
-type Tab = "general" | "statuses" | "labels" | "templates";
+type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents";
 
 const statusCategories = [
   { value: "unstarted", label: "Unstarted" },
@@ -28,18 +27,21 @@ const labelColors = [
   "#a855f7", "#d946ef", "#ec4899", "#f43f5e",
 ];
 
-export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels, onDeleteProject }: ProjectSettingsViewProps) {
+export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels }: ProjectSettingsViewProps) {
   const [tab, setTab] = useState<Tab>("general");
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
   const [templates, setTemplates] = useState<IssueTemplate[]>([]);
+  const [hooks, setHooks] = useState<Hook[]>([]);
+  const [agentConfig, setAgentConfig] = useState<ProjectAgentConfig | null>(null);
+  const [agentConfigSaving, setAgentConfigSaving] = useState(false);
+  const [path, setPath] = useState(project.path || "");
 
   // General form
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description || "");
   const [icon, setIcon] = useState(project.icon || "");
   const [projectStatus, setProjectStatus] = useState(project.status);
-  const [path, setPath] = useState(project.path || "");
 
   // Status form
   const [showAddStatus, setShowAddStatus] = useState(false);
@@ -61,19 +63,28 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
   const [templatePriority, setTemplatePriority] = useState("none");
   const [editingTemplateId, setEditingTemplateId] = useState<number | null>(null);
 
+  // Hook form
+  const [showAddHook, setShowAddHook] = useState(false);
+  const [hookEventType, setHookEventType] = useState("task_completed");
+  const [hookCommand, setHookCommand] = useState("");
+
   useEffect(() => {
     loadData();
   }, [project.id]);
 
   const loadData = async () => {
-    const [s, l, t] = await Promise.all([
+    const [s, l, t, h, ac] = await Promise.all([
       api.listStatuses(project.id),
       api.listLabels(project.id),
       api.listTemplates(project.id),
+      api.listHooks(project.id),
+      api.getProjectAgentConfig(project.id),
     ]);
     setStatuses(s);
     setLabels(l);
     setTemplates(t);
+    setHooks(h);
+    setAgentConfig(ac);
   };
 
   const handleSaveGeneral = async () => {
@@ -164,22 +175,49 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     setShowAddTemplate(true);
   };
 
+  // Hook handlers
+  const handleAddHook = async () => {
+    if (!hookCommand.trim()) return;
+    await api.createHook({ project_id: project.id, event_type: hookEventType, command: hookCommand });
+    setShowAddHook(false); setHookEventType("task_completed"); setHookCommand("");
+    await loadData();
+  };
+
+  const handleDeleteHook = async (id: number) => {
+    await api.deleteHook(id);
+    await loadData();
+  };
+
   const tabs: { value: Tab; label: string }[] = [
     { value: "general", label: "General" },
     { value: "statuses", label: "Statuses" },
     { value: "labels", label: "Labels" },
     { value: "templates", label: "Templates" },
+    { value: "hooks", label: "Hooks" },
+    { value: "agents", label: "Agent Config" },
   ];
+
+  const handleSaveAgentConfig = async () => {
+    if (!agentConfig) return;
+    setAgentConfigSaving(true);
+    try {
+      const updated = await api.updateProjectAgentConfig(project.id, {
+        auto_accept_threshold: agentConfig.auto_accept_threshold,
+        human_review_threshold: agentConfig.human_review_threshold,
+        max_attempts: agentConfig.max_attempts,
+        heartbeat_interval_seconds: agentConfig.heartbeat_interval_seconds,
+        missed_heartbeats_before_offline: agentConfig.missed_heartbeats_before_offline,
+      });
+      setAgentConfig(updated);
+    } finally {
+      setAgentConfigSaving(false);
+    }
+  };
 
   return (
     <div className="flex-1 overflow-auto p-6">
       <div className="max-w-2xl">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold">Project Settings</h1>
-          {project.path && (
-            <div className="text-xs text-muted-foreground font-mono mt-1">{project.prefix} &middot; {project.path}</div>
-          )}
-        </div>
+        <h1 className="text-xl font-semibold mb-6">Project Settings</h1>
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b border-border">
@@ -229,27 +267,12 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
             </div>
             <div>
               <label className="block text-sm text-muted-foreground mb-1">Project Path</label>
+              <p className="text-xs text-muted-foreground/70 mb-1">Local directory for this project. Used by agents to access the codebase.</p>
               <input value={path} onChange={e => setPath(e.target.value)} placeholder="/path/to/project" className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary font-mono" />
-              <p className="text-xs text-muted-foreground mt-1">Local directory for this project. Used by agents to access the codebase.</p>
             </div>
             <button onClick={handleSaveGeneral} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
               Save Changes
             </button>
-
-            <div className="border-t border-border pt-4 mt-6">
-              <h3 className="text-sm font-semibold text-red-500 mb-2">Danger Zone</h3>
-              <p className="text-sm text-muted-foreground mb-3">Once you delete a project, there is no going back. Please be certain.</p>
-              <button
-                onClick={async () => {
-                  if (window.confirm(`Are you sure you want to delete "${project.name}"? This action cannot be undone.`)) {
-                    await onDeleteProject(project.id);
-                  }
-                }}
-                className="px-3 py-1.5 text-sm bg-red-500/10 text-red-500 border border-red-500/20 rounded hover:bg-red-500/20 transition-colors"
-              >
-                Delete Project
-              </button>
-            </div>
           </div>
         )}
 
@@ -407,6 +430,113 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
               {templates.length === 0 && <div className="py-8 text-center text-sm text-muted-foreground">No templates yet</div>}
             </div>
           </div>
+        )}
+
+        {/* Hooks Tab */}
+        {tab === "hooks" && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Configure hooks that trigger on task state changes</p>
+                <p className="text-xs text-muted-foreground mt-1">Hooks are executed by the MCP server or CLI, not the desktop app</p>
+              </div>
+              <button onClick={() => { setShowAddHook(true); setHookEventType("task_completed"); setHookCommand(""); }} className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                <Plus className="h-4 w-4" /> Add Hook
+              </button>
+            </div>
+
+            {showAddHook && (
+              <div className="mb-4 rounded-lg border border-border bg-card p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium">New Hook</h3>
+                  <button onClick={() => setShowAddHook(false)}><X className="h-4 w-4" /></button>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Event Type</label>
+                  <select value={hookEventType} onChange={e => setHookEventType(e.target.value)} className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none">
+                    <option value="task_claimed">Task Claimed</option>
+                    <option value="task_started">Task Started</option>
+                    <option value="task_completed">Task Completed</option>
+                    <option value="task_failed">Task Failed</option>
+                    <option value="task_approved">Task Approved</option>
+                    <option value="task_rejected">Task Rejected</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Command</label>
+                  <input value={hookCommand} onChange={e => setHookCommand(e.target.value)} placeholder="e.g. notify-send 'Task completed'" className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary font-mono" />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setShowAddHook(false)} className="rounded-md px-3 py-1.5 text-sm hover:bg-accent">Cancel</button>
+                  <button onClick={handleAddHook} className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">Add</button>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              {hooks.map(h => (
+                <div key={h.id} className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] text-muted-foreground whitespace-nowrap">{h.event_type}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 font-mono truncate">{h.command}</div>
+                  </div>
+                  <div className="flex items-center gap-1 ml-2">
+                    <button onClick={() => handleDeleteHook(h.id)} className="rounded p-1.5 hover:bg-destructive/20"><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                  </div>
+                </div>
+              ))}
+              {hooks.length === 0 && <div className="py-8 text-center text-sm text-muted-foreground">No hooks configured yet</div>}
+            </div>
+          </div>
+        )}
+
+        {/* Agent Config Tab */}
+        {tab === "agents" && agentConfig && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground mb-4">Configure agent behavior thresholds and monitoring</p>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">Auto-accept threshold</label>
+              <p className="text-xs text-muted-foreground/70 mb-1">Tasks above this confidence are auto-approved</p>
+              <input type="number" min={0} max={1} step={0.05} value={agentConfig.auto_accept_threshold}
+                onChange={e => setAgentConfig({ ...agentConfig, auto_accept_threshold: parseFloat(e.target.value) || 0 })}
+                className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">Human review threshold</label>
+              <p className="text-xs text-muted-foreground/70 mb-1">Tasks below this confidence require human review</p>
+              <input type="number" min={0} max={1} step={0.05} value={agentConfig.human_review_threshold}
+                onChange={e => setAgentConfig({ ...agentConfig, human_review_threshold: parseFloat(e.target.value) || 0 })}
+                className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">Max attempts</label>
+              <p className="text-xs text-muted-foreground/70 mb-1">Maximum retry attempts before task is blocked</p>
+              <input type="number" min={1} max={10} step={1} value={agentConfig.max_attempts}
+                onChange={e => setAgentConfig({ ...agentConfig, max_attempts: parseInt(e.target.value) || 1 })}
+                className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">Heartbeat interval (seconds)</label>
+              <input type="number" min={10} max={600} step={10} value={agentConfig.heartbeat_interval_seconds}
+                onChange={e => setAgentConfig({ ...agentConfig, heartbeat_interval_seconds: parseInt(e.target.value) || 60 })}
+                className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">Missed heartbeats before offline</label>
+              <input type="number" min={1} max={10} step={1} value={agentConfig.missed_heartbeats_before_offline}
+                onChange={e => setAgentConfig({ ...agentConfig, missed_heartbeats_before_offline: parseInt(e.target.value) || 3 })}
+                className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
+            </div>
+            <button onClick={handleSaveAgentConfig} disabled={agentConfigSaving}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
+              {agentConfigSaving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        )}
+        {tab === "agents" && !agentConfig && (
+          <div className="py-8 text-center text-sm text-muted-foreground">Loading agent configuration...</div>
         )}
       </div>
     </div>

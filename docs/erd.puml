@@ -1,0 +1,267 @@
+@startuml erd
+!theme plain
+skinparam backgroundColor transparent
+skinparam linetype ortho
+
+title Kanban - Entity Relationship Diagram
+
+entity "projects" as projects {
+  * id : BIGSERIAL <<PK>>
+  --
+  * name : TEXT
+  description : TEXT
+  icon : TEXT
+  * status : TEXT {active|paused|completed|archived}
+  * prefix : TEXT <<UNIQUE>>
+  * issue_counter : BIGINT
+  deleted_at : TIMESTAMPTZ
+  * created_at : TEXT
+  * updated_at : TEXT
+}
+
+entity "statuses" as statuses {
+  * id : BIGSERIAL <<PK>>
+  --
+  * project_id : BIGINT <<FK>>
+  * name : TEXT
+  * category : TEXT {unstarted|started|blocked|completed|discarded}
+  color : TEXT
+  icon : TEXT
+  * position : BIGINT
+  <<UNIQUE(project_id, name)>>
+}
+
+entity "members" as members {
+  * id : BIGSERIAL <<PK>>
+  --
+  * name : TEXT
+  display_name : TEXT
+  email : TEXT
+  * avatar_color : TEXT
+  * created_at : TEXT
+}
+
+entity "issues" as issues {
+  * id : BIGSERIAL <<PK>>
+  --
+  * project_id : BIGINT <<FK>>
+  * identifier : TEXT <<UNIQUE>>
+  * title : TEXT
+  description : TEXT
+  * status_id : BIGINT <<FK>>
+  * priority : TEXT {none|urgent|high|medium|low}
+  assignee_id : BIGINT <<FK>>
+  parent_id : BIGINT <<FK>> (self)
+  * position : DOUBLE PRECISION
+  estimate : DOUBLE PRECISION
+  due_date : TEXT
+  * created_at : TEXT
+  * updated_at : TEXT
+}
+
+entity "issue_templates" as issue_templates {
+  * id : BIGSERIAL <<PK>>
+  --
+  * project_id : BIGINT <<FK>>
+  * name : TEXT
+  description_template : TEXT
+  default_status_id : BIGINT <<FK>>
+  * default_priority : TEXT
+  * default_label_ids : TEXT
+  * created_at : TEXT
+  * updated_at : TEXT
+}
+
+entity "labels" as labels {
+  * id : BIGSERIAL <<PK>>
+  --
+  * project_id : BIGINT <<FK>>
+  * name : TEXT
+  * color : TEXT
+  <<UNIQUE(project_id, name)>>
+}
+
+entity "issue_labels" as issue_labels {
+  * issue_id : BIGINT <<FK>> <<PK>>
+  * label_id : BIGINT <<FK>> <<PK>>
+}
+
+entity "issue_relations" as issue_relations {
+  * id : BIGSERIAL <<PK>>
+  --
+  * source_issue_id : BIGINT <<FK>>
+  * target_issue_id : BIGINT <<FK>>
+  * relation_type : TEXT {related|blocks|blocked_by|duplicate}
+  <<UNIQUE(source, target, type)>>
+}
+
+entity "activity_log" as activity_log {
+  * id : BIGSERIAL <<PK>>
+  --
+  * issue_id : BIGINT <<FK>>
+  * field_changed : TEXT
+  old_value : TEXT
+  new_value : TEXT
+  * timestamp : TEXT
+}
+
+entity "undo_log" as undo_log {
+  * id : BIGSERIAL <<PK>>
+  --
+  * operation_type : TEXT {create|update|delete}
+  * entity_type : TEXT {issue|label|project|member|relation|status}
+  * entity_id : BIGINT
+  snapshot_before : TEXT
+  snapshot_after : TEXT
+  * undone : BOOLEAN
+  * timestamp : TEXT
+}
+
+entity "notifications" as notifications {
+  * id : BIGSERIAL <<PK>>
+  --
+  * type : TEXT
+  issue_id : BIGINT <<FK>>
+  * message : TEXT
+  * read : BOOLEAN
+  * created_at : TEXT
+}
+
+entity "hooks" as hooks {
+  * id : BIGSERIAL <<PK>>
+  --
+  * project_id : BIGINT <<FK>>
+  * event_type : TEXT
+  * command : TEXT
+}
+
+entity "comments" as comments {
+  * id : BIGSERIAL <<PK>>
+  --
+  * issue_id : BIGINT <<FK>>
+  member_id : BIGINT <<FK>>
+  * content : TEXT
+  * created_at : TEXT
+  * updated_at : TEXT
+}
+
+entity "custom_fields" as custom_fields {
+  * id : BIGSERIAL <<PK>>
+  --
+  * project_id : BIGINT <<FK>>
+  * name : TEXT
+  * field_type : TEXT
+  options : TEXT
+  * position : BIGINT
+}
+
+entity "issue_custom_field_values" as issue_custom_field_values {
+  * id : BIGSERIAL <<PK>>
+  --
+  * issue_id : BIGINT <<FK>>
+  * field_id : BIGINT <<FK>>
+  value : TEXT
+  <<UNIQUE(issue_id, field_id)>>
+}
+
+entity "agents" as agents {
+  * id : TEXT <<PK>>
+  --
+  * name : TEXT <<UNIQUE>>
+  agent_type : TEXT
+  * skills : JSONB
+  * task_types : JSONB
+  * max_concurrent : BIGINT
+  * max_complexity : TEXT
+  member_id : BIGINT <<FK>>
+  * status : TEXT
+  * registered_at : TEXT
+  * last_heartbeat : TEXT
+  last_activity_at : TEXT
+}
+
+entity "agent_stats" as agent_stats {
+  * agent_id : TEXT <<PK>> <<FK>>
+  --
+  * tasks_completed : BIGINT
+  * tasks_failed : BIGINT
+  * total_confidence : DOUBLE PRECISION
+  * total_completion_time_seconds : BIGINT
+  * skills_breakdown : JSONB
+}
+
+entity "task_contracts" as task_contracts {
+  * issue_id : BIGINT <<PK>> <<FK>>
+  --
+  * type : TEXT
+  * task_state : TEXT
+  * objective : TEXT
+  * context : JSONB
+  * constraints : JSONB
+  * success_criteria : JSONB
+  * required_skills : JSONB
+  estimated_complexity : TEXT
+  claimed_by : TEXT <<FK>>
+  claimed_at : TEXT
+  * timeout_minutes : BIGINT
+  result : JSONB
+  * attempt_count : BIGINT
+}
+
+entity "execution_logs" as execution_logs {
+  * id : BIGSERIAL <<PK>>
+  --
+  * issue_id : BIGINT <<FK>>
+  * agent_id : TEXT
+  * attempt_number : BIGINT
+  * entry_type : TEXT
+  * message : TEXT
+  metadata : JSONB
+  * timestamp : TEXT
+}
+
+entity "project_agent_config" as project_agent_config {
+  * project_id : BIGINT <<PK>> <<FK>>
+  --
+  * auto_accept_threshold : DOUBLE PRECISION
+  * human_review_threshold : DOUBLE PRECISION
+  * max_attempts : BIGINT
+  * heartbeat_interval_seconds : BIGINT
+  * missed_heartbeats_before_offline : BIGINT
+}
+
+' === Relationships ===
+
+projects ||--o{ statuses : "has"
+projects ||--o{ issues : "contains"
+projects ||--o{ labels : "defines"
+projects ||--o{ hooks : "triggers"
+projects ||--o{ issue_templates : "has"
+projects ||--o{ custom_fields : "defines"
+projects ||--o| project_agent_config : "configured by"
+
+statuses ||--o{ issues : "categorizes"
+statuses ||--o{ issue_templates : "defaults to"
+
+members ||--o{ issues : "assigned to"
+members ||--o{ comments : "authored by"
+members ||--o{ agents : "linked to"
+
+issues ||--o{ issues : "parent/child"
+issues ||--o{ issue_labels : "tagged with"
+issues ||--o{ issue_relations : "source"
+issues ||--o{ issue_relations : "target"
+issues ||--o{ activity_log : "tracks"
+issues ||--o{ comments : "discussed in"
+issues ||--o{ notifications : "notifies"
+issues ||--o| task_contracts : "contracted as"
+issues ||--o{ execution_logs : "logged by"
+issues ||--o{ issue_custom_field_values : "has values"
+
+labels ||--o{ issue_labels : "applied to"
+
+custom_fields ||--o{ issue_custom_field_values : "valued by"
+
+agents ||--o| agent_stats : "measured by"
+agents ||--o{ task_contracts : "claims"
+@enduml

@@ -1,0 +1,74 @@
+@startuml validation
+!theme plain
+skinparam backgroundColor transparent
+
+title Validation Pipeline Flow (run_validation_pipeline)
+
+participant "Caller" as Caller
+participant "Validation Engine\n(run_validation_pipeline)" as Validator
+database "PostgreSQL" as DB
+participant "Shell (sh -c)" as Shell
+
+Caller -> Validator : run_validation_pipeline(pool, issue_id)
+activate Validator
+
+== Step 1: Fetch Task Contract ==
+
+Validator -> DB : SELECT * FROM task_contracts\nWHERE issue_id = $issue_id
+DB --> Validator : TaskContract\n{ success_criteria: [...] }
+
+Validator -> Validator : Parse success_criteria as JSON array
+
+alt success_criteria is not an array
+  Validator --> Caller : ValidationResult\n{ all_passed: true, checks: [] }
+end
+
+== Step 2: Iterate Criteria ==
+
+loop for each criterion in success_criteria
+  Validator -> Validator : Extract "command" field
+
+  alt no "command" field
+    Validator -> Validator : Skip non-runnable criterion
+  else has "command" field
+
+    Validator -> Validator : Extract check name\n(default: "unnamed")
+    Validator -> Validator : Extract "expect" field\n(check for "exit_code == 0")
+
+    == Step 3: Safety Check ==
+
+    Validator -> Validator : is_safe_command(command)\nReject: ; && || | ` $( ${ > < \\n \\r
+
+    alt command is unsafe
+      Validator -> Validator : Record FAIL:\n"Command rejected: contains\nunsafe shell characters"
+    else command is safe
+
+      == Step 4: Execute with Timeout ==
+
+      Validator -> Shell : tokio::timeout(300s)\nsh -c "<command>"
+      activate Shell
+
+      alt command succeeds within timeout
+        Shell --> Validator : Output { stdout, stderr, exit_code }
+        deactivate Shell
+
+        Validator -> Validator : Check exit_code == 0\n(if expect_exit_zero)
+        Validator -> Validator : Truncate stdout/stderr\nto 2000 chars if needed
+        Validator -> Validator : Record PASS or FAIL\nwith output
+
+      else command fails to execute
+        Shell --> Validator : Error
+        Validator -> Validator : Record FAIL:\n"Failed to execute: {error}"
+
+      else command times out (5 min)
+        Validator -> Validator : Record FAIL:\n"Command timed out (5 min limit)"
+      end
+    end
+  end
+end
+
+== Step 5: Return Results ==
+
+Validator --> Caller : ValidationResult {\n  all_passed: bool,\n  checks: [\n    { name, passed, output, error }\n  ]\n}
+deactivate Validator
+@enduml

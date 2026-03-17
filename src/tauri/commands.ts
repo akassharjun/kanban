@@ -20,6 +20,8 @@ import type {
   ExecutionLog,
   FullTaskContract,
   TaskGraph,
+  ProjectAgentConfig,
+  Hook,
 } from "@/types";
 
 // Health
@@ -191,34 +193,45 @@ export const deleteComment = (id: number) => invoke<void>("delete_comment", { id
 export const commentCount = (issueId: number) => invoke<number>("comment_count", { issueId });
 
 // Custom Fields
-export const listCustomFields = (projectId: number) =>
-  invoke<CustomField[]>("list_custom_fields", { projectId });
-export const createCustomField = (input: {
-  project_id: number;
-  name: string;
-  field_type?: string;
-  options?: string;
-  position?: number;
-}) => invoke<CustomField>("create_custom_field", { input });
-export const updateCustomField = (id: number, input: {
-  name?: string;
-  field_type?: string;
-  options?: string;
-  position?: number;
-}) => invoke<CustomField>("update_custom_field", { id, input });
-export const deleteCustomField = (id: number) =>
-  invoke<void>("delete_custom_field", { id });
-export const getIssueCustomValues = (issueId: number) =>
-  invoke<CustomFieldValue[]>("get_issue_custom_values", { issueId });
-export const setIssueCustomValue = (issueId: number, fieldId: number, value: string | null) =>
-  invoke<void>("set_issue_custom_value", { issueId, fieldId, value });
+export const listCustomFields = (projectId: number) => invoke<CustomField[]>("list_custom_fields", { projectId });
+export const getIssueCustomValues = (issueId: number) => invoke<CustomFieldValue[]>("get_issue_custom_values", { issueId });
+export const setIssueCustomValue = (issueId: number, fieldId: number, value: string | null) => invoke<void>("set_issue_custom_value", { issueId, fieldId, value });
 
-// Agent Orchestration
+// Agents
 export const listAgents = () => invoke<Agent[]>("list_agents");
 export const getAgentStats = (agentId: string) => invoke<AgentMetrics>("agent_metrics_cmd", { agentId });
+export const deregisterAgent = (agentId: string) => invoke<void>("deregister_agent", { agentId });
+
+// Metrics & Execution
 export const projectMetrics = (projectId: number) => invoke<ProjectMetrics>("project_metrics", { projectId });
+export const recentActivity = (projectId: number, limit?: number) => invoke<ExecutionLog[]>("recent_activity", { projectId, limit });
 export const taskReplay = (identifier: string) => invoke<ExecutionLog[]>("task_replay", { identifier });
 export const getTaskContract = (identifier: string) => invoke<FullTaskContract>("get_task_contract", { identifier });
 export const taskGraph = (identifier: string) => invoke<TaskGraph>("task_graph", { identifier });
-export const recentActivity = (projectId: number, limit?: number) => invoke<ExecutionLog[]>("recent_activity", { projectId, limit });
-export const deregisterAgent = (agentId: string) => invoke<void>("deregister_agent", { agentId });
+
+// Agent Config
+export const getProjectAgentConfig = (projectId: number) => invoke<ProjectAgentConfig>("get_project_agent_config", { projectId });
+export const updateProjectAgentConfig = (projectId: number, input: Partial<Omit<ProjectAgentConfig, 'project_id'>>) => invoke<ProjectAgentConfig>("update_project_agent_config", { projectId, input });
+
+// Hooks
+export const listHooks = (projectId: number) => invoke<Hook[]>("list_hooks", { projectId });
+export const createHook = (input: { project_id: number; event_type: string; command: string }) => invoke<Hook>("create_hook", { input });
+export const deleteHook = (id: number) => invoke<void>("delete_hook", { id });
+
+// Task Contracts
+export const createTaskContract = (input: {
+  project_id: number; title: string; objective: string; status_id: number;
+  type?: string; description?: string; priority?: string; skills?: string[];
+  complexity?: string; constraints?: string[]; success_criteria?: unknown[];
+  context_files?: string[]; timeout_minutes?: number; depends_on?: string[];
+}) => invoke<FullTaskContract>("create_task_contract", { input });
+
+// Task Lifecycle
+export const nextTask = (agentId: string) => invoke<FullTaskContract | null>("next_task", { agentId });
+export const startTask = (identifier: string, agentId: string) => invoke<void>("start_task", { identifier, agentId });
+export const completeTask = (identifier: string, agentId: string, confidence: number, summary: string, artifacts?: Record<string, unknown>) => invoke<void>("complete_task", { identifier, agentId, confidence, summary, artifacts });
+export const failTask = (identifier: string, agentId: string, reason: string) => invoke<void>("fail_task", { identifier, agentId, reason });
+export const approveTask = (identifier: string) => invoke<void>("approve_task", { identifier });
+export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
+export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
+export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });

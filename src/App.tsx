@@ -14,6 +14,7 @@ import { MembersView } from "./components/MembersView";
 import { SearchDialog } from "./components/SearchDialog";
 import { NotificationsPanel } from "./components/NotificationsPanel";
 import { ProjectSettingsView } from "./components/ProjectSettingsView";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AgentDashboard } from "@/components/AgentDashboard";
 import { ReplayViewer } from "@/components/ReplayViewer";
 import { useProjects } from "./hooks/use-projects";
@@ -21,6 +22,7 @@ import { useIssues } from "./hooks/use-issues";
 import { useMembers } from "./hooks/use-members";
 import { useStatuses } from "./hooks/use-statuses";
 import { useLabels } from "./hooks/use-labels";
+import { useAgents } from "./hooks/use-agents";
 import * as api from "./tauri/commands";
 import type { IssueTemplate } from "./types";
 
@@ -58,6 +60,8 @@ function App() {
   const { members, create: createMember, update: updateMember, remove: deleteMember } = useMembers();
   const { statuses, refresh: refreshStatuses } = useStatuses(selectedProjectId);
   const { labels, refresh: refreshLabels } = useLabels(selectedProjectId);
+  const { agents: allAgents } = useAgents();
+  const onlineAgentCount = allAgents.filter(a => a.status !== "offline").length;
 
   // Auto-select first project
   useEffect(() => {
@@ -109,6 +113,9 @@ function App() {
       if (e.key === "3" && !e.metaKey) {
         setViewMode("tree");
       }
+      if (e.key === "4" && !e.metaKey) {
+        setPage("agents");
+      }
       if (e.key === "Escape") {
         if (selectedIssueId) setSelectedIssueId(null);
         else if (showSearch) setShowSearch(false);
@@ -119,11 +126,11 @@ function App() {
       // Undo/Redo
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
-        api.undo().then(() => { refreshIssues(); refreshStatuses(); refreshProjects(); refreshLabels(); });
+        api.undo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); });
       }
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
         e.preventDefault();
-        api.redo().then(() => { refreshIssues(); refreshStatuses(); refreshProjects(); refreshLabels(); });
+        api.redo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); });
       }
     };
     window.addEventListener("keydown", handler);
@@ -169,6 +176,7 @@ function App() {
   const selectedProject = projects.find(p => p.id === selectedProjectId);
 
   return (
+    <ErrorBoundary>
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar
         projects={projects}
@@ -178,6 +186,7 @@ function App() {
         onOpenMembers={() => { setPage("members"); setSelectedIssueId(null); }}
         onOpenSettings={() => setPage("settings")}
         onOpenAgents={() => setPage("agents")}
+        agentCount={onlineAgentCount}
         collapsed={sidebarCollapsed}
       />
 
@@ -280,7 +289,7 @@ function App() {
         )}
 
         {page === "agents" && (
-          <AgentDashboard projectId={selectedProjectId} onViewReplay={(id) => setReplayIdentifier(id)} />
+          <AgentDashboard projectId={selectedProjectId} projectName={selectedProject?.name ?? null} projectPrefix={selectedProject?.prefix ?? null} onViewReplay={(id) => setReplayIdentifier(id)} />
         )}
       </div>
 
@@ -339,6 +348,7 @@ function App() {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }
 

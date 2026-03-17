@@ -1,14 +1,11 @@
 import { useState, useEffect } from "react";
-import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus } from "lucide-react";
+import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import { Tooltip } from "@/components/ui/tooltip";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, CustomField, CustomFieldValue, FullTaskContract, ExecutionLog } from "@/types";
+import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment } from "@/types";
 import * as api from "@/tauri/commands";
+import { TaskContractDialog } from "./TaskContractDialog";
 
 interface IssueDetailPanelProps {
   issueId: number;
@@ -20,13 +17,6 @@ interface IssueDetailPanelProps {
   onDelete: (id: number) => Promise<void>;
   onDuplicate: (id: number) => Promise<unknown>;
   onClickIssue: (issue: Issue) => void;
-}
-
-function getAgentType(memberName: string): { type: string; color: string } | null {
-  if (memberName.startsWith('[claude]')) return { type: 'claude', color: 'bg-orange-500/20 text-orange-400' };
-  if (memberName.startsWith('[codex]')) return { type: 'codex', color: 'bg-green-500/20 text-green-400' };
-  if (memberName.startsWith('[gemini]')) return { type: 'gemini', color: 'bg-blue-500/20 text-blue-400' };
-  return null;
 }
 
 const priorities = [
@@ -41,7 +31,7 @@ export function IssueDetailPanel({
   issueId,
   statuses,
   members,
-  projectLabels,
+  projectLabels: _projectLabels,
   onClose,
   onUpdate,
   onDelete,
@@ -53,21 +43,16 @@ export function IssueDetailPanel({
   const [title, setTitle] = useState("");
   const [editingDesc, setEditingDesc] = useState(false);
   const [desc, setDesc] = useState("");
-  const [estimateValue, setEstimateValue] = useState("");
   const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
   const [subIssues, setSubIssues] = useState<Issue[]>([]);
   const [showPriorityMenu, setShowPriorityMenu] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showAssigneeMenu, setShowAssigneeMenu] = useState(false);
-  const [showLabelsMenu, setShowLabelsMenu] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  const [customValues, setCustomValues] = useState<CustomFieldValue[]>([]);
-  const [contract, setContract] = useState<FullTaskContract | null>(null);
-  const [executionLogs, setExecutionLogs] = useState<ExecutionLog[]>([]);
+  const [showTaskContractDialog, setShowTaskContractDialog] = useState(false);
 
   useEffect(() => {
     loadIssue();
@@ -79,25 +64,12 @@ export function IssueDetailPanel({
       setIssue(data);
       setTitle(data.title);
       setDesc(data.description || "");
-      setEstimateValue(data.estimate != null ? String(data.estimate) : "");
       const acts = await api.getActivityLog(issueId);
       setActivity(acts);
       const subs = await api.getSubIssues(issueId);
       setSubIssues(subs);
       const comms = await api.listComments(issueId);
       setComments(comms);
-      try {
-        const fields = await api.listCustomFields(data.project_id);
-        setCustomFields(fields);
-        const vals = await api.getIssueCustomValues(issueId);
-        setCustomValues(vals);
-      } catch { /* custom fields table may not exist yet */ }
-      try {
-        const tc = await api.getTaskContract(data.identifier);
-        setContract(tc);
-        const logs = await api.taskReplay(data.identifier);
-        setExecutionLogs(logs);
-      } catch { setContract(null); setExecutionLogs([]); }
     } catch (e) {
       console.error("Failed to load issue", e);
     }
@@ -158,30 +130,20 @@ export function IssueDetailPanel({
   const currentPriority = priorities.find(p => p.value === issue.priority) || priorities[4];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div
-        className="flex h-[85vh] w-full max-w-3xl flex-col rounded-lg border border-border bg-card shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="flex h-full w-[480px] flex-col border-l border-border bg-card">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <span className="text-sm text-muted-foreground">{issue.identifier}</span>
         <div className="flex items-center gap-1">
-          <Tooltip content="Duplicate">
-            <Button variant="ghost" size="icon-sm" onClick={() => onDuplicate(issueId)}>
-              <Copy className="h-4 w-4 text-muted-foreground" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Delete">
-            <Button variant="ghost" size="icon-sm" onClick={async () => { await onDelete(issueId); onClose(); }} className="hover:bg-destructive/20">
-              <Trash2 className="h-4 w-4 text-muted-foreground" />
-            </Button>
-          </Tooltip>
-          <Tooltip content="Close (Esc)">
-            <Button variant="ghost" size="icon-sm" onClick={onClose}>
-              <X className="h-4 w-4 text-muted-foreground" />
-            </Button>
-          </Tooltip>
+          <button onClick={() => onDuplicate(issueId)} className="rounded p-1 hover:bg-accent" title="Duplicate">
+            <Copy className="h-4 w-4 text-muted-foreground" />
+          </button>
+          <button onClick={() => { onDelete(issueId); onClose(); }} className="rounded p-1 hover:bg-destructive/20" title="Delete">
+            <Trash2 className="h-4 w-4 text-muted-foreground" />
+          </button>
+          <button onClick={onClose} className="rounded p-1 hover:bg-accent" title="Close (Esc)">
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
         </div>
       </div>
 
@@ -310,46 +272,15 @@ export function IssueDetailPanel({
           </div>
 
           {/* Labels */}
-          <div className="flex items-start gap-3 text-sm relative">
+          <div className="flex items-start gap-3 text-sm">
             <span className="w-20 pt-1 text-muted-foreground">Labels</span>
-            <div>
-              <button onClick={() => setShowLabelsMenu(!showLabelsMenu)} className="flex flex-wrap gap-1 rounded px-2 py-1 hover:bg-accent">
-                {issue.labels.length > 0 ? issue.labels.map(l => (
-                  <Badge
-                    key={l.id}
-                    variant="outline"
-                    className="border-transparent font-medium"
-                    style={{ backgroundColor: l.color + "20", color: l.color }}
-                  >
-                    {l.name}
-                  </Badge>
-                )) : <span className="text-muted-foreground">None</span>}
-              </button>
-              {showLabelsMenu && (
-                <div className="absolute left-20 top-8 z-50 rounded-md border border-border bg-popover p-1 shadow-lg">
-                  {projectLabels.map(l => {
-                    const isSelected = issue.labels.some(il => il.id === l.id);
-                    return (
-                      <button
-                        key={l.id}
-                        onClick={async () => {
-                          const newIds = isSelected
-                            ? issue.labels.filter(il => il.id !== l.id).map(il => il.id)
-                            : [...issue.labels.map(il => il.id), l.id];
-                          await api.setIssueLabels(issueId, newIds);
-                          await loadIssue();
-                        }}
-                        className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-accent"
-                      >
-                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: l.color }} />
-                        <span>{l.name}</span>
-                        {isSelected && <span className="ml-auto text-xs">✓</span>}
-                      </button>
-                    );
-                  })}
-                  {projectLabels.length === 0 && <span className="px-3 py-1.5 text-xs text-muted-foreground">No labels</span>}
-                </div>
-              )}
+            <div className="flex flex-wrap gap-1">
+              {issue.labels.map(l => (
+                <span key={l.id} className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: l.color + "20", color: l.color }}>
+                  {l.name}
+                </span>
+              ))}
+              {issue.labels.length === 0 && <span className="text-muted-foreground">None</span>}
             </div>
           </div>
 
@@ -370,19 +301,11 @@ export function IssueDetailPanel({
             <input
               type="number"
               min="0"
-              value={estimateValue}
-              onChange={(e) => setEstimateValue(e.target.value)}
-              onBlur={async () => {
-                const parsed = estimateValue === "" ? -1 : parseFloat(estimateValue);
-                const current = issue.estimate ?? -1;
-                if (parsed !== current) {
-                  await onUpdate(issueId, { estimate: parsed });
-                  await loadIssue();
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLElement).blur();
-                if (e.key === "Escape") setEstimateValue(issue.estimate != null ? String(issue.estimate) : "");
+              value={issue.estimate ?? ""}
+              onChange={async (e) => {
+                const val = e.target.value === "" ? -1 : parseFloat(e.target.value);
+                await onUpdate(issueId, { estimate: val });
+                await loadIssue();
               }}
               placeholder="Points"
               className="w-20 rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
@@ -394,12 +317,13 @@ export function IssueDetailPanel({
         <div className="mt-6 border-t border-border px-4 pt-4">
           <h3 className="mb-2 text-xs font-medium text-muted-foreground">Description</h3>
           {editingDesc ? (
-            <Textarea
+            <textarea
               autoFocus
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
               onBlur={handleDescSave}
               rows={8}
+              className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:border-primary"
               placeholder="Add a description... (Markdown supported)"
             />
           ) : (
@@ -414,6 +338,17 @@ export function IssueDetailPanel({
               )}
             </div>
           )}
+        </div>
+
+        {/* Task Contract */}
+        <div className="mt-4 px-4">
+          <button
+            onClick={() => setShowTaskContractDialog(true)}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Create Task Contract
+          </button>
         </div>
 
         {/* Sub-issues */}
@@ -473,56 +408,47 @@ export function IssueDetailPanel({
                         <span className="text-xs font-medium">
                           {commentMember ? (commentMember.display_name || commentMember.name) : "System"}
                         </span>
-                        {(() => {
-                          const agentInfo = commentMember ? getAgentType(commentMember.name) : null;
-                          return agentInfo ? (
-                            <span className={`text-[10px] font-mono uppercase px-1 py-0.5 rounded ${agentInfo.color}`}>
-                              {agentInfo.type}
-                            </span>
-                          ) : null;
-                        })()}
                         <span className="text-[10px] text-muted-foreground">
                           {comment.created_at.slice(0, 16)}
                         </span>
-                        <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
+                        <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
                             onClick={() => { setEditingCommentId(comment.id); setEditingCommentContent(comment.content); }}
-                            className="h-6 w-6"
+                            className="rounded p-0.5 hover:bg-accent"
                           >
                             <Pencil className="h-3 w-3 text-muted-foreground" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
+                          </button>
+                          <button
                             onClick={() => handleDeleteComment(comment.id)}
-                            className="h-6 w-6 hover:bg-destructive/20"
+                            className="rounded p-0.5 hover:bg-destructive/20"
                           >
                             <Trash2 className="h-3 w-3 text-muted-foreground" />
-                          </Button>
+                          </button>
                         </div>
                       </div>
 
                       {editingCommentId === comment.id ? (
                         <div className="mt-1">
-                          <Textarea
+                          <textarea
                             autoFocus
                             value={editingCommentContent}
                             onChange={(e) => setEditingCommentContent(e.target.value)}
                             rows={3}
+                            className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:border-primary"
                           />
                           <div className="mt-1 flex gap-1">
-                            <Button size="sm" onClick={() => handleUpdateComment(comment.id)}>
+                            <button
+                              onClick={() => handleUpdateComment(comment.id)}
+                              className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                            >
                               Save
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
+                            </button>
+                            <button
                               onClick={() => { setEditingCommentId(null); setEditingCommentContent(""); }}
+                              className="rounded-md px-2 py-1 text-xs hover:bg-accent"
                             >
                               Cancel
-                            </Button>
+                            </button>
                           </div>
                         </div>
                       ) : (
@@ -539,7 +465,7 @@ export function IssueDetailPanel({
 
           {/* Add comment */}
           <div className="mt-4">
-            <Textarea
+            <textarea
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
               onKeyDown={(e) => {
@@ -550,200 +476,19 @@ export function IssueDetailPanel({
               }}
               rows={3}
               placeholder="Leave a comment... (Markdown supported, Cmd+Enter to submit)"
+              className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:border-primary"
             />
             <div className="mt-1 flex justify-end">
-              <Button
-                size="sm"
+              <button
                 onClick={handleAddComment}
                 disabled={!newComment.trim()}
+                className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 Comment
-              </Button>
+              </button>
             </div>
           </div>
         </div>
-
-        {/* Task Contract */}
-        {contract && (
-          <div className="mt-6 border-t border-border px-4 pt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Task Contract</h3>
-
-            <div className="mt-3 space-y-2 text-sm">
-              <div>
-                <span className="text-muted-foreground">State: </span>
-                <span className={`font-mono font-medium ${
-                  contract.task_state === 'completed' ? 'text-green-500' :
-                  contract.task_state === 'executing' ? 'text-amber-500' :
-                  contract.task_state === 'blocked' ? 'text-red-500' :
-                  contract.task_state === 'queued' ? 'text-blue-500' : ''
-                }`}>{contract.task_state}</span>
-                {contract.attempt_count > 0 && (
-                  <span className="text-muted-foreground ml-2">({contract.attempt_count} attempts)</span>
-                )}
-              </div>
-
-              <div>
-                <span className="text-muted-foreground">Type: </span>
-                <span className="font-mono">{contract.type}</span>
-                {contract.estimated_complexity && (
-                  <>
-                    <span className="text-muted-foreground ml-2">Complexity: </span>
-                    <span className="font-mono">{contract.estimated_complexity}</span>
-                  </>
-                )}
-              </div>
-
-              <div>
-                <span className="text-muted-foreground">Objective: </span>
-                <span>{contract.objective}</span>
-              </div>
-
-              {contract.required_skills && Array.isArray(contract.required_skills) && contract.required_skills.length > 0 && (
-                <div className="flex items-center gap-1 flex-wrap">
-                  <span className="text-muted-foreground text-xs">Skills: </span>
-                  {contract.required_skills.map((skill: string) => (
-                    <span key={skill} className="text-[10px] font-mono bg-muted px-1.5 py-0.5 rounded">{skill}</span>
-                  ))}
-                </div>
-              )}
-
-              {contract.constraints && Array.isArray(contract.constraints) && contract.constraints.length > 0 && (
-                <div>
-                  <span className="text-muted-foreground text-xs">Constraints: </span>
-                  <ul className="list-disc list-inside text-xs mt-1">
-                    {contract.constraints.map((c: unknown, i: number) => <li key={i}>{String(c)}</li>)}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Execution Trace */}
-        {executionLogs.length > 0 && (
-          <div className="mt-6 border-t border-border px-4 pt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-              Execution Trace ({executionLogs.length})
-            </h3>
-            <div className="space-y-0.5 max-h-64 overflow-y-auto">
-              {executionLogs.map((log) => {
-                const time = log.timestamp.length >= 19 ? log.timestamp.slice(11, 19) : log.timestamp;
-
-                const typeConfig: Record<string, { label: string; color: string; icon: string }> = {
-                  claim:     { label: "CLAIM",    color: "text-blue-400",    icon: "🤖" },
-                  start:     { label: "START",    color: "text-blue-400",    icon: "▶️" },
-                  reasoning: { label: "THINK",    color: "text-purple-400",  icon: "💭" },
-                  file_read: { label: "READ",     color: "text-cyan-400",    icon: "📖" },
-                  file_edit: { label: "EDIT",     color: "text-yellow-400",  icon: "✏️" },
-                  command:   { label: "RUN",      color: "text-orange-400",  icon: "⚡" },
-                  discovery: { label: "DISCOVER", color: "text-emerald-400", icon: "🔍" },
-                  error:     { label: "ERROR",    color: "text-red-400",     icon: "❌" },
-                  result:    { label: "RESULT",   color: "text-green-400",   icon: "✅" },
-                  complete:  { label: "DONE",     color: "text-green-400",   icon: "✅" },
-                  fail:      { label: "FAIL",     color: "text-red-400",     icon: "❌" },
-                  checkpoint:{ label: "CHECK",    color: "text-zinc-400",    icon: "📌" },
-                  timeout:   { label: "TIMEOUT",  color: "text-red-400",     icon: "⏰" },
-                  unblocked: { label: "UNBLOCK",  color: "text-emerald-400", icon: "🔓" },
-                  approve:   { label: "APPROVE",  color: "text-green-400",   icon: "✅" },
-                  reject:    { label: "REJECT",   color: "text-red-400",     icon: "❌" },
-                  unclaim:   { label: "UNCLAIM",  color: "text-zinc-400",    icon: "↩️" },
-                  reclaim:   { label: "RECLAIM",  color: "text-yellow-400",  icon: "🔄" },
-                };
-
-                const cfg = typeConfig[log.entry_type] || { label: log.entry_type.toUpperCase(), color: "text-zinc-400", icon: "•" };
-
-                const metadata = log.metadata ? (typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata) : null;
-                const file = metadata?.file;
-                const exitCode = metadata?.exit_code;
-
-                return (
-                  <div key={log.id} className="flex items-start gap-2 py-1 text-xs hover:bg-muted/30 rounded px-1 -mx-1">
-                    <span className="font-mono text-muted-foreground shrink-0 w-14 mt-0.5">{time}</span>
-                    <span className="shrink-0 w-4 mt-0.5">{cfg.icon}</span>
-                    <span className={`font-mono font-medium shrink-0 w-16 ${cfg.color}`}>{cfg.label}</span>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-foreground">{log.message}</span>
-                      {file && (
-                        <span className="ml-1 font-mono text-muted-foreground text-[10px]">({file})</span>
-                      )}
-                      {exitCode !== undefined && (
-                        <span className={`ml-1 font-mono text-[10px] ${exitCode === 0 ? 'text-green-500' : 'text-red-500'}`}>
-                          exit:{exitCode}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Files Changed summary */}
-            {(() => {
-              const files = executionLogs
-                .filter(l => l.entry_type === 'file_edit' || l.entry_type === 'file_read')
-                .map(l => {
-                  const meta = l.metadata ? (typeof l.metadata === 'string' ? JSON.parse(l.metadata) : l.metadata) : null;
-                  return meta?.file;
-                })
-                .filter((f): f is string => !!f);
-              const uniqueFiles = [...new Set(files)];
-              if (uniqueFiles.length === 0) return null;
-              return (
-                <div className="mt-3 pt-3 border-t border-border/50">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Files Touched</span>
-                  <div className="mt-1 space-y-0.5">
-                    {uniqueFiles.map(f => (
-                      <div key={f} className="text-[11px] font-mono text-muted-foreground">📄 {f}</div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        )}
-
-        {/* Custom Fields */}
-        {customFields.length > 0 && (
-          <div className="mt-6 border-t border-border px-4 pt-4">
-            <h3 className="mb-2 text-xs font-medium text-muted-foreground">Custom Fields</h3>
-            <div className="space-y-3">
-              {customFields.map(field => {
-                const val = customValues.find(v => v.field_id === field.id);
-                return (
-                  <div key={field.id} className="flex items-center gap-3 text-sm">
-                    <span className="w-24 text-muted-foreground truncate">{field.name}</span>
-                    {field.field_type === "select" ? (
-                      <select
-                        value={val?.value || ""}
-                        onChange={async (e) => {
-                          await api.setIssueCustomValue(issueId, field.id, e.target.value || null);
-                          await loadIssue();
-                        }}
-                        className="rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent border border-border"
-                      >
-                        <option value="">—</option>
-                        {JSON.parse(field.options || "[]").map((opt: string) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type={field.field_type === "date" ? "date" : field.field_type === "number" ? "number" : "text"}
-                        value={val?.value || ""}
-                        onChange={async (e) => {
-                          await api.setIssueCustomValue(issueId, field.id, e.target.value || null);
-                          await loadIssue();
-                        }}
-                        className="rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
-                        placeholder={`Enter ${field.name.toLowerCase()}`}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Activity log */}
         {activity.length > 0 && (
@@ -764,7 +509,16 @@ export function IssueDetailPanel({
           </div>
         )}
       </div>
-      </div>
+
+      {showTaskContractDialog && (
+        <TaskContractDialog
+          projectId={issue.project_id}
+          statusId={issue.status_id}
+          defaultTitle={issue.title}
+          onClose={() => setShowTaskContractDialog(false)}
+          onCreated={() => loadIssue()}
+        />
+      )}
     </div>
   );
 }

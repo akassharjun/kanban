@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
-import { X } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { X, ChevronRight, ChevronDown, Search } from "lucide-react";
 import { useTaskReplay } from "@/hooks/use-agents";
+import { safeJsonParse } from "@/lib/issue-utils";
 import * as api from "@/tauri/commands";
-import type { FullTaskContract } from "@/types";
+import type { FullTaskContract, ExecutionLog } from "@/types";
 
 interface ReplayViewerProps {
   identifier: string;
@@ -23,6 +24,17 @@ const entryTypeColors: Record<string, string> = {
   checkpoint: "bg-zinc-500/20 text-zinc-400",
   timeout: "bg-red-500/20 text-red-400",
   unblocked: "bg-emerald-500/20 text-emerald-400",
+};
+
+const FILTER_TYPES = ["all", "file_edit", "command", "error", "result"] as const;
+type FilterType = (typeof FILTER_TYPES)[number];
+
+const FILTER_LABELS: Record<FilterType, string> = {
+  all: "All",
+  file_edit: "File Edit",
+  command: "Command",
+  error: "Error",
+  result: "Result",
 };
 
 function formatTime(iso: string): string {
@@ -53,13 +65,122 @@ function stateColor(state: string): string {
   }
 }
 
+function MetadataSection({ metadata }: { metadata: string | null }) {
+  const [expanded, setExpanded] = useState(false);
+  const parsed = safeJsonParse<Record<string, unknown>>(metadata, {});
+
+  if (!metadata || Object.keys(parsed).length === 0) return null;
+
+  const file = parsed.file as string | undefined;
+  const exitCode = parsed.exit_code as number | undefined;
+  const command = parsed.command as string | undefined;
+  const otherKeys = Object.keys(parsed).filter(
+    (k) => k !== "file" && k !== "exit_code" && k !== "command"
+  );
+
+  return (
+    <div className="mt-1.5">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1 text-[10px] font-mono text-zinc-500 hover:text-zinc-300 transition-colors"
+      >
+        {expanded ? (
+          <ChevronDown className="w-3 h-3" />
+        ) : (
+          <ChevronRight className="w-3 h-3" />
+        )}
+        metadata
+      </button>
+      {expanded && (
+        <div className="mt-1 ml-4 space-y-1 text-xs font-mono">
+          {file && (
+            <div>
+              <span className="inline-block bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded px-1.5 py-0.5 text-[10px]">
+                {file}
+              </span>
+            </div>
+          )}
+          {exitCode !== undefined && (
+            <div className="text-zinc-400">
+              exit_code:{" "}
+              <span
+                className={
+                  exitCode === 0 ? "text-green-400" : "text-red-400"
+                }
+              >
+                {exitCode}
+              </span>
+            </div>
+          )}
+          {command && (
+            <div className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-zinc-300 whitespace-pre-wrap break-all">
+              {command}
+            </div>
+          )}
+          {otherKeys.map((key) => (
+            <div key={key} className="text-zinc-400">
+              {key}: <span className="text-zinc-300">{String(parsed[key])}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ReplayViewer({ identifier, onClose }: ReplayViewerProps) {
   const { logs, loading } = useTaskReplay(identifier);
   const [contract, setContract] = useState<FullTaskContract | null>(null);
+  const [activeAttempt, setActiveAttempt] = useState<number | null>(null);
+  const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     api.getTaskContract(identifier).then(setContract).catch(() => {});
   }, [identifier]);
+
+  // Group logs by attempt_number
+  const attempts = useMemo(() => {
+    const map = new Map<number, ExecutionLog[]>();
+    for (const log of logs) {
+      const existing = map.get(log.attempt_number) || [];
+      existing.push(log);
+      map.set(log.attempt_number, existing);
+    }
+    return Array.from(map.keys()).sort((a, b) => a - b);
+  }, [logs]);
+
+  // Default to latest attempt when logs load
+  useEffect(() => {
+    if (attempts.length > 0 && activeAttempt === null) {
+      setActiveAttempt(attempts[attempts.length - 1]);
+    }
+  }, [attempts, activeAttempt]);
+
+  // Filter logs by attempt, entry type, and search
+  const filteredLogs = useMemo(() => {
+    let filtered = logs;
+
+    // Filter by attempt (only if multiple attempts)
+    if (attempts.length > 1 && activeAttempt !== null) {
+      filtered = filtered.filter((l) => l.attempt_number === activeAttempt);
+    }
+
+    // Filter by entry type
+    if (activeFilter !== "all") {
+      filtered = filtered.filter((l) => l.entry_type === activeFilter);
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter((l) =>
+        l.message.toLowerCase().includes(q)
+      );
+    }
+
+    return filtered;
+  }, [logs, attempts, activeAttempt, activeFilter, searchQuery]);
 
   return (
     <div className="bg-zinc-950 text-zinc-100 h-full overflow-y-auto p-6 relative">
@@ -89,6 +210,59 @@ export function ReplayViewer({ identifier, onClose }: ReplayViewerProps) {
         </div>
       )}
 
+      {/* Controls: Search, Attempt Tabs, Filter Pills */}
+      <div className="space-y-3 mb-6">
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search log messages..."
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg pl-9 pr-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-500"
+          />
+        </div>
+
+        {/* Attempt tabs */}
+        {attempts.length > 1 && (
+          <div className="flex gap-1">
+            {attempts.map((attemptNum) => (
+              <button
+                key={attemptNum}
+                onClick={() => setActiveAttempt(attemptNum)}
+                className={`px-3 py-1 rounded text-xs font-mono transition-colors ${
+                  activeAttempt === attemptNum
+                    ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                    : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:border-zinc-500"
+                }`}
+              >
+                Attempt {attemptNum}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Entry type filter pills */}
+        <div className="flex gap-1 flex-wrap">
+          {FILTER_TYPES.map((type) => (
+            <button
+              key={type}
+              onClick={() => setActiveFilter(type)}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                activeFilter === type
+                  ? type === "all"
+                    ? "bg-zinc-600/30 text-zinc-100 border border-zinc-500"
+                    : `${entryTypeColors[type] || "bg-zinc-500/20 text-zinc-400"} border border-current/20`
+                  : "bg-zinc-800/50 text-zinc-500 border border-zinc-700 hover:border-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {FILTER_LABELS[type]}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Loading state */}
       {loading && (
         <div className="text-zinc-500 text-sm">Loading execution logs...</div>
@@ -99,11 +273,15 @@ export function ReplayViewer({ identifier, onClose }: ReplayViewerProps) {
         <div className="text-zinc-500 text-sm">No execution logs found.</div>
       )}
 
-      {!loading && logs.length > 0 && (
+      {!loading && logs.length > 0 && filteredLogs.length === 0 && (
+        <div className="text-zinc-500 text-sm">No logs match the current filters.</div>
+      )}
+
+      {!loading && filteredLogs.length > 0 && (
         <div className="space-y-0">
-          {logs.map((log, index) => {
+          {filteredLogs.map((log, index) => {
             const colorClass = entryTypeColors[log.entry_type] || "bg-zinc-500/20 text-zinc-400";
-            const isLast = index === logs.length - 1;
+            const isLast = index === filteredLogs.length - 1;
 
             return (
               <div key={log.id} className="flex gap-4">
@@ -120,7 +298,7 @@ export function ReplayViewer({ identifier, onClose }: ReplayViewerProps) {
                   {!isLast && <div className="w-px flex-1 border-l-2 border-zinc-700" />}
                 </div>
 
-                {/* Entry type badge + message */}
+                {/* Entry type badge + message + metadata */}
                 <div className="flex-1 pb-4">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${colorClass}`}>
@@ -128,6 +306,7 @@ export function ReplayViewer({ identifier, onClose }: ReplayViewerProps) {
                     </span>
                   </div>
                   <p className="text-sm text-zinc-300 leading-relaxed">{log.message}</p>
+                  <MetadataSection metadata={log.metadata} />
                 </div>
               </div>
             );

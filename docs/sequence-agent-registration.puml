@@ -1,0 +1,36 @@
+@startuml agent-registration
+!theme plain
+skinparam backgroundColor transparent
+
+title Agent Registration Flow
+
+actor "AI Agent" as Agent
+participant "Tauri Command\n(register_agent)" as Cmd
+database "PostgreSQL" as DB
+
+Agent -> Cmd : register_agent(name, agent_type, skills,\n  task_types, max_concurrent, max_complexity)
+activate Cmd
+
+Cmd -> Cmd : Generate UUID for agent_id
+Cmd -> Cmd : Resolve agent name\n(generate random if empty)
+Cmd -> Cmd : Determine avatar_color\nfrom agent_type
+
+Cmd -> DB : BEGIN transaction
+
+Cmd -> DB : INSERT INTO members\n(name, display_name, avatar_color)
+DB --> Cmd : member_id (RETURNING id)
+
+Cmd -> DB : INSERT INTO agents\n(id, name, agent_type, skills,\n task_types, max_concurrent,\n max_complexity, member_id,\n status='idle', registered_at,\n last_heartbeat)
+DB --> Cmd : OK
+
+Cmd -> DB : INSERT INTO agent_stats\n(agent_id, 0, 0, 0.0, 0, '{}')
+DB --> Cmd : OK
+
+Cmd -> DB : SELECT * FROM agents\nWHERE id = $agent_id
+DB --> Cmd : Agent record
+
+Cmd -> DB : COMMIT
+
+Cmd --> Agent : Agent { id, name, member_id, status, ... }
+deactivate Cmd
+@enduml

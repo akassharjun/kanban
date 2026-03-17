@@ -19,9 +19,9 @@ export interface Project {
   status: ProjectStatus;
   prefix: string;
   issue_counter: number;
+  path: string | null;
   created_at: string;
   updated_at: string;
-  path: string | null;
 }
 
 export interface Status {
@@ -128,6 +128,35 @@ export interface Notification {
   created_at: string;
 }
 
+export interface FullTaskContract {
+  id: number;
+  project_id: number;
+  identifier: string;
+  title: string;
+  objective: string;
+  status_id: number;
+  type: string | null;
+  description: string | null;
+  priority: string | null;
+  skills: string[] | null;
+  complexity: string | null;
+  constraints: string[] | null;
+  success_criteria: unknown[] | null;
+  context_files: string[] | null;
+  timeout_minutes: number | null;
+  depends_on: string[] | null;
+  assigned_agent: string | null;
+  confidence: number | null;
+  summary: string | null;
+  artifacts: Record<string, unknown> | null;
+  task_state: string;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  attempt_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CustomField {
   id: number;
   project_id: number;
@@ -154,16 +183,16 @@ export interface Agent {
   id: string;
   name: string;
   agent_type: string | null;
-  skills: string[]; // JSONB array from Postgres
-  task_types: string[]; // JSONB array from Postgres
+  skills: string[];
+  task_types: string[];
   max_concurrent: number;
   max_complexity: string;
   member_id: number | null;
+  worktree_path: string | null;
   status: AgentStatus;
   registered_at: string;
   last_heartbeat: string;
   last_activity_at: string | null;
-  worktree_path: string | null;
 }
 
 export interface AgentMetrics {
@@ -205,25 +234,6 @@ export interface ExecutionLog {
   timestamp: string;
 }
 
-export interface FullTaskContract {
-  identifier: string;
-  title: string;
-  description: string | null;
-  priority: string;
-  parent_id: number | null;
-  issue_id: number;
-  type: TaskType;
-  task_state: TaskState;
-  objective: string;
-  context: Record<string, unknown>;
-  constraints: unknown[];
-  success_criteria: unknown[];
-  required_skills: string[];
-  estimated_complexity: string | null;
-  timeout_minutes: number;
-  attempt_count: number;
-}
-
 export interface GraphNode {
   id: number;
   identifier: string;
@@ -241,4 +251,20 @@ export interface GraphEdge {
 export interface TaskGraph {
   nodes: GraphNode[];
   edges: GraphEdge[];
+}
+
+export interface Hook {
+  id: number;
+  project_id: number;
+  event_type: string;
+  command: string;
+}
+
+export interface ProjectAgentConfig {
+  project_id: number;
+  auto_accept_threshold: number;
+  human_review_threshold: number;
+  max_attempts: number;
+  heartbeat_interval_seconds: number;
+  missed_heartbeats_before_offline: number;
 }

@@ -11,6 +11,7 @@ interface SidebarProps {
   onOpenMembers: () => void;
   onOpenSettings: () => void;
   onOpenAgents?: () => void;
+  agentCount?: number;
   collapsed: boolean;
 }
 
@@ -22,6 +23,7 @@ export function Sidebar({
   onOpenMembers,
   onOpenSettings,
   onOpenAgents,
+  agentCount,
   collapsed,
 }: SidebarProps) {
   const [projectsExpanded, setProjectsExpanded] = useState(true);
@@ -89,6 +91,11 @@ export function Sidebar({
         >
           <Bot className="h-4 w-4" />
           Agent Ops
+          {agentCount != null && agentCount > 0 && (
+            <span className="ml-auto rounded-full bg-amber-500/20 text-amber-500 text-[10px] font-mono px-1.5 py-0.5 leading-none">
+              {agentCount}
+            </span>
+          )}
         </button>
         <button
           onClick={onOpenSettings}
