@@ -69,6 +69,28 @@ JSON-RPC 2.0 over stdio for AI agent integration. Supports issue CRUD, search, a
 | Drag & Drop | @dnd-kit/core |
 | Markdown | react-markdown + remark-gfm |
 
+## Installation
+
+### Homebrew (macOS)
+
+```bash
+brew tap akassharjun/kanban https://github.com/akassharjun/kanban
+```
+
+**Desktop app** (installs `Kanban.app` to `/Applications`):
+```bash
+brew install --cask kanban
+```
+
+**CLI only** (installs `kanban` binary):
+```bash
+brew install kanban
+```
+
+### Manual
+
+Download the latest `.dmg` (macOS) or `.deb` (Linux) from [Releases](https://github.com/akassharjun/kanban/releases).
+
 ## Development
 
 ```bash
