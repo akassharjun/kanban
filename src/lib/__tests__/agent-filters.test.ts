@@ -15,6 +15,8 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
     status: "online",
     registered_at: "2026-03-16",
     last_heartbeat: "2026-03-16 12:00:00",
+    last_activity_at: null,
+    worktree_path: null,
     ...overrides,
   };
 }

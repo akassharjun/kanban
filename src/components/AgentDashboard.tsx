@@ -4,8 +4,10 @@ import type { AgentMetrics, ExecutionLog } from "@/types";
 import { useAgents, useProjectMetrics } from "@/hooks/use-agents";
 import { getAgentStats, recentActivity, getIssue, deregisterAgent } from "@/tauri/commands";
 
-interface AgentDashboardProps {
+export interface AgentDashboardProps {
   projectId: number | null;
+  projectName?: string | null;
+  projectPrefix?: string | null;
   onViewReplay?: (identifier: string) => void;
 }
 

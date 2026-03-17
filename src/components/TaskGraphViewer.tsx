@@ -5,6 +5,7 @@ import * as api from "@/tauri/commands";
 
 interface TaskGraphViewerProps {
   issueId: number;
+  identifier: string;
   projectId: number;
   onClose: () => void;
 }
@@ -120,7 +121,7 @@ function computeLayout(nodes: GraphNode[], edges: GraphEdge[]): LayoutNode[] {
   return layoutNodes;
 }
 
-export function TaskGraphViewer({ issueId, projectId, onClose }: TaskGraphViewerProps) {
+export function TaskGraphViewer({ issueId, identifier, projectId, onClose }: TaskGraphViewerProps) {
   const [graph, setGraph] = useState<TaskGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -128,11 +129,11 @@ export function TaskGraphViewer({ issueId, projectId, onClose }: TaskGraphViewer
   useEffect(() => {
     setLoading(true);
     setError(null);
-    api.taskGraph(issueId, projectId)
+    api.taskGraph(identifier)
       .then(setGraph)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [issueId, projectId]);
+  }, [identifier, projectId]);
 
   const layoutNodes = useMemo(() => {
     if (!graph) return [];

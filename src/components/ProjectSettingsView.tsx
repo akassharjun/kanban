@@ -4,11 +4,12 @@ import { cn } from "@/lib/utils";
 import type { Project, Status, Label, IssueTemplate, Hook, ProjectAgentConfig } from "@/types";
 import * as api from "@/tauri/commands";
 
-interface ProjectSettingsViewProps {
+export interface ProjectSettingsViewProps {
   project: Project;
   onUpdateProject: (id: number, input: { name?: string; description?: string; icon?: string; status?: string; path?: string }) => Promise<unknown>;
   onRefreshStatuses: () => void;
   onRefreshLabels: () => void;
+  onDeleteProject?: (id: number) => Promise<unknown>;
 }
 
 type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents";
@@ -27,7 +28,7 @@ const labelColors = [
   "#a855f7", "#d946ef", "#ec4899", "#f43f5e",
 ];
 
-export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels }: ProjectSettingsViewProps) {
+export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels, onDeleteProject: _onDeleteProject }: ProjectSettingsViewProps) {
   const [tab, setTab] = useState<Tab>("general");
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
