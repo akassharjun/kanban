@@ -91,6 +91,16 @@ pub enum Commands {
         #[arg(long)]
         agent: Option<String>,
     },
+    /// Track costs and budgets
+    Costs {
+        #[command(subcommand)]
+        action: CostAction,
+    },
+    /// Manage SLA policies
+    Sla {
+        #[command(subcommand)]
+        action: SlaAction,
+    },
     /// Export all data to JSON
     Export {
         /// Output file path (default: stdout)
@@ -776,6 +786,110 @@ pub enum PipelineAction {
     },
 }
 
+#[derive(Subcommand)]
+pub enum CostAction {
+    /// Show cost summary for a project
+    Summary {
+        #[arg(long)]
+        project: i64,
+    },
+    /// Show cost breakdown for a specific task
+    Task {
+        /// Task identifier (e.g. KAN-42)
+        identifier: String,
+    },
+    /// Record a cost entry
+    Record {
+        /// Task identifier
+        #[arg(long)]
+        task: String,
+        /// Agent ID
+        #[arg(long)]
+        agent: String,
+        /// Cost type: compute_time, api_tokens, custom
+        #[arg(long, name = "type")]
+        cost_type: String,
+        /// Amount
+        #[arg(long)]
+        amount: f64,
+        /// Unit: minutes, tokens, dollars, credits
+        #[arg(long)]
+        unit: String,
+        /// Description
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Set a budget for a project
+    Budget {
+        #[arg(long)]
+        project: i64,
+        /// Budget type: daily, weekly, monthly, per_task, total
+        #[arg(long, name = "type")]
+        budget_type: String,
+        /// Budget amount
+        #[arg(long)]
+        amount: f64,
+        /// Unit (default: dollars)
+        #[arg(long)]
+        unit: Option<String>,
+    },
+    /// Check budget status (alerts)
+    Check {
+        #[arg(long)]
+        project: i64,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SlaAction {
+    /// Check SLA compliance for a project
+    Check {
+        #[arg(long)]
+        project: i64,
+    },
+    /// Enforce SLA policies (execute escalation actions)
+    Enforce {
+        #[arg(long)]
+        project: i64,
+    },
+    /// Create an SLA policy
+    Create {
+        #[arg(long)]
+        project: i64,
+        #[arg(long)]
+        name: String,
+        /// Target type: response_time, resolution_time, task_timeout
+        #[arg(long, name = "type")]
+        target_type: String,
+        /// Priority filter (e.g. urgent, high)
+        #[arg(long)]
+        priority: Option<String>,
+        /// Warning minutes before breach
+        #[arg(long)]
+        warning: i64,
+        /// Breach threshold in minutes
+        #[arg(long)]
+        breach: i64,
+        /// Escalation action JSON
+        #[arg(long)]
+        escalation: Option<String>,
+    },
+    /// List SLA policies
+    List {
+        #[arg(long)]
+        project: i64,
+    },
+    /// Delete an SLA policy
+    Delete {
+        id: i64,
+    },
+    /// Show SLA dashboard
+    Dashboard {
+        #[arg(long)]
+        project: i64,
+    },
+}
+
 #[derive(sqlx::FromRow, serde::Serialize, serde::Deserialize)]
 struct IssueLabelRow {
     issue_id: i64,
@@ -813,6 +927,8 @@ pub async fn run(
         Commands::Code { action } => handle_code(pool, action, json).await?,
         Commands::Pipeline { action } => handle_pipeline(pool, backend, action, json).await?,
         Commands::Metrics { project, agent } => handle_metrics(pool, backend, project, agent, json).await?,
+        Commands::Costs { action } => handle_costs(pool, action, json).await?,
+        Commands::Sla { action } => handle_sla(pool, action, json).await?,
         Commands::Export { output } => handle_export(pool, output).await?,
         Commands::Import { file } => handle_import(pool, file).await?,
     }
@@ -3799,6 +3915,336 @@ async fn handle_code(
             } else {
                 for i in &issues {
                     println!("{} | {} | {}", i.identifier, i.title, i.priority);
+// ---- Cost Tracking ----
+
+use crate::commands::costs::{TaskCost, CostBudget};
+use crate::commands::sla::{SlaPolicy, SlaEvent};
+
+async fn handle_costs(
+    pool: &AnyPool,
+    action: CostAction,
+    json: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        CostAction::Summary { project } => {
+            let total_cost: Option<f64> = sqlx::query_scalar(
+                "SELECT SUM(tc.amount) FROM task_costs tc JOIN issues i ON tc.task_identifier = i.identifier WHERE i.project_id = $1 AND tc.unit = 'dollars'"
+            )
+            .bind(project)
+            .fetch_one(pool)
+            .await?;
+
+            let budgets = sqlx::query_as::<_, CostBudget>(
+                "SELECT * FROM cost_budgets WHERE project_id = $1"
+            )
+            .bind(project)
+            .fetch_all(pool)
+            .await?;
+
+            if json {
+                let data = serde_json::json!({
+                    "project_id": project,
+                    "total_cost": total_cost.unwrap_or(0.0),
+                    "budgets": budgets,
+                });
+                println!("{}", serde_json::to_string_pretty(&data)?);
+            } else {
+                println!("Project {} Cost Summary", project);
+                println!("  Total spend: ${:.2}", total_cost.unwrap_or(0.0));
+                for b in &budgets {
+                    let pct = if b.amount > 0.0 { (b.spent / b.amount) * 100.0 } else { 0.0 };
+                    println!("  Budget ({} {}): ${:.2} / ${:.2} ({:.0}%)", b.budget_type, b.unit, b.spent, b.amount, pct);
+                }
+            }
+        }
+        CostAction::Task { identifier } => {
+            let costs = sqlx::query_as::<_, TaskCost>(
+                "SELECT * FROM task_costs WHERE task_identifier = $1 ORDER BY recorded_at ASC"
+            )
+            .bind(&identifier)
+            .fetch_all(pool)
+            .await?;
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&costs)?);
+            } else {
+                let mut total = 0.0f64;
+                for c in &costs {
+                    println!("  {} | {} {} | {} | {}", c.cost_type, c.amount, c.unit, c.agent_id, c.recorded_at);
+                    if c.unit == "dollars" { total += c.amount; }
+                }
+                println!("Total: ${:.2}", total);
+            }
+        }
+        CostAction::Record { task, agent, cost_type, amount, unit, description } => {
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO task_costs (task_identifier, agent_id, cost_type, amount, unit, description, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id"
+            )
+            .bind(&task)
+            .bind(&agent)
+            .bind(&cost_type)
+            .bind(amount)
+            .bind(&unit)
+            .bind(&description)
+            .bind(&now)
+            .fetch_one(pool)
+            .await?;
+
+            if json {
+                let cost = sqlx::query_as::<_, TaskCost>("SELECT * FROM task_costs WHERE id = $1")
+                    .bind(id)
+                    .fetch_one(pool)
+                    .await?;
+                println!("{}", serde_json::to_string_pretty(&cost)?);
+            } else {
+                println!("Recorded cost #{}: {} {} ({}) for task {} by agent {}", id, amount, unit, cost_type, task, agent);
+            }
+            notify_change();
+        }
+        CostAction::Budget { project, budget_type, amount, unit } => {
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            let u = unit.unwrap_or_else(|| "dollars".to_string());
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO cost_budgets (project_id, budget_type, amount, unit, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id"
+            )
+            .bind(project)
+            .bind(&budget_type)
+            .bind(amount)
+            .bind(&u)
+            .bind(&now)
+            .fetch_one(pool)
+            .await?;
+
+            if json {
+                let budget = sqlx::query_as::<_, CostBudget>("SELECT * FROM cost_budgets WHERE id = $1")
+                    .bind(id)
+                    .fetch_one(pool)
+                    .await?;
+                println!("{}", serde_json::to_string_pretty(&budget)?);
+            } else {
+                println!("Set {} budget: {} {} for project {}", budget_type, amount, u, project);
+            }
+            notify_change();
+        }
+        CostAction::Check { project } => {
+            let budgets = sqlx::query_as::<_, CostBudget>(
+                "SELECT * FROM cost_budgets WHERE project_id = $1"
+            )
+            .bind(project)
+            .fetch_all(pool)
+            .await?;
+
+            let alerts: Vec<_> = budgets.iter().filter_map(|b| {
+                let pct = if b.amount > 0.0 { b.spent / b.amount } else { 0.0 };
+                let threshold = b.alert_threshold.unwrap_or(0.8);
+                if pct >= threshold {
+                    Some(serde_json::json!({
+                        "budget_id": b.id,
+                        "budget_type": b.budget_type,
+                        "amount": b.amount,
+                        "spent": b.spent,
+                        "percentage": pct,
+                        "alert": true,
+                    }))
+                } else {
+                    None
+                }
+            }).collect();
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&alerts)?);
+            } else {
+                if alerts.is_empty() {
+                    println!("All budgets within limits.");
+                } else {
+                    for a in &alerts {
+                        println!("ALERT: {} budget at {:.0}% (${:.2} / ${:.2})",
+                            a["budget_type"].as_str().unwrap_or(""),
+                            a["percentage"].as_f64().unwrap_or(0.0) * 100.0,
+                            a["spent"].as_f64().unwrap_or(0.0),
+                            a["amount"].as_f64().unwrap_or(0.0));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+// ---- SLA Engine ----
+
+async fn handle_sla(
+    pool: &AnyPool,
+    action: SlaAction,
+    json: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        SlaAction::Check { project } => {
+            // Reuse the same logic from commands/sla.rs but directly
+            let policies = sqlx::query_as::<_, SlaPolicy>(
+                "SELECT * FROM sla_policies WHERE project_id = $1 AND enabled = 1"
+            )
+            .bind(project)
+            .fetch_all(pool)
+            .await?;
+
+            let issues_list = sqlx::query_as::<_, Issue>(
+                "SELECT i.* FROM issues i JOIN statuses s ON i.status_id = s.id WHERE i.project_id = $1 AND s.category = 'started'"
+            )
+            .bind(project)
+            .fetch_all(pool)
+            .await?;
+
+            let now = chrono::Utc::now();
+            let mut results = Vec::new();
+
+            for issue in &issues_list {
+                for policy in &policies {
+                    if let Some(ref pf) = policy.priority_filter {
+                        if !pf.is_empty() && pf != &issue.priority {
+                            continue;
+                        }
+                    }
+                    let elapsed_minutes = {
+                        let start = chrono::NaiveDateTime::parse_from_str(&issue.created_at, "%Y-%m-%d %H:%M:%SZ")
+                            .unwrap_or_else(|_| now.naive_utc());
+                        now.naive_utc().signed_duration_since(start).num_minutes() as f64
+                    };
+                    let remaining = policy.breach_minutes as f64 - elapsed_minutes;
+                    let status = if elapsed_minutes >= policy.breach_minutes as f64 {
+                        "breached"
+                    } else if elapsed_minutes >= (policy.breach_minutes - policy.warning_minutes) as f64 {
+                        "warning"
+                    } else {
+                        "ok"
+                    };
+                    results.push(serde_json::json!({
+                        "issue": issue.identifier,
+                        "policy": policy.name,
+                        "status": status,
+                        "elapsed_minutes": elapsed_minutes,
+                        "remaining_minutes": remaining.max(0.0),
+                    }));
+                }
+            }
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            } else {
+                for r in &results {
+                    println!("{} | {} | {} | {:.0}m elapsed | {:.0}m remaining",
+                        r["issue"].as_str().unwrap_or(""),
+                        r["policy"].as_str().unwrap_or(""),
+                        r["status"].as_str().unwrap_or(""),
+                        r["elapsed_minutes"].as_f64().unwrap_or(0.0),
+                        r["remaining_minutes"].as_f64().unwrap_or(0.0));
+                }
+                if results.is_empty() {
+                    println!("No active SLA tracking.");
+                }
+            }
+        }
+        SlaAction::Enforce { project } => {
+            let events = crate::commands::sla::enforce_sla_async(pool, project).await
+                .map_err(|e| -> Box<dyn std::error::Error> { Box::from(e) })?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&events)?);
+            } else {
+                if events.is_empty() {
+                    println!("No SLA violations to enforce.");
+                } else {
+                    for e in &events {
+                        println!("[{}] {}", e.event_type, e.message);
+                    }
+                }
+            }
+            notify_change();
+        }
+        SlaAction::Create { project, name, target_type, priority, warning, breach, escalation } => {
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            let esc = escalation.unwrap_or_else(|| "{}".to_string());
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO sla_policies (project_id, name, target_type, priority_filter, warning_minutes, breach_minutes, escalation_action, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id"
+            )
+            .bind(project)
+            .bind(&name)
+            .bind(&target_type)
+            .bind(&priority)
+            .bind(warning)
+            .bind(breach)
+            .bind(&esc)
+            .bind(&now)
+            .fetch_one(pool)
+            .await?;
+
+            let policy = sqlx::query_as::<_, SlaPolicy>("SELECT * FROM sla_policies WHERE id = $1")
+                .bind(id)
+                .fetch_one(pool)
+                .await?;
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&policy)?);
+            } else {
+                println!("Created SLA policy '{}' (id: {}): {} warning at {}m, breach at {}m",
+                    name, id, target_type, warning, breach);
+            }
+            notify_change();
+        }
+        SlaAction::List { project } => {
+            let policies = sqlx::query_as::<_, SlaPolicy>(
+                "SELECT * FROM sla_policies WHERE project_id = $1 ORDER BY created_at DESC"
+            )
+            .bind(project)
+            .fetch_all(pool)
+            .await?;
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&policies)?);
+            } else {
+                for p in &policies {
+                    let enabled = if p.enabled == 1 { "enabled" } else { "disabled" };
+                    println!("{} | {} | {} | warn:{}m breach:{}m | {} | {}",
+                        p.id, p.name, p.target_type, p.warning_minutes, p.breach_minutes,
+                        p.priority_filter.as_deref().unwrap_or("all"), enabled);
+                }
+            }
+        }
+        SlaAction::Delete { id } => {
+            sqlx::query("DELETE FROM sla_policies WHERE id = $1")
+                .bind(id)
+                .execute(pool)
+                .await?;
+            println!("Deleted SLA policy {}", id);
+            notify_change();
+        }
+        SlaAction::Dashboard { project } => {
+            let policies = sqlx::query_as::<_, SlaPolicy>(
+                "SELECT * FROM sla_policies WHERE project_id = $1"
+            )
+            .bind(project)
+            .fetch_all(pool)
+            .await?;
+
+            let events = sqlx::query_as::<_, SlaEvent>(
+                "SELECT se.* FROM sla_events se JOIN sla_policies sp ON se.sla_policy_id = sp.id WHERE sp.project_id = $1 ORDER BY se.created_at DESC LIMIT 20"
+            )
+            .bind(project)
+            .fetch_all(pool)
+            .await?;
+
+            if json {
+                let data = serde_json::json!({
+                    "policies": policies,
+                    "recent_events": events,
+                });
+                println!("{}", serde_json::to_string_pretty(&data)?);
+            } else {
+                println!("SLA Dashboard for project {}", project);
+                println!("  Policies: {}", policies.len());
+                println!("  Recent events:");
+                for e in &events {
+                    println!("    [{}] {} (issue #{})", e.event_type, e.message, e.issue_id);
                 }
             }
         }

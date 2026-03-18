@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { listen } from "@/tauri/events";
-import { Trash2, Activity, Bot, Cpu, CheckCircle2, Clock, AlertTriangle, Wifi, Shield, ShieldCheck, ShieldX, Plus, X, ChevronDown, Search } from "lucide-react";
+import { Trash2, Activity, Bot, Cpu, CheckCircle2, Clock, AlertTriangle, Wifi, Shield, ShieldCheck, ShieldX, Plus, X, ChevronDown, Search, DollarSign } from "lucide-react";
 import type { AgentMetrics, ExecutionLog, AgentPermission, PermissionPreset, PermissionCheckResult, Agent as AgentType } from "@/types";
 import { useAgents, useProjectMetrics } from "@/hooks/use-agents";
 import { getAgentStats, recentActivity, getIssue, deregisterAgent, listAgentPermissions, setAgentPermission, removeAgentPermission, clearAgentPermissions, listPermissionPresets, applyPresetToAgent, checkPermission } from "@/tauri/commands";
+import { cn } from "@/lib/utils";
+import { CostDashboard } from "@/components/CostDashboard";
 
 export interface AgentDashboardProps {
   projectId: number | null;
@@ -260,8 +262,10 @@ function AgentPermissionsPanel({ agent }: { agent: AgentType }) {
     </div>
   );
 }
+type DashboardTab = "agents" | "costs";
 
 export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps) {
+  const [dashboardTab, setDashboardTab] = useState<DashboardTab>("agents");
   const { agents, loading: agentsLoading, refresh: refreshAgents } = useAgents();
   const { metrics, loading: metricsLoading, refresh: refreshMetrics } = useProjectMetrics(projectId);
   const [agentStats, setAgentStats] = useState<Record<string, AgentMetrics>>({});
@@ -337,6 +341,38 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
 
   return (
     <div className="p-6 space-y-6 h-full overflow-y-auto">
+      {/* Tab Switcher */}
+      <div className="flex gap-1 border-b border-border -mt-2 mb-2">
+        <button
+          onClick={() => setDashboardTab("agents")}
+          className={cn(
+            "px-4 py-2 text-sm border-b-2 transition-colors -mb-[1px] flex items-center gap-1.5",
+            dashboardTab === "agents" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Bot className="h-3.5 w-3.5" />
+          Agents
+        </button>
+        <button
+          onClick={() => setDashboardTab("costs")}
+          className={cn(
+            "px-4 py-2 text-sm border-b-2 transition-colors -mb-[1px] flex items-center gap-1.5",
+            dashboardTab === "costs" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <DollarSign className="h-3.5 w-3.5" />
+          Costs
+        </button>
+      </div>
+
+      {dashboardTab === "costs" && projectId && (
+        <CostDashboard projectId={projectId} />
+      )}
+      {dashboardTab === "costs" && !projectId && (
+        <div className="flex items-center justify-center h-64 text-muted-foreground">Select a project to view cost data</div>
+      )}
+
+      {dashboardTab === "agents" && <>
       {/* Metrics Overview */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <MetricCard icon={Cpu} label="Total Tasks" value={metricsLoading ? "--" : (metrics?.total_tasks ?? 0)} />
@@ -527,6 +563,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
           </div>
         )}
       </div>
+      </>}
     </div>
   );
 }

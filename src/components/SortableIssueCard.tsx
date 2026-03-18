@@ -15,7 +15,7 @@ interface Props {
   onUpdateIssue?: (id: number, input: { title?: string; priority?: string; assignee_id?: number }) => Promise<unknown>;
 }
 
-export function SortableIssueCard({ issue, member, labels, issues, members, hasGitLinks, isStaleSoon, onClick, onUpdateIssue }: Props) {
+export function SortableIssueCard({ issue, member, labels, issues, members: _members, hasGitLinks: _hasGitLinks, isStaleSoon: _isStaleSoon, onClick, onUpdateIssue: _onUpdateIssue }: Props) {
   const {
     attributes,
     listeners,
@@ -38,11 +38,7 @@ export function SortableIssueCard({ issue, member, labels, issues, members, hasG
         member={member}
         labels={labels}
         issues={issues}
-        members={members}
-        hasGitLinks={hasGitLinks}
-        isStaleSoon={isStaleSoon}
         onClick={onClick}
-        onUpdateIssue={onUpdateIssue}
       />
     </div>
   );

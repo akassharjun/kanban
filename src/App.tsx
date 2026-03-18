@@ -408,13 +408,9 @@ function App() {
         {page === "settings" && selectedProject && (
           <ProjectSettingsView
             project={selectedProject}
-            statuses={statuses}
-            members={members}
             onUpdateProject={updateProject}
             onRefreshStatuses={refreshStatuses}
             onRefreshLabels={refreshLabels}
-            onRefreshEpics={refreshEpics}
-            onRefreshMilestones={refreshMilestones}
             onDeleteProject={async (id) => {
               await _removeProject(id);
               setSelectedProjectId(null);

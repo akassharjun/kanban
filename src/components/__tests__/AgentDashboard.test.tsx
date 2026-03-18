@@ -37,6 +37,11 @@ describe("AgentDashboard", () => {
 
   it("renders agents section header", () => {
     render(<AgentDashboard projectId={1} />);
-    expect(screen.getByText("Agents")).toBeInTheDocument();
+    expect(screen.getAllByText("Agents").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders cost tab", () => {
+    render(<AgentDashboard projectId={1} />);
+    expect(screen.getByText("Costs")).toBeInTheDocument();
   });
 });
