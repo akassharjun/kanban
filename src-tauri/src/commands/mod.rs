@@ -1,12 +1,14 @@
 pub mod agents;
 pub mod comments;
 pub mod custom_fields;
+pub mod epics;
 pub mod execution_logs;
 pub mod health;
 pub mod hooks;
 pub mod issues;
 pub mod labels;
 pub mod members;
+pub mod milestones;
 pub mod notifications;
 pub mod projects;
 pub mod relations;

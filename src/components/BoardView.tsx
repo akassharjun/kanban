@@ -11,7 +11,7 @@ import {
 } from "@dnd-kit/core";
 import { BoardColumn } from "./BoardColumn";
 import { IssueCard } from "./IssueCard";
-import type { Issue, Status, Member, Label } from "@/types";
+import type { Issue, Status, Member, Label, Epic } from "@/types";
 
 interface BoardViewProps {
   issues: Issue[];
@@ -19,6 +19,7 @@ interface BoardViewProps {
   statuses: Status[];
   members: Member[];
   labels: Label[];
+  epics?: Epic[];
   getLabelsForIssue: (issueId: number) => Label[];
   onUpdateIssue: (id: number, input: { status_id?: number; position?: number }) => Promise<unknown>;
   onClickIssue: (issue: Issue) => void;
@@ -31,6 +32,7 @@ export function BoardView({
   statuses,
   members,
   labels,
+  epics,
   getLabelsForIssue,
   onUpdateIssue,
   onClickIssue,
@@ -127,6 +129,7 @@ export function BoardView({
               issues={columnIssues}
               allIssues={allIssues || issues}
               members={members}
+              epics={epics}
               getLabelsForIssue={getLabelsForIssue}
               onClickIssue={onClickIssue}
               onQuickCreate={(title) => onQuickCreate(status.id, title)}

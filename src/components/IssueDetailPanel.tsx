@@ -3,7 +3,7 @@ import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalL
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment } from "@/types";
+import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, Epic, MilestoneWithProgress } from "@/types";
 import * as api from "@/tauri/commands";
 import { TaskContractDialog } from "./TaskContractDialog";
 
@@ -12,6 +12,8 @@ interface IssueDetailPanelProps {
   statuses: Status[];
   members: Member[];
   projectLabels: Label[];
+  epics?: Epic[];
+  milestones?: MilestoneWithProgress[];
   onClose: () => void;
   onUpdate: (id: number, input: Record<string, unknown>) => Promise<unknown>;
   onDelete: (id: number) => Promise<void>;
@@ -62,6 +64,8 @@ export function IssueDetailPanel({
   statuses,
   members,
   projectLabels: _projectLabels,
+  epics,
+  milestones,
   onClose,
   onUpdate,
   onDelete,
@@ -333,6 +337,97 @@ export function IssueDetailPanel({
               {issue.labels.length === 0 && <span className="text-[13px] text-muted-foreground/40">None</span>}
             </div>
           </div>
+
+          {/* Epic */}
+          {epics && epics.length > 0 && (
+            <div className="flex items-center py-1.5 text-sm">
+              <span className="w-24 text-[13px] text-muted-foreground/70">Epic</span>
+              <Dropdown
+                open={openMenu === "epic"}
+                onClose={() => setOpenMenu(null)}
+                trigger={
+                  <button
+                    onClick={() => setOpenMenu(openMenu === "epic" ? null : "epic")}
+                    className="flex items-center gap-2 rounded-md px-2 py-1 text-[13px] hover:bg-muted transition-colors"
+                  >
+                    {issue.epic_id ? (
+                      <>
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: epics.find(e => e.id === issue.epic_id)?.color || "#6366f1" }} />
+                        {epics.find(e => e.id === issue.epic_id)?.title || "Unknown"}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground/60">None</span>
+                    )}
+                    <ChevronDown className="h-3 w-3 text-muted-foreground/40" />
+                  </button>
+                }
+              >
+                <button
+                  onClick={async () => { await onUpdate(issueId, { epic_id: -1 }); await loadIssue(); setOpenMenu(null); }}
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors"
+                >
+                  None
+                </button>
+                {epics.filter(e => e.status === "active").map(e => (
+                  <button
+                    key={e.id}
+                    onClick={async () => { await onUpdate(issueId, { epic_id: e.id }); await loadIssue(); setOpenMenu(null); }}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors",
+                      e.id === issue.epic_id && "bg-muted font-medium"
+                    )}
+                  >
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: e.color }} />
+                    {e.title}
+                  </button>
+                ))}
+              </Dropdown>
+            </div>
+          )}
+
+          {/* Milestone */}
+          {milestones && milestones.length > 0 && (
+            <div className="flex items-center py-1.5 text-sm">
+              <span className="w-24 text-[13px] text-muted-foreground/70">Milestone</span>
+              <Dropdown
+                open={openMenu === "milestone"}
+                onClose={() => setOpenMenu(null)}
+                trigger={
+                  <button
+                    onClick={() => setOpenMenu(openMenu === "milestone" ? null : "milestone")}
+                    className="flex items-center gap-2 rounded-md px-2 py-1 text-[13px] hover:bg-muted transition-colors"
+                  >
+                    {issue.milestone_id ? (
+                      milestones.find(m => m.id === issue.milestone_id)?.title || "Unknown"
+                    ) : (
+                      <span className="text-muted-foreground/60">None</span>
+                    )}
+                    <ChevronDown className="h-3 w-3 text-muted-foreground/40" />
+                  </button>
+                }
+              >
+                <button
+                  onClick={async () => { await onUpdate(issueId, { milestone_id: -1 }); await loadIssue(); setOpenMenu(null); }}
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors"
+                >
+                  None
+                </button>
+                {milestones.filter(m => m.status === "open").map(m => (
+                  <button
+                    key={m.id}
+                    onClick={async () => { await onUpdate(issueId, { milestone_id: m.id }); await loadIssue(); setOpenMenu(null); }}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors",
+                      m.id === issue.milestone_id && "bg-muted font-medium"
+                    )}
+                  >
+                    {m.title}
+                    {m.due_date && <span className="text-[10px] text-muted-foreground/50 ml-auto">{m.due_date}</span>}
+                  </button>
+                ))}
+              </Dropdown>
+            </div>
+          )}
 
           {/* Due date */}
           <div className="flex items-center py-1.5 text-sm">

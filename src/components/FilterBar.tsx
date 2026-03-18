@@ -1,24 +1,28 @@
 import { Filter, X } from "lucide-react";
-import type { Status, Member, Label } from "@/types";
+import type { Status, Member, Label, Epic, MilestoneWithProgress } from "@/types";
 
 export interface Filters {
   status_id?: number;
   priority?: string;
   assignee_id?: number;
   label_id?: number;
+  epic_id?: number;
+  milestone_id?: number;
 }
 
 interface FilterBarProps {
   statuses: Status[];
   members: Member[];
   labels: Label[];
+  epics?: Epic[];
+  milestones?: MilestoneWithProgress[];
   filters: Filters;
   onFiltersChange: (filters: Filters) => void;
 }
 
 const selectClass = "rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs outline-none hover:bg-muted border-none cursor-pointer transition-colors text-muted-foreground hover:text-foreground";
 
-export function FilterBar({ statuses, members, labels, filters, onFiltersChange }: FilterBarProps) {
+export function FilterBar({ statuses, members, labels, epics, milestones, filters, onFiltersChange }: FilterBarProps) {
   const hasFilters = Object.values(filters).some(v => v !== undefined);
 
   return (
@@ -64,6 +68,28 @@ export function FilterBar({ statuses, members, labels, filters, onFiltersChange 
         <option value="">All labels</option>
         {labels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
       </select>
+
+      {epics && epics.length > 0 && (
+        <select
+          value={filters.epic_id ?? ""}
+          onChange={e => onFiltersChange({ ...filters, epic_id: e.target.value ? Number(e.target.value) : undefined })}
+          className={selectClass}
+        >
+          <option value="">All epics</option>
+          {epics.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+        </select>
+      )}
+
+      {milestones && milestones.length > 0 && (
+        <select
+          value={filters.milestone_id ?? ""}
+          onChange={e => onFiltersChange({ ...filters, milestone_id: e.target.value ? Number(e.target.value) : undefined })}
+          className={selectClass}
+        >
+          <option value="">All milestones</option>
+          {milestones.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
+        </select>
+      )}
 
       {hasFilters && (
         <button

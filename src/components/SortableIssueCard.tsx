@@ -1,17 +1,18 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { IssueCard } from "./IssueCard";
-import type { Issue, Member, Label } from "@/types";
+import type { Issue, Member, Label, Epic } from "@/types";
 
 interface Props {
   issue: Issue;
   member?: Member;
   labels: Label[];
+  epic?: Epic;
   issues?: Issue[];
   onClick: () => void;
 }
 
-export function SortableIssueCard({ issue, member, labels, issues, onClick }: Props) {
+export function SortableIssueCard({ issue, member, labels, epic, issues, onClick }: Props) {
   const {
     attributes,
     listeners,
@@ -33,6 +34,7 @@ export function SortableIssueCard({ issue, member, labels, issues, onClick }: Pr
         issue={issue}
         member={member}
         labels={labels}
+        epic={epic}
         issues={issues}
         onClick={onClick}
       />

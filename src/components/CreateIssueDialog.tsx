@@ -6,13 +6,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { DialogOverlay, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Check } from "lucide-react";
-import type { Status, Member, Label, IssueTemplate } from "@/types";
+import type { Status, Member, Label, IssueTemplate, Epic, MilestoneWithProgress } from "@/types";
 
 interface CreateIssueDialogProps {
   projectId: number;
   statuses: Status[];
   members: Member[];
   labels: Label[];
+  epics?: Epic[];
+  milestones?: MilestoneWithProgress[];
   templates: IssueTemplate[];
   defaultStatusId?: number;
   parentId?: number;
@@ -26,6 +28,8 @@ interface CreateIssueDialogProps {
     assignee_id?: number;
     parent_id?: number;
     label_ids?: number[];
+    epic_id?: number;
+    milestone_id?: number;
   }) => Promise<unknown>;
 }
 
@@ -34,6 +38,8 @@ export function CreateIssueDialog({
   statuses,
   members,
   labels,
+  epics,
+  milestones,
   templates,
   defaultStatusId,
   parentId,
@@ -46,6 +52,8 @@ export function CreateIssueDialog({
   const [priority, setPriority] = useState("none");
   const [assigneeId, setAssigneeId] = useState<number | undefined>();
   const [selectedLabels, setSelectedLabels] = useState<number[]>([]);
+  const [epicId, setEpicId] = useState<number | undefined>();
+  const [milestoneId, setMilestoneId] = useState<number | undefined>();
 
   const applyTemplate = (template: IssueTemplate) => {
     if (template.description_template) setDescription(template.description_template);
@@ -70,6 +78,8 @@ export function CreateIssueDialog({
       assignee_id: assigneeId,
       parent_id: parentId,
       label_ids: selectedLabels.length > 0 ? selectedLabels : undefined,
+      epic_id: epicId,
+      milestone_id: milestoneId,
     });
     onClose();
   };
@@ -150,6 +160,33 @@ export function CreateIssueDialog({
               <option value="">Unassigned</option>
               {members.map(m => <option key={m.id} value={m.id}>{m.display_name || m.name}</option>)}
             </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {epics && epics.length > 0 && (
+              <div>
+                <label className="block text-[13px] text-muted-foreground mb-1.5">Epic</label>
+                <Select
+                  value={epicId ?? ""}
+                  onChange={(e) => setEpicId(e.target.value ? Number(e.target.value) : undefined)}
+                >
+                  <option value="">No epic</option>
+                  {epics.filter(e => e.status === "active").map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+                </Select>
+              </div>
+            )}
+            {milestones && milestones.length > 0 && (
+              <div>
+                <label className="block text-[13px] text-muted-foreground mb-1.5">Milestone</label>
+                <Select
+                  value={milestoneId ?? ""}
+                  onChange={(e) => setMilestoneId(e.target.value ? Number(e.target.value) : undefined)}
+                >
+                  <option value="">No milestone</option>
+                  {milestones.filter(m => m.status === "open").map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
+                </Select>
+              </div>
+            )}
           </div>
 
           {labels.length > 0 && (

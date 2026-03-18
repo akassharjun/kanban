@@ -4,19 +4,20 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SortableIssueCard } from "./SortableIssueCard";
-import type { Issue, Status, Member, Label } from "@/types";
+import type { Issue, Status, Member, Label, Epic } from "@/types";
 
 interface BoardColumnProps {
   status: Status;
   issues: Issue[];
   allIssues?: Issue[];
   members: Member[];
+  epics?: Epic[];
   getLabelsForIssue: (issueId: number) => Label[];
   onClickIssue: (issue: Issue) => void;
   onQuickCreate: (title: string) => Promise<unknown>;
 }
 
-export function BoardColumn({ status, issues, allIssues, members, getLabelsForIssue, onClickIssue, onQuickCreate }: BoardColumnProps) {
+export function BoardColumn({ status, issues, allIssues, members, epics, getLabelsForIssue, onClickIssue, onQuickCreate }: BoardColumnProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -76,6 +77,7 @@ export function BoardColumn({ status, issues, allIssues, members, getLabelsForIs
                 issue={issue}
                 member={getMember(issue.assignee_id)}
                 labels={getLabelsForIssue(issue.id)}
+                epic={issue.epic_id ? epics?.find(e => e.id === issue.epic_id) : undefined}
                 issues={allIssues}
                 onClick={() => onClickIssue(issue)}
               />

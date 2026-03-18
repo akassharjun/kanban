@@ -47,8 +47,41 @@ export interface Issue {
   position: number;
   estimate: number | null;
   due_date: string | null;
+  epic_id: number | null;
+  milestone_id: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export type EpicStatus = "active" | "closed";
+
+export interface Epic {
+  id: number;
+  project_id: number;
+  title: string;
+  description: string | null;
+  color: string;
+  status: EpicStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MilestoneStatus = "open" | "closed";
+
+export interface Milestone {
+  id: number;
+  project_id: number;
+  title: string;
+  description: string | null;
+  due_date: string | null;
+  status: MilestoneStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MilestoneWithProgress extends Milestone {
+  total_issues: number;
+  completed_issues: number;
 }
 
 export interface Label {

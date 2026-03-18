@@ -245,3 +245,31 @@ CREATE TABLE IF NOT EXISTS project_agent_config (
     heartbeat_interval_seconds INTEGER NOT NULL DEFAULT 60,
     missed_heartbeats_before_offline INTEGER NOT NULL DEFAULT 3
 );
+
+-- Epics (project-scoped grouping)
+CREATE TABLE IF NOT EXISTS epics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT,
+    color TEXT NOT NULL DEFAULT '#6366f1',
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'closed')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_epics_project ON epics(project_id);
+
+-- Milestones (project-scoped time targets)
+CREATE TABLE IF NOT EXISTS milestones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT,
+    due_date TEXT,
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'closed')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_milestones_project ON milestones(project_id);

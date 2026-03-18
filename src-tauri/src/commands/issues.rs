@@ -15,6 +15,8 @@ pub struct CreateIssueInput {
     pub estimate: Option<f64>,
     pub due_date: Option<String>,
     pub label_ids: Option<Vec<i64>>,
+    pub epic_id: Option<i64>,
+    pub milestone_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -28,6 +30,8 @@ pub struct UpdateIssueInput {
     pub position: Option<f64>,
     pub estimate: Option<f64>,
     pub due_date: Option<String>,
+    pub epic_id: Option<i64>,
+    pub milestone_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -97,8 +101,11 @@ pub fn create_issue(state: State<AppState>, input: CreateIssueInput) -> Result<I
             .fetch_one(&mut *tx).await?;
         let position = max_pos.unwrap_or(-1.0) + 1.0;
 
+        let epic_id = input.epic_id.and_then(|v| if v <= 0 { None } else { Some(v) });
+        let milestone_id = input.milestone_id.and_then(|v| if v <= 0 { None } else { Some(v) });
+
         let issue_id: i64 = sqlx::query_scalar(
-            "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id"
+            "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, epic_id, milestone_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id"
         )
         .bind(input.project_id)
         .bind(&identifier)
@@ -111,6 +118,8 @@ pub fn create_issue(state: State<AppState>, input: CreateIssueInput) -> Result<I
         .bind(position)
         .bind(input.estimate)
         .bind(&input.due_date)
+        .bind(epic_id)
+        .bind(milestone_id)
         .bind(&now)
         .bind(&now)
         .fetch_one(&mut *tx)
@@ -297,6 +306,28 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
                 sqlx::query("UPDATE issues SET due_date = NULL, updated_at = $1 WHERE id = $2")
                     .bind(&now).bind(id).execute(&state.pool).await?;
             }
+        }
+        if let Some(epic_id) = input.epic_id {
+            let val = if epic_id <= 0 { None } else { Some(epic_id) };
+            if let Some(v) = val {
+                sqlx::query("UPDATE issues SET epic_id = $1, updated_at = $2 WHERE id = $3")
+                    .bind(v).bind(&now).bind(id).execute(&state.pool).await?;
+            } else {
+                sqlx::query("UPDATE issues SET epic_id = NULL, updated_at = $1 WHERE id = $2")
+                    .bind(&now).bind(id).execute(&state.pool).await?;
+            }
+            log_activity(&state.pool, id, "epic_id", old_issue.epic_id.map(|v| v.to_string()), val.map(|v| v.to_string())).await?;
+        }
+        if let Some(milestone_id) = input.milestone_id {
+            let val = if milestone_id <= 0 { None } else { Some(milestone_id) };
+            if let Some(v) = val {
+                sqlx::query("UPDATE issues SET milestone_id = $1, updated_at = $2 WHERE id = $3")
+                    .bind(v).bind(&now).bind(id).execute(&state.pool).await?;
+            } else {
+                sqlx::query("UPDATE issues SET milestone_id = NULL, updated_at = $1 WHERE id = $2")
+                    .bind(&now).bind(id).execute(&state.pool).await?;
+            }
+            log_activity(&state.pool, id, "milestone_id", old_issue.milestone_id.map(|v| v.to_string()), val.map(|v| v.to_string())).await?;
         }
 
         let updated = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")

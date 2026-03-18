@@ -7,7 +7,7 @@ import type {
   ActivityLogEntry, Notification, Agent, AgentMetrics,
   ProjectMetrics, CustomField, IssueTemplate, Hook,
   ProjectAgentConfig, FullTaskContract, ExecutionLog, TaskGraph,
-  IssueWithLabels, UndoLogEntry,
+  IssueWithLabels, UndoLogEntry, Epic, Milestone, MilestoneWithProgress,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -64,25 +64,25 @@ const labels: Record<number, Label[]> = {
 
 const issues: Issue[] = [
   // Kanban Core - Backlog
-  { id: 1, project_id: 1, identifier: "KAN-1", title: "Add dark/light mode toggle animation", description: "Smooth transition between themes", status_id: 1, priority: "low", assignee_id: null, parent_id: null, position: 0, estimate: 2, due_date: null, created_at: ago(5000), updated_at: ago(100) },
-  { id: 2, project_id: 1, identifier: "KAN-2", title: "Implement board column resize", description: "Allow users to resize columns by dragging edges", status_id: 1, priority: "medium", assignee_id: null, parent_id: null, position: 1, estimate: 5, due_date: null, created_at: ago(4800), updated_at: ago(200) },
+  { id: 1, project_id: 1, identifier: "KAN-1", title: "Add dark/light mode toggle animation", description: "Smooth transition between themes", status_id: 1, priority: "low", assignee_id: null, parent_id: null, position: 0, estimate: 2, due_date: null, epic_id: 1, milestone_id: 2, created_at: ago(5000), updated_at: ago(100) },
+  { id: 2, project_id: 1, identifier: "KAN-2", title: "Implement board column resize", description: "Allow users to resize columns by dragging edges", status_id: 1, priority: "medium", assignee_id: null, parent_id: null, position: 1, estimate: 5, due_date: null, epic_id: 1, milestone_id: 2, created_at: ago(4800), updated_at: ago(200) },
   // Kanban Core - Todo
-  { id: 3, project_id: 1, identifier: "KAN-3", title: "Add keyboard shortcuts help panel", description: "Show a modal with all keyboard shortcuts when user presses ?", status_id: 2, priority: "medium", assignee_id: 1, parent_id: null, position: 0, estimate: 3, due_date: "2026-03-25", created_at: ago(3000), updated_at: ago(50) },
-  { id: 4, project_id: 1, identifier: "KAN-4", title: "Issue templates for common workflows", description: "Pre-fill issue fields from templates", status_id: 2, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: 5, due_date: "2026-03-22", created_at: ago(2800), updated_at: ago(30) },
-  { id: 5, project_id: 1, identifier: "KAN-5", title: "Export board to CSV/JSON", description: null, status_id: 2, priority: "low", assignee_id: null, parent_id: null, position: 2, estimate: null, due_date: null, created_at: ago(2700), updated_at: ago(500) },
+  { id: 3, project_id: 1, identifier: "KAN-3", title: "Add keyboard shortcuts help panel", description: "Show a modal with all keyboard shortcuts when user presses ?", status_id: 2, priority: "medium", assignee_id: 1, parent_id: null, position: 0, estimate: 3, due_date: "2026-03-25", epic_id: 2, milestone_id: 1, created_at: ago(3000), updated_at: ago(50) },
+  { id: 4, project_id: 1, identifier: "KAN-4", title: "Issue templates for common workflows", description: "Pre-fill issue fields from templates", status_id: 2, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: 5, due_date: "2026-03-22", epic_id: 2, milestone_id: 1, created_at: ago(2800), updated_at: ago(30) },
+  { id: 5, project_id: 1, identifier: "KAN-5", title: "Export board to CSV/JSON", description: null, status_id: 2, priority: "low", assignee_id: null, parent_id: null, position: 2, estimate: null, due_date: null, epic_id: null, milestone_id: null, created_at: ago(2700), updated_at: ago(500) },
   // Kanban Core - In Progress
-  { id: 6, project_id: 1, identifier: "KAN-6", title: "Fix drag-drop position calculation", description: "Position sometimes becomes NaN when dropping at list boundaries", status_id: 3, priority: "urgent", assignee_id: 2, parent_id: null, position: 0, estimate: 2, due_date: "2026-03-19", created_at: ago(1000), updated_at: ago(5) },
-  { id: 7, project_id: 1, identifier: "KAN-7", title: "Improve issue detail panel UX", description: "## Improvements needed\n- Better spacing between sections\n- Collapsible sections\n- Loading states for async ops", status_id: 3, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: 8, due_date: "2026-03-20", created_at: ago(800), updated_at: ago(2) },
-  { id: 8, project_id: 1, identifier: "KAN-8", title: "Add comment mentions (@user)", description: null, status_id: 3, priority: "medium", assignee_id: 2, parent_id: 7, position: 0, estimate: 3, due_date: null, created_at: ago(600), updated_at: ago(15) },
+  { id: 6, project_id: 1, identifier: "KAN-6", title: "Fix drag-drop position calculation", description: "Position sometimes becomes NaN when dropping at list boundaries", status_id: 3, priority: "urgent", assignee_id: 2, parent_id: null, position: 0, estimate: 2, due_date: "2026-03-19", epic_id: 1, milestone_id: 1, created_at: ago(1000), updated_at: ago(5) },
+  { id: 7, project_id: 1, identifier: "KAN-7", title: "Improve issue detail panel UX", description: "## Improvements needed\n- Better spacing between sections\n- Collapsible sections\n- Loading states for async ops", status_id: 3, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: 8, due_date: "2026-03-20", epic_id: 1, milestone_id: 1, created_at: ago(800), updated_at: ago(2) },
+  { id: 8, project_id: 1, identifier: "KAN-8", title: "Add comment mentions (@user)", description: null, status_id: 3, priority: "medium", assignee_id: 2, parent_id: 7, position: 0, estimate: 3, due_date: null, epic_id: 1, milestone_id: null, created_at: ago(600), updated_at: ago(15) },
   // Kanban Core - In Review
-  { id: 9, project_id: 1, identifier: "KAN-9", title: "Implement undo/redo for issue edits", description: "Use Cmd+Z to undo last change", status_id: 4, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: 5, due_date: null, created_at: ago(2000), updated_at: ago(60) },
+  { id: 9, project_id: 1, identifier: "KAN-9", title: "Implement undo/redo for issue edits", description: "Use Cmd+Z to undo last change", status_id: 4, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: 5, due_date: null, epic_id: 2, milestone_id: 1, created_at: ago(2000), updated_at: ago(60) },
   // Kanban Core - Done
-  { id: 10, project_id: 1, identifier: "KAN-10", title: "Setup project with Tauri v2", description: null, status_id: 5, priority: "high", assignee_id: 1, parent_id: null, position: 0, estimate: null, due_date: null, created_at: ago(9000), updated_at: ago(8000) },
-  { id: 11, project_id: 1, identifier: "KAN-11", title: "Implement board view with drag-drop", description: null, status_id: 5, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: null, due_date: null, created_at: ago(8500), updated_at: ago(7000) },
-  { id: 12, project_id: 1, identifier: "KAN-12", title: "Add list and tree views", description: null, status_id: 5, priority: "medium", assignee_id: 1, parent_id: null, position: 2, estimate: null, due_date: null, created_at: ago(7000), updated_at: ago(6000) },
+  { id: 10, project_id: 1, identifier: "KAN-10", title: "Setup project with Tauri v2", description: null, status_id: 5, priority: "high", assignee_id: 1, parent_id: null, position: 0, estimate: null, due_date: null, epic_id: null, milestone_id: 1, created_at: ago(9000), updated_at: ago(8000) },
+  { id: 11, project_id: 1, identifier: "KAN-11", title: "Implement board view with drag-drop", description: null, status_id: 5, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: null, due_date: null, epic_id: 1, milestone_id: 1, created_at: ago(8500), updated_at: ago(7000) },
+  { id: 12, project_id: 1, identifier: "KAN-12", title: "Add list and tree views", description: null, status_id: 5, priority: "medium", assignee_id: 1, parent_id: null, position: 2, estimate: null, due_date: null, epic_id: 1, milestone_id: 1, created_at: ago(7000), updated_at: ago(6000) },
   // Agent Platform
-  { id: 13, project_id: 2, identifier: "AGT-1", title: "Design task contract schema", description: null, status_id: 9, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: null, due_date: null, created_at: ago(4000), updated_at: ago(3000) },
-  { id: 14, project_id: 2, identifier: "AGT-2", title: "Implement agent heartbeat", description: null, status_id: 8, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: 3, due_date: "2026-03-21", created_at: ago(3500), updated_at: ago(100) },
+  { id: 13, project_id: 2, identifier: "AGT-1", title: "Design task contract schema", description: null, status_id: 9, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: null, due_date: null, epic_id: 3, milestone_id: 3, created_at: ago(4000), updated_at: ago(3000) },
+  { id: 14, project_id: 2, identifier: "AGT-2", title: "Implement agent heartbeat", description: null, status_id: 8, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: 3, due_date: "2026-03-21", epic_id: 3, milestone_id: 3, created_at: ago(3500), updated_at: ago(100) },
 ];
 
 const issueLabels: Record<number, number[]> = {
@@ -114,6 +114,18 @@ const agents: Agent[] = [
   { id: "claude-opus-1", name: "Claude Opus", agent_type: "implementation", skills: ["rust", "typescript", "react", "sql"], task_types: ["implementation", "review"], max_concurrent: 3, max_complexity: "high", member_id: 2, worktree_path: "/tmp/kanban-wt-1", status: "busy", registered_at: ago(5000), last_heartbeat: ago(1), last_activity_at: ago(2) },
   { id: "review-bot-1", name: "Review Bot", agent_type: "review", skills: ["code-review", "testing"], task_types: ["review", "testing"], max_concurrent: 5, max_complexity: "medium", member_id: 3, worktree_path: null, status: "idle", registered_at: ago(3000), last_heartbeat: ago(5), last_activity_at: ago(60) },
   { id: "research-agent-1", name: "Research Agent", agent_type: "research", skills: ["analysis", "documentation"], task_types: ["research", "decomposition"], max_concurrent: 2, max_complexity: "low", member_id: null, worktree_path: null, status: "offline", registered_at: ago(2000), last_heartbeat: ago(600), last_activity_at: ago(500) },
+];
+
+const epics: Epic[] = [
+  { id: 1, project_id: 1, title: "Board UX Overhaul", description: "Comprehensive UX improvements for the kanban board", color: "#6366f1", status: "active", created_at: ago(8000), updated_at: ago(100) },
+  { id: 2, project_id: 1, title: "Productivity Features", description: "Search, templates, shortcuts", color: "#f59e0b", status: "active", created_at: ago(6000), updated_at: ago(200) },
+  { id: 3, project_id: 2, title: "Agent Core", description: "Core agent infrastructure", color: "#10b981", status: "active", created_at: ago(4000), updated_at: ago(300) },
+];
+
+const milestones: Milestone[] = [
+  { id: 1, project_id: 1, title: "v1.0 Release", description: "First stable release", due_date: "2026-04-01", status: "open", created_at: ago(9000), updated_at: ago(100) },
+  { id: 2, project_id: 1, title: "v1.1 Polish", description: "UX improvements and bug fixes", due_date: "2026-05-01", status: "open", created_at: ago(5000), updated_at: ago(200) },
+  { id: 3, project_id: 2, title: "Agent MVP", description: null, due_date: "2026-04-15", status: "open", created_at: ago(3000), updated_at: ago(300) },
 ];
 
 const notifications: Notification[] = [
@@ -206,6 +218,8 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
         position: args!.input.position ?? issues.filter(x => x.project_id === args!.input.project_id && x.status_id === args!.input.status_id).length,
         estimate: args!.input.estimate ?? null,
         due_date: args!.input.due_date ?? null,
+        epic_id: args!.input.epic_id ?? null,
+        milestone_id: args!.input.milestone_id ?? null,
         description: args!.input.description ?? null,
         created_at: now, updated_at: now,
       };
@@ -356,6 +370,33 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "reject_task": return;
     case "unclaim_task": return;
     case "log_task_activity": return;
+
+    // Epics
+    case "list_epics": return epics.filter(e => e.project_id === args?.projectId);
+    case "get_epic": return epics.find(e => e.id === args?.id) ?? null;
+    case "create_epic": { const e: Epic = { id: id(), ...args!.input, color: args!.input.color ?? "#6366f1", status: "active", created_at: now, updated_at: now }; epics.push(e); return e; }
+    case "update_epic": { const e = epics.find(x => x.id === args?.id); if (e) Object.assign(e, args!.input, { updated_at: now }); return e; }
+    case "delete_epic": { const idx = epics.findIndex(x => x.id === args?.id); if (idx >= 0) { issues.forEach(i => { if (i.epic_id === args?.id) i.epic_id = null; }); epics.splice(idx, 1); } return; }
+
+    // Milestones
+    case "list_milestones": {
+      const ms = milestones.filter(m => m.project_id === args?.projectId);
+      return ms.map(m => {
+        const total = issues.filter(i => i.milestone_id === m.id).length;
+        const completed = issues.filter(i => i.milestone_id === m.id && [5, 9].includes(i.status_id)).length;
+        return { ...m, total_issues: total, completed_issues: completed } as MilestoneWithProgress;
+      });
+    }
+    case "get_milestone": {
+      const m = milestones.find(x => x.id === args?.id);
+      if (!m) return null;
+      const total = issues.filter(i => i.milestone_id === m.id).length;
+      const completed = issues.filter(i => i.milestone_id === m.id && [5, 9].includes(i.status_id)).length;
+      return { ...m, total_issues: total, completed_issues: completed } as MilestoneWithProgress;
+    }
+    case "create_milestone": { const m: Milestone = { id: id(), ...args!.input, status: "open", created_at: now, updated_at: now }; milestones.push(m); return m; }
+    case "update_milestone": { const m = milestones.find(x => x.id === args?.id); if (m) Object.assign(m, args!.input, { updated_at: now }); return m; }
+    case "delete_milestone": { const idx = milestones.findIndex(x => x.id === args?.id); if (idx >= 0) { issues.forEach(i => { if (i.milestone_id === args?.id) i.milestone_id = null; }); milestones.splice(idx, 1); } return; }
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);
