@@ -218,7 +218,7 @@ pub fn get_project_agent_summary(state: State<AppState>, _project_id: i64) -> Re
         }).collect();
 
         // Top performers (leaderboard)
-        let top_performers = compute_leaderboard(&state.pool).await?;
+        let top_performers = compute_leaderboard(&state.pool).await.map_err(|e| e.to_string())?;
 
         Ok(ProjectAgentSummary {
             total_agent_tasks,
