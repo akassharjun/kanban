@@ -662,6 +662,11 @@ fn tools_list() -> Vec<Value> {
         tool_def(
             "get_task_learnings",
             "Get learnings recorded for a specific task",
+            json!({
+                "task_identifier": prop("string", "Task identifier (e.g. KAN-42)"),
+            }),
+            vec!["task_identifier"],
+        ),
         // Cost tracking
         tool_def(
             "record_cost",
@@ -684,8 +689,14 @@ fn tools_list() -> Vec<Value> {
             }),
             vec!["task_identifier"],
         ),
+        tool_def(
             "auto_score_project",
             "Auto-score all unscored issues in a project",
+            json!({
+                "project_id": prop("number", "Project ID"),
+            }),
+            vec!["project_id"],
+        ),
         tool_def(
             "project_costs",
             "Get cost summary for a project",
@@ -756,6 +767,7 @@ fn tools_list() -> Vec<Value> {
                 "run_id": prop("number", "Pipeline run ID")
             }),
             vec!["run_id"],
+        ),
         tool_def(
             "list_permissions",
             "List all permissions for an agent",
@@ -784,6 +796,8 @@ fn tools_list() -> Vec<Value> {
                 "scope": prop("string", "Scope to check")
             }),
             vec!["agent_id", "permission_type", "scope"],
+        ),
+        tool_def(
             "enforce_sla",
             "Enforce SLA policies and execute escalation actions",
             json!({
@@ -2708,8 +2722,77 @@ async fn handle_tool_call(
             .fetch_one(pool)
             .await
             .map_err(|e| e.to_string())?;
+
+            // Update budget spent
+            if unit == "dollars" {
+                let project_id: Option<i64> = sqlx::query_scalar(
+                    "SELECT project_id FROM issues WHERE identifier = $1"
+                )
+                .bind(task_identifier)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+                if let Some(pid) = project_id {
+                    let _ = sqlx::query("UPDATE cost_budgets SET spent = spent + $1 WHERE project_id = $2")
+                        .bind(amount)
+                        .bind(pid)
+                        .execute(pool)
+                        .await;
+                }
+            }
+
             notify_change();
             Ok(json!({"id": id, "task_identifier": task_identifier, "cost_type": cost_type, "amount": amount}))
+        }
+        "task_cost" => {
+            let task_identifier = args["task_identifier"].as_str().ok_or("task_identifier required")?;
+            let costs = sqlx::query_as::<_, crate::commands::costs::TaskCost>(
+                "SELECT * FROM task_costs WHERE task_identifier = $1 ORDER BY recorded_at ASC"
+            )
+            .bind(task_identifier)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let mut total_dollars = 0.0f64;
+            let mut total_minutes = 0.0f64;
+            let mut total_tokens = 0i64;
+            for c in &costs {
+                if c.unit == "dollars" { total_dollars += c.amount; }
+                if c.cost_type == "compute_time" && c.unit == "minutes" { total_minutes += c.amount; }
+                if c.cost_type == "api_tokens" && c.unit == "tokens" { total_tokens += c.amount as i64; }
+            }
+            Ok(json!({
+                "task_identifier": task_identifier,
+                "total_cost_dollars": total_dollars,
+                "total_compute_minutes": total_minutes,
+                "total_tokens": total_tokens,
+                "entries": costs,
+            }))
+        }
+        "project_costs" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let total: Option<f64> = sqlx::query_scalar(
+                "SELECT SUM(tc.amount) FROM task_costs tc JOIN issues i ON tc.task_identifier = i.identifier WHERE i.project_id = $1 AND tc.unit = 'dollars'"
+            )
+            .bind(project_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let budgets = sqlx::query_as::<_, crate::commands::costs::CostBudget>(
+                "SELECT * FROM cost_budgets WHERE project_id = $1"
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            Ok(json!({
+                "project_id": project_id,
+                "total_cost": total.unwrap_or(0.0),
+                "budgets": budgets,
+            }))
         }
         "list_permissions" => {
             use crate::commands::permissions::AgentPermission;
@@ -2773,7 +2856,7 @@ async fn handle_tool_call(
             .map_err(|e| e.to_string())?;
 
             notify_change();
-            Ok(json!(link))
+            Ok(json!(perm))
         }
         "file_heat_map" => {
             let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
@@ -2960,7 +3043,17 @@ async fn handle_tool_call(
             .bind(&risks_str)
             .bind(&test_str)
             .bind(&now)
-            Ok(json!(pipeline))
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let note = sqlx::query_as::<_, agent::HandoffNote>("SELECT * FROM handoff_notes WHERE id = $1")
+                .bind(id)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            notify_change();
+            Ok(json!(note))
         }
         "trigger_pipeline" => {
             let pipeline_id = args["pipeline_id"].as_i64().ok_or("pipeline_id required")?;
@@ -3088,13 +3181,23 @@ async fn handle_tool_call(
             .await
             .map_err(|e| e.to_string())?;
 
-            let note = sqlx::query_as::<_, agent::HandoffNote>("SELECT * FROM handoff_notes WHERE id = $1")
-                .bind(id)
-                .fetch_one(pool)
-                .await
-                .map_err(|e| e.to_string())?;
-            notify_change();
-            Ok(json!(note))
+            let pipeline = sqlx::query_as::<_, crate::commands::pipelines::Pipeline>(
+                "SELECT * FROM pipelines WHERE id = $1",
+            )
+            .bind(run.pipeline_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let stages: Vec<Value> = serde_json::from_str(&pipeline.stages).unwrap_or_default();
+            let stage_tasks: Vec<Value> = serde_json::from_str(&run.stage_tasks).unwrap_or_default();
+
+            Ok(json!({
+                "run": run,
+                "pipeline_name": pipeline.name,
+                "total_stages": stages.len(),
+                "stage_tasks": stage_tasks,
+            }))
         }
         "get_handoff_notes" => {
             let task_identifier = args["task_identifier"].as_str().ok_or("task_identifier required")?;
@@ -3150,10 +3253,6 @@ async fn handle_tool_call(
             .bind(&files_str)
             .bind(&tags_str)
             .bind(&now)
-            let pipeline = sqlx::query_as::<_, crate::commands::pipelines::Pipeline>(
-                "SELECT * FROM pipelines WHERE id = $1",
-            )
-            .bind(run.pipeline_id)
             .fetch_one(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -3179,107 +3278,6 @@ async fn handle_tool_call(
             // Fetch all learnings for the project
             let learnings = sqlx::query_as::<_, agent::TaskLearning>(
                 "SELECT tl.* FROM task_learnings tl JOIN issues i ON tl.task_identifier = i.identifier WHERE i.project_id = $1 ORDER BY tl.created_at DESC"
-            let bv = bv.max(1).min(10);
-            let tc = tc.max(1).min(10);
-            let rr = rr.max(1).min(10);
-            let size = size.max(1).min(10);
-            let score = (bv as f64 + tc as f64 + rr as f64) / size as f64;
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
-
-            sqlx::query(
-                "UPDATE issues SET business_value = $1, time_criticality = $2, risk_reduction = $3, job_size = $4, wsjf_score = $5, updated_at = $6 WHERE id = $7"
-            )
-            .bind(bv).bind(tc).bind(rr).bind(size).bind(score).bind(&now).bind(issue.id)
-            .execute(pool)
-            .await
-            .map_err(|e| e.to_string())?;
-
-            Ok(json!({
-                "identifier": identifier,
-                "business_value": bv,
-                "time_criticality": tc,
-                "risk_reduction": rr,
-                "job_size": size,
-                "wsjf_score": score
-            }))
-        }
-        "auto_score" => {
-            let identifier = args["identifier"].as_str().ok_or("identifier required")?;
-            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
-                .bind(identifier)
-                .fetch_one(pool)
-                .await
-                .map_err(|e| e.to_string())?;
-
-            let result = crate::commands::scoring::auto_score_issue_standalone(pool, issue.id)
-                .await
-                .map_err(|e| e.to_string())?;
-
-            Ok(json!(result))
-        }
-        "ranked_backlog" => {
-            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
-            let issues = sqlx::query_as::<_, Issue>(
-                "SELECT i.* FROM issues i JOIN statuses s ON i.status_id = s.id WHERE i.project_id = $1 AND s.category = 'unstarted' AND i.wsjf_score IS NOT NULL ORDER BY i.wsjf_score DESC"
-            // Update budget spent
-            if unit == "dollars" {
-                let project_id: Option<i64> = sqlx::query_scalar(
-                    "SELECT project_id FROM issues WHERE identifier = $1"
-                )
-                .bind(task_identifier)
-                .fetch_optional(pool)
-                .await
-                .map_err(|e| e.to_string())?;
-                if let Some(pid) = project_id {
-                    let _ = sqlx::query("UPDATE cost_budgets SET spent = spent + $1 WHERE project_id = $2")
-                        .bind(amount)
-                        .bind(pid)
-                        .execute(pool)
-                        .await;
-                }
-            }
-
-            notify_change();
-            Ok(json!({"id": id, "task_identifier": task_identifier, "amount": amount, "unit": unit}))
-        }
-        "task_cost" => {
-            let task_identifier = args["task_identifier"].as_str().ok_or("task_identifier required")?;
-            let costs = sqlx::query_as::<_, crate::commands::costs::TaskCost>(
-                "SELECT * FROM task_costs WHERE task_identifier = $1 ORDER BY recorded_at ASC"
-            )
-            .bind(task_identifier)
-            .fetch_all(pool)
-            .await
-            .map_err(|e| e.to_string())?;
-
-            let mut total_dollars = 0.0f64;
-            let mut total_minutes = 0.0f64;
-            let mut total_tokens = 0i64;
-            for c in &costs {
-                if c.unit == "dollars" { total_dollars += c.amount; }
-                if c.cost_type == "compute_time" && c.unit == "minutes" { total_minutes += c.amount; }
-                if c.cost_type == "api_tokens" && c.unit == "tokens" { total_tokens += c.amount as i64; }
-            }
-            Ok(json!({
-                "task_identifier": task_identifier,
-                "total_cost_dollars": total_dollars,
-                "total_compute_minutes": total_minutes,
-                "total_tokens": total_tokens,
-                "entries": costs,
-            }))
-        }
-        "project_costs" => {
-            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
-            let total: Option<f64> = sqlx::query_scalar(
-                "SELECT SUM(tc.amount) FROM task_costs tc JOIN issues i ON tc.task_identifier = i.identifier WHERE i.project_id = $1 AND tc.unit = 'dollars'"
-            )
-            .bind(project_id)
-            .fetch_one(pool)
-            .await
-            .map_err(|e| e.to_string())?;
-
-            let budgets = sqlx::query_as::<_, crate::commands::costs::CostBudget>(
-                "SELECT * FROM cost_budgets WHERE project_id = $1"
             )
             .bind(project_id)
             .fetch_all(pool)
@@ -3351,6 +3349,31 @@ async fn handle_tool_call(
             .await
             .map_err(|e| e.to_string())?;
             Ok(json!(learnings))
+        }
+        "auto_score" => {
+            let identifier = args["identifier"].as_str().ok_or("identifier required")?;
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
+                .bind(identifier)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let result = crate::commands::scoring::auto_score_issue_standalone(pool, issue.id)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            Ok(json!(result))
+        }
+        "ranked_backlog" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let issues = sqlx::query_as::<_, Issue>(
+                "SELECT i.* FROM issues i JOIN statuses s ON i.status_id = s.id WHERE i.project_id = $1 AND s.category = 'unstarted' AND i.wsjf_score IS NOT NULL ORDER BY i.wsjf_score DESC"
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
             let ranked: Vec<Value> = issues.iter().map(|i| json!({
                 "identifier": i.identifier,
                 "title": i.title,
@@ -3368,11 +3391,19 @@ async fn handle_tool_call(
             let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
             let unscored = sqlx::query_as::<_, Issue>(
                 "SELECT * FROM issues WHERE project_id = $1 AND wsjf_score IS NULL"
-            Ok(json!({
-                "project_id": project_id,
-                "total_cost": total.unwrap_or(0.0),
-                "budgets": budgets,
-            }))
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let mut scored_count = 0;
+            for issue in &unscored {
+                let _ = crate::commands::scoring::auto_score_issue_standalone(pool, issue.id).await;
+                scored_count += 1;
+            }
+            notify_change();
+            Ok(json!({"project_id": project_id, "scored_count": scored_count, "total_unscored": unscored.len()}))
         }
         "check_budget" => {
             let project_id = args["project_id"].as_i64().ok_or("project_id required")?;

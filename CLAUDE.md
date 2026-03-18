@@ -1,5 +1,23 @@
 # Kanban - Project Rules
 
+## Pre-Push Verification (MANDATORY)
+
+**ALWAYS verify locally before pushing or tagging releases:**
+
+```bash
+# 1. Rust compilation (from src-tauri/)
+source "$HOME/.cargo/env" && cd src-tauri && cargo check --lib
+# Only system lib errors (gtk, cairo, pango) are acceptable. Zero Rust syntax/type errors.
+
+# 2. TypeScript compilation
+npx tsc --noEmit
+
+# 3. Tests
+npm run test:run
+```
+
+**ALL THREE must pass before `git push` or `git tag`.** Never push broken code.
+
 ## GitHub & Git
 
 - **Repo:** `akassharjun/kanban` (public, origin: https://github.com/akassharjun/kanban.git)
