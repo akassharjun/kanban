@@ -188,6 +188,31 @@ pub enum IssueAction {
     },
     /// Delete an issue by identifier
     Delete { identifier: String },
+    /// Auto-triage an issue (suggest priority, labels, assignee)
+    Triage {
+        /// Issue identifier (e.g. KAN-42)
+        identifier: String,
+        /// Apply suggestions automatically
+        #[arg(long)]
+        apply: bool,
+    },
+    /// Decompose an issue into sub-issues from its description
+    Decompose {
+        /// Issue identifier (e.g. KAN-42)
+        identifier: String,
+        /// Create sub-issues (default: preview only)
+        #[arg(long)]
+        apply: bool,
+    },
+    /// Create an issue from natural language text
+    CreateFromText {
+        /// Natural language description
+        text: String,
+        #[arg(short, long)]
+        project: i64,
+        #[arg(short, long)]
+        status: i64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -880,6 +905,186 @@ async fn handle_issue(
                 .execute(pool)
                 .await?;
             println!("Deleted {}", identifier);
+            notify_change();
+        }
+        IssueAction::Triage { identifier, apply } => {
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
+                .bind(&identifier)
+                .fetch_one(pool)
+                .await?;
+
+            let suggestion = crate::commands::triage::triage_logic(
+                pool,
+                issue.project_id,
+                &issue.title,
+                issue.description.as_deref(),
+            )
+            .await
+            .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+
+            if apply && suggestion.confidence > 0.0 {
+                let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+                if let Some(ref p) = suggestion.suggested_priority {
+                    if issue.priority == "none" {
+                        sqlx::query("UPDATE issues SET priority = $1, updated_at = $2 WHERE id = $3")
+                            .bind(p).bind(&now).bind(issue.id).execute(pool).await?;
+                    }
+                }
+                if let Some(aid) = suggestion.suggested_assignee_id {
+                    if issue.assignee_id.is_none() {
+                        sqlx::query("UPDATE issues SET assignee_id = $1, updated_at = $2 WHERE id = $3")
+                            .bind(aid).bind(&now).bind(issue.id).execute(pool).await?;
+                    }
+                }
+                if let Some(eid) = suggestion.suggested_epic_id {
+                    if issue.parent_id.is_none() {
+                        sqlx::query("UPDATE issues SET parent_id = $1, updated_at = $2 WHERE id = $3")
+                            .bind(eid).bind(&now).bind(issue.id).execute(pool).await?;
+                    }
+                }
+                for lid in &suggestion.suggested_label_ids {
+                    let _ = sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES ($1, $2) ON CONFLICT (issue_id, label_id) DO NOTHING")
+                        .bind(issue.id).bind(*lid).execute(pool).await;
+                }
+                notify_change();
+            }
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&suggestion)?);
+            } else {
+                println!("Triage for {} (confidence: {:.0}%)", identifier, suggestion.confidence * 100.0);
+                println!("  Priority: {}", suggestion.suggested_priority.as_deref().unwrap_or("(none)"));
+                println!("  Labels: {:?}", suggestion.suggested_label_ids);
+                println!("  Assignee: {}", suggestion.suggested_assignee_id.map(|a| a.to_string()).unwrap_or("(none)".to_string()));
+                println!("  Epic: {}", suggestion.suggested_epic_id.map(|e| e.to_string()).unwrap_or("(none)".to_string()));
+                println!("  Reasoning: {}", suggestion.reasoning);
+                if apply {
+                    println!("  [Applied]");
+                }
+            }
+        }
+        IssueAction::Decompose { identifier, apply } => {
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
+                .bind(&identifier)
+                .fetch_one(pool)
+                .await?;
+
+            let text = issue.description.as_deref().unwrap_or("");
+            if text.is_empty() {
+                eprintln!("Issue has no description to decompose");
+                return Ok(());
+            }
+
+            let tasks = crate::commands::decomposition::decompose_text(text);
+            if tasks.is_empty() {
+                eprintln!("No decomposable structure found in description");
+                return Ok(());
+            }
+
+            if apply {
+                let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+                let mut created = Vec::new();
+                for (idx, task) in tasks.iter().enumerate() {
+                    let mut tx = pool.begin().await?;
+                    let (counter, prefix): (i64, String) = sqlx::query_as(
+                        "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix"
+                    ).bind(issue.project_id).fetch_one(&mut *tx).await?;
+                    let ident = format!("{}-{}", prefix, counter);
+                    let max_pos: Option<f64> = sqlx::query_scalar(
+                        "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status_id = $2"
+                    ).bind(issue.project_id).bind(issue.status_id).fetch_one(&mut *tx).await?;
+                    let position = max_pos.unwrap_or(-1.0) + 1.0 + idx as f64;
+                    let priority = task.suggested_priority.as_deref().unwrap_or(&issue.priority);
+                    let sub_id: i64 = sqlx::query_scalar(
+                        "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id"
+                    )
+                    .bind(issue.project_id).bind(&ident).bind(&task.title).bind(&task.description)
+                    .bind(issue.status_id).bind(priority).bind(issue.assignee_id).bind(issue.id)
+                    .bind(position).bind(&now).bind(&now)
+                    .fetch_one(&mut *tx).await?;
+                    let sub: Issue = sqlx::query_as("SELECT * FROM issues WHERE id = $1")
+                        .bind(sub_id).fetch_one(&mut *tx).await?;
+                    tx.commit().await?;
+                    created.push(sub);
+                }
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&created)?);
+                } else {
+                    println!("Created {} sub-issues for {}:", created.len(), identifier);
+                    for s in &created {
+                        println!("  {} - {}", s.identifier, s.title);
+                    }
+                }
+                notify_change();
+            } else {
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&tasks)?);
+                } else {
+                    println!("Decomposition preview for {} ({} tasks):", identifier, tasks.len());
+                    for (i, t) in tasks.iter().enumerate() {
+                        println!("  {}. {}", i + 1, t.title);
+                        if let Some(ref d) = t.description {
+                            let preview: String = d.chars().take(80).collect();
+                            println!("     {}", preview);
+                        }
+                    }
+                    println!("\nRun with --apply to create sub-issues.");
+                }
+            }
+        }
+        IssueAction::CreateFromText { text, project, status } => {
+            let (title, description) = crate::commands::nl_create::parse_nl_text(&text);
+            if title.is_empty() {
+                eprintln!("Could not extract a title from the text");
+                return Ok(());
+            }
+
+            let suggestion = crate::commands::triage::triage_logic(
+                pool, project, &title, Some(&description),
+            ).await.map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            let priority = suggestion.suggested_priority.as_deref().unwrap_or("none");
+
+            let mut tx = pool.begin().await?;
+            let (counter, prefix): (i64, String) = sqlx::query_as(
+                "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix"
+            ).bind(project).fetch_one(&mut *tx).await?;
+            let identifier = format!("{}-{}", prefix, counter);
+            let max_pos: Option<f64> = sqlx::query_scalar(
+                "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status_id = $2"
+            ).bind(project).bind(status).fetch_one(&mut *tx).await?;
+            let position = max_pos.unwrap_or(-1.0) + 1.0;
+
+            let issue_id: i64 = sqlx::query_scalar(
+                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id"
+            )
+            .bind(project).bind(&identifier).bind(&title).bind(&description)
+            .bind(status).bind(priority).bind(suggestion.suggested_assignee_id)
+            .bind(None::<i64>).bind(position).bind(&now).bind(&now)
+            .fetch_one(&mut *tx).await?;
+
+            for lid in &suggestion.suggested_label_ids {
+                let _ = sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES ($1, $2) ON CONFLICT (issue_id, label_id) DO NOTHING")
+                    .bind(issue_id).bind(*lid).execute(&mut *tx).await;
+            }
+
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
+                .bind(issue_id).fetch_one(&mut *tx).await?;
+            tx.commit().await?;
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&issue)?);
+            } else {
+                println!("Created: {} - {}", issue.identifier, issue.title);
+                println!("  Priority: {}", issue.priority);
+                if !suggestion.suggested_label_ids.is_empty() {
+                    println!("  Labels: {:?}", suggestion.suggested_label_ids);
+                }
+                if let Some(aid) = suggestion.suggested_assignee_id {
+                    println!("  Assignee: {}", aid);
+                }
+            }
             notify_change();
         }
     }

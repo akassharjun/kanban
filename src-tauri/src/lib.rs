@@ -197,6 +197,15 @@ pub fn run_gui(database_url: Option<String>) {
             commands::execution_logs::task_replay,
             commands::execution_logs::task_attempts,
             commands::execution_logs::recent_activity,
+            // Triage
+            commands::triage::triage_issue,
+            commands::triage::auto_triage_and_apply,
+            // Decomposition
+            commands::decomposition::decompose_issue,
+            commands::decomposition::apply_decomposition,
+            // Natural Language
+            commands::nl_create::parse_natural_language,
+            commands::nl_create::create_from_natural_language,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

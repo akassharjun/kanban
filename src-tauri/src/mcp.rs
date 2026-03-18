@@ -432,6 +432,53 @@ fn tools_list() -> Vec<Value> {
             }),
             vec!["identifier"],
         ),
+        // AI Agent Intelligence: Triage
+        tool_def(
+            "triage_issue",
+            "Auto-triage an issue: suggest priority, labels, assignee, and epic based on title/description keywords",
+            json!({
+                "project_id": prop("number", "Project ID"),
+                "title": prop("string", "Issue title"),
+                "description": prop("string", "Issue description (optional)")
+            }),
+            vec!["project_id", "title"],
+        ),
+        tool_def(
+            "auto_triage",
+            "Auto-triage an existing issue and apply suggestions (priority, labels, assignee)",
+            json!({
+                "identifier": prop("string", "Issue identifier (e.g. KAN-42)")
+            }),
+            vec!["identifier"],
+        ),
+        // AI Agent Intelligence: Decomposition
+        tool_def(
+            "decompose_issue",
+            "Preview decomposition of an issue into sub-tasks by parsing its description (checklists, numbered lists, headings)",
+            json!({
+                "identifier": prop("string", "Issue identifier (e.g. KAN-42)")
+            }),
+            vec!["identifier"],
+        ),
+        tool_def(
+            "apply_decomposition",
+            "Decompose an issue into sub-issues by parsing its description and creating child issues",
+            json!({
+                "identifier": prop("string", "Issue identifier (e.g. KAN-42)")
+            }),
+            vec!["identifier"],
+        ),
+        // AI Agent Intelligence: Natural Language
+        tool_def(
+            "create_from_text",
+            "Create an issue from natural language text. Parses title, description, and auto-triages priority/labels/assignee",
+            json!({
+                "project_id": prop("number", "Project ID"),
+                "text": prop("string", "Natural language description of the issue"),
+                "status_id": prop("number", "Initial status ID")
+            }),
+            vec!["project_id", "text", "status_id"],
+        ),
     ]
 }
 
@@ -2062,6 +2109,161 @@ async fn handle_tool_call(
             }
 
             Ok(json!({"nodes": nodes, "edges": edges}))
+        }
+        // AI Agent Intelligence: Triage
+        "triage_issue" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let title = args["title"].as_str().ok_or("title required")?;
+            let description = args.get("description").and_then(|v| v.as_str());
+            let suggestion = crate::commands::triage::triage_logic(
+                pool, project_id, title, description,
+            ).await?;
+            Ok(json!(suggestion))
+        }
+        "auto_triage" => {
+            let identifier = args["identifier"].as_str().ok_or("identifier required")?;
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
+                .bind(identifier).fetch_one(pool).await.map_err(|e| e.to_string())?;
+
+            let suggestion = crate::commands::triage::triage_logic(
+                pool, issue.project_id, &issue.title, issue.description.as_deref(),
+            ).await?;
+
+            // Apply suggestions
+            if suggestion.confidence > 0.0 {
+                let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+                if let Some(ref p) = suggestion.suggested_priority {
+                    if issue.priority == "none" {
+                        sqlx::query("UPDATE issues SET priority = $1, updated_at = $2 WHERE id = $3")
+                            .bind(p).bind(&now).bind(issue.id).execute(pool).await.map_err(|e| e.to_string())?;
+                    }
+                }
+                if let Some(aid) = suggestion.suggested_assignee_id {
+                    if issue.assignee_id.is_none() {
+                        sqlx::query("UPDATE issues SET assignee_id = $1, updated_at = $2 WHERE id = $3")
+                            .bind(aid).bind(&now).bind(issue.id).execute(pool).await.map_err(|e| e.to_string())?;
+                    }
+                }
+                if let Some(eid) = suggestion.suggested_epic_id {
+                    if issue.parent_id.is_none() {
+                        sqlx::query("UPDATE issues SET parent_id = $1, updated_at = $2 WHERE id = $3")
+                            .bind(eid).bind(&now).bind(issue.id).execute(pool).await.map_err(|e| e.to_string())?;
+                    }
+                }
+                for lid in &suggestion.suggested_label_ids {
+                    let _ = sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES ($1, $2) ON CONFLICT (issue_id, label_id) DO NOTHING")
+                        .bind(issue.id).bind(*lid).execute(pool).await;
+                }
+                notify_change();
+            }
+            Ok(json!(suggestion))
+        }
+        // AI Agent Intelligence: Decomposition
+        "decompose_issue" => {
+            let identifier = args["identifier"].as_str().ok_or("identifier required")?;
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
+                .bind(identifier).fetch_one(pool).await.map_err(|e| e.to_string())?;
+            let text = issue.description.as_deref().unwrap_or("");
+            if text.is_empty() {
+                return Err("Issue has no description to decompose".to_string());
+            }
+            let tasks = crate::commands::decomposition::decompose_text(text);
+            if tasks.is_empty() {
+                return Err("No decomposable structure found".to_string());
+            }
+            Ok(json!(tasks))
+        }
+        "apply_decomposition" => {
+            let identifier = args["identifier"].as_str().ok_or("identifier required")?;
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
+                .bind(identifier).fetch_one(pool).await.map_err(|e| e.to_string())?;
+            let text = issue.description.as_deref().unwrap_or("");
+            if text.is_empty() {
+                return Err("Issue has no description to decompose".to_string());
+            }
+            let tasks = crate::commands::decomposition::decompose_text(text);
+            if tasks.is_empty() {
+                return Err("No decomposable structure found".to_string());
+            }
+
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            let mut created = Vec::new();
+            for (idx, task) in tasks.iter().enumerate() {
+                let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+                let (counter, prefix): (i64, String) = sqlx::query_as(
+                    "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix"
+                ).bind(issue.project_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+                let ident = format!("{}-{}", prefix, counter);
+                let max_pos: Option<f64> = sqlx::query_scalar(
+                    "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status_id = $2"
+                ).bind(issue.project_id).bind(issue.status_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+                let position = max_pos.unwrap_or(-1.0) + 1.0 + idx as f64;
+                let priority = task.suggested_priority.as_deref().unwrap_or(&issue.priority);
+                let sub_id: i64 = sqlx::query_scalar(
+                    "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id"
+                )
+                .bind(issue.project_id).bind(&ident).bind(&task.title).bind(&task.description)
+                .bind(issue.status_id).bind(priority).bind(issue.assignee_id).bind(issue.id)
+                .bind(position).bind(&now).bind(&now)
+                .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+                let sub: Issue = sqlx::query_as("SELECT * FROM issues WHERE id = $1")
+                    .bind(sub_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+                tx.commit().await.map_err(|e| e.to_string())?;
+                created.push(sub);
+            }
+            notify_change();
+            Ok(json!(created))
+        }
+        // AI Agent Intelligence: Natural Language
+        "create_from_text" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let text = args["text"].as_str().ok_or("text required")?;
+            let status_id = args["status_id"].as_i64().ok_or("status_id required")?;
+
+            let (title, description) = crate::commands::nl_create::parse_nl_text(text);
+            if title.is_empty() {
+                return Err("Could not extract a title from the text".to_string());
+            }
+
+            let suggestion = crate::commands::triage::triage_logic(
+                pool, project_id, &title, Some(&description),
+            ).await?;
+
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            let priority = suggestion.suggested_priority.as_deref().unwrap_or("none");
+
+            let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+            let (counter, prefix): (i64, String) = sqlx::query_as(
+                "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix"
+            ).bind(project_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+            let identifier = format!("{}-{}", prefix, counter);
+            let max_pos: Option<f64> = sqlx::query_scalar(
+                "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status_id = $2"
+            ).bind(project_id).bind(status_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+            let position = max_pos.unwrap_or(-1.0) + 1.0;
+
+            let issue_id: i64 = sqlx::query_scalar(
+                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id"
+            )
+            .bind(project_id).bind(&identifier).bind(&title).bind(&description)
+            .bind(status_id).bind(priority).bind(suggestion.suggested_assignee_id)
+            .bind(None::<i64>).bind(position).bind(&now).bind(&now)
+            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+
+            for lid in &suggestion.suggested_label_ids {
+                let _ = sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES ($1, $2) ON CONFLICT (issue_id, label_id) DO NOTHING")
+                    .bind(issue_id).bind(*lid).execute(&mut *tx).await;
+            }
+
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE id = $1")
+                .bind(issue_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+            tx.commit().await.map_err(|e| e.to_string())?;
+            notify_change();
+
+            Ok(json!({
+                "issue": issue,
+                "triage": suggestion,
+            }))
         }
         _ => Err(format!("Unknown tool: {}", name)),
     }

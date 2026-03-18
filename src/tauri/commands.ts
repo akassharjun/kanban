@@ -244,3 +244,19 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// AI Agent Intelligence
+import type { TriageSuggestion, DecomposedTask, ParsedIssue } from "@/types";
+
+export const triageIssue = (projectId: number, title: string, description?: string) =>
+  invoke<TriageSuggestion>("triage_issue", { projectId, title, description });
+export const autoTriageAndApply = (issueId: number) =>
+  invoke<TriageSuggestion>("auto_triage_and_apply", { issueId });
+export const decomposeIssue = (issueId: number) =>
+  invoke<DecomposedTask[]>("decompose_issue", { issueId });
+export const applyDecomposition = (issueId: number) =>
+  invoke<Issue[]>("apply_decomposition", { issueId });
+export const parseNaturalLanguage = (projectId: number, text: string) =>
+  invoke<ParsedIssue>("parse_natural_language", { projectId, text });
+export const createFromNaturalLanguage = (projectId: number, text: string, statusId: number) =>
+  invoke<Issue>("create_from_natural_language", { projectId, text, statusId });
