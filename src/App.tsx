@@ -6,6 +6,8 @@ import { Button } from "./components/ui/button";
 import { BoardView } from "./components/BoardView";
 import { ListView } from "./components/ListView";
 import { TreeView } from "./components/TreeView";
+import { CalendarView } from "./components/CalendarView";
+import { GanttView } from "./components/GanttView";
 import { IssueDetailPanel } from "./components/IssueDetailPanel";
 import { FilterBar, type Filters } from "./components/FilterBar";
 import { CreateProjectDialog } from "./components/CreateProjectDialog";
@@ -116,7 +118,10 @@ function App() {
         setViewMode("tree");
       }
       if (e.key === "4" && !e.metaKey) {
-        setPage("agents");
+        setViewMode("calendar");
+      }
+      if (e.key === "5" && !e.metaKey) {
+        setViewMode("gantt");
       }
       if (e.key === "Escape") {
         if (selectedIssueId) setSelectedIssueId(null);
@@ -244,6 +249,23 @@ function App() {
                   issues={filteredIssues}
                   statuses={statuses}
                   members={members}
+                  onClickIssue={(issue) => setSelectedIssueId(issue.id)}
+                />
+              )}
+              {viewMode === "calendar" && (
+                <CalendarView
+                  issues={filteredIssues}
+                  members={members}
+                  getLabelsForIssue={getLabelsForIssue}
+                  onClickIssue={(issue) => setSelectedIssueId(issue.id)}
+                />
+              )}
+              {viewMode === "gantt" && (
+                <GanttView
+                  issues={filteredIssues}
+                  statuses={statuses}
+                  members={members}
+                  getLabelsForIssue={getLabelsForIssue}
                   onClickIssue={(issue) => setSelectedIssueId(issue.id)}
                 />
               )}
