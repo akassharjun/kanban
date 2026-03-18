@@ -40,20 +40,23 @@ export function BoardColumn({ status, issues, allIssues, members, getLabelsForIs
   const getMember = (id: number | null) => members.find((m) => m.id === id);
 
   return (
-    <div className={cn("flex w-72 flex-shrink-0 flex-col rounded-lg", collapsed && "w-10")}>
+    <div className={cn("flex w-72 flex-shrink-0 flex-col", collapsed && "w-10")}>
       {/* Column header */}
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="flex items-center gap-2 px-3 py-2 text-sm font-medium"
+        className="flex items-center gap-2 px-2 py-2 text-sm font-medium mb-1"
       >
         <span
-          className="h-2.5 w-2.5 rounded-full"
-          style={{ backgroundColor: status.color || "#6b7280" }}
+          className="h-2.5 w-2.5 rounded-full ring-2 ring-offset-1 ring-offset-background"
+          style={{
+            backgroundColor: status.color || "#6b7280",
+            boxShadow: `0 0 0 2px ${status.color || "#6b7280"}33`,
+          }}
         />
         {!collapsed && (
           <>
-            <span className="truncate">{status.name}</span>
-            <span className="text-xs text-muted-foreground">{issues.length}</span>
+            <span className="truncate text-[13px]">{status.name}</span>
+            <span className="text-[11px] font-normal text-muted-foreground/50">{issues.length}</span>
           </>
         )}
       </button>
@@ -62,8 +65,8 @@ export function BoardColumn({ status, issues, allIssues, members, getLabelsForIs
         <div
           ref={setNodeRef}
           className={cn(
-            "flex flex-1 flex-col gap-1.5 overflow-y-auto rounded-lg p-1.5 transition-colors",
-            isOver && "bg-accent/30"
+            "flex flex-1 flex-col gap-2 overflow-y-auto rounded-xl p-1.5 transition-colors",
+            isOver && "bg-primary/5 ring-1 ring-primary/20"
           )}
         >
           <SortableContext items={issues.map((i) => i.id)} strategy={verticalListSortingStrategy}>
@@ -80,7 +83,7 @@ export function BoardColumn({ status, issues, allIssues, members, getLabelsForIs
           </SortableContext>
 
           {isAdding ? (
-            <div className="rounded-md border border-border bg-card p-2">
+            <div className="rounded-lg border border-primary/30 bg-card p-2.5 shadow-sm">
               <input
                 autoFocus
                 value={newTitle}
@@ -95,15 +98,15 @@ export function BoardColumn({ status, issues, allIssues, members, getLabelsForIs
                 }}
                 onBlur={handleSubmit}
                 placeholder="Issue title..."
-                className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
               />
             </div>
           ) : (
             <button
               onClick={() => setIsAdding(true)}
-              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-muted-foreground/50 hover:bg-muted hover:text-muted-foreground transition-colors"
             >
-              <Plus className="h-3 w-3" />
+              <Plus className="h-3.5 w-3.5" />
               New issue
             </button>
           )}
