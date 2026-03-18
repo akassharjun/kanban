@@ -427,6 +427,7 @@ function App() {
       {selectedIssueId && (
         <IssueDetailPanel
           issueId={selectedIssueId}
+          projectId={selectedProjectId}
           statuses={statuses}
           members={members}
           projectLabels={labels}

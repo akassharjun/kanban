@@ -6,6 +6,7 @@ pub mod custom_fields;
 pub mod epics;
 pub mod execution_logs;
 pub mod git_links;
+pub mod github;
 pub mod health;
 pub mod hooks;
 pub mod issues;

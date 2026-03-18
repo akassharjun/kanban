@@ -266,6 +266,21 @@ CREATE TABLE IF NOT EXISTS saved_views (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- GitHub integration config (per-project)
+CREATE TABLE IF NOT EXISTS github_config (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+    repo_owner TEXT NOT NULL,
+    repo_name TEXT NOT NULL,
+    access_token TEXT,
+    branch_pattern TEXT NOT NULL DEFAULT '{{prefix}}-{{number}}/{{slug}}',
+    auto_link_prs INTEGER NOT NULL DEFAULT 1,
+    auto_transition_on_merge INTEGER NOT NULL DEFAULT 1,
+    merge_target_status_id INTEGER REFERENCES statuses(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_saved_views_project ON saved_views(project_id);
 
 -- Starred Issues (per-member favorites)
@@ -289,6 +304,20 @@ CREATE TABLE IF NOT EXISTS recently_viewed (
 );
 
 CREATE INDEX IF NOT EXISTS idx_recently_viewed_member ON recently_viewed(member_id);
+
+-- GitHub events log
+CREATE TABLE IF NOT EXISTS github_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL CHECK(event_type IN ('pr_opened', 'pr_merged', 'pr_closed', 'pr_review', 'check_run', 'push')),
+    issue_id INTEGER REFERENCES issues(id) ON DELETE SET NULL,
+    payload TEXT NOT NULL DEFAULT '{}',
+    processed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_github_events_project ON github_events(project_id);
+CREATE INDEX IF NOT EXISTS idx_github_events_issue ON github_events(issue_id);
 
 -- Project agent configuration
 CREATE TABLE IF NOT EXISTS project_agent_config (
@@ -332,10 +361,14 @@ CREATE INDEX IF NOT EXISTS idx_milestones_project ON milestones(project_id);
 CREATE TABLE IF NOT EXISTS git_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    link_type TEXT NOT NULL CHECK(link_type IN ('branch', 'pull_request', 'commit')),
+    link_type TEXT NOT NULL CHECK(link_type IN ('branch', 'pr', 'commit')),
     url TEXT,
     ref_name TEXT NOT NULL,
-    status TEXT DEFAULT 'open' CHECK(status IN ('open', 'merged', 'closed')),
+    pr_number INTEGER,
+    pr_state TEXT,
+    pr_merged INTEGER NOT NULL DEFAULT 0,
+    ci_status TEXT,
+    review_status TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

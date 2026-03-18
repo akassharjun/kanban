@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, History, MessageSquare, Activity, Star, GitBranch, GitPullRequest, GitCommitHorizontal, ExternalLink } from "lucide-react";
+import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, History, MessageSquare, Activity, Star, GitBranch, GitPullRequest, GitCommitHorizontal, ExternalLink, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,6 +11,7 @@ import { MentionInput, MentionText } from "./MentionInput";
 
 interface IssueDetailPanelProps {
   issueId: number;
+  projectId?: number | null;
   statuses: Status[];
   members: Member[];
   projectLabels: Label[];
@@ -66,6 +67,7 @@ function Dropdown({ open, onClose, children, trigger }: {
 
 export function IssueDetailPanel({
   issueId,
+  projectId,
   statuses,
   members,
   projectLabels: _projectLabels,
@@ -98,9 +100,10 @@ export function IssueDetailPanel({
   const isSavingRef = useRef(false);
   const [activeTab, setActiveTab] = useState<"comments" | "history" | "activity">("comments");
   const [gitLinks, setGitLinks] = useState<GitLink[]>([]);
-  const [showGitLinkForm, setShowGitLinkForm] = useState<"branch" | "pull_request" | "commit" | null>(null);
+  const [showGitLinkForm, setShowGitLinkForm] = useState<"branch" | "pr" | "commit" | null>(null);
   const [gitLinkRefName, setGitLinkRefName] = useState("");
   const [gitLinkUrl, setGitLinkUrl] = useState("");
+  const [creatingBranch, setCreatingBranch] = useState(false);
 
   const loadIssue = useCallback(async () => {
     // Skip refresh while a save is in-flight to prevent overwriting user edits
@@ -114,7 +117,7 @@ export function IssueDetailPanel({
         api.getActivityLog(issueId),
         api.getSubIssues(issueId),
         api.listComments(issueId),
-        api.listGitLinks(issueId),
+        api.listGitLinks(issueId).catch(() => [] as GitLink[]),
       ]);
       setActivity(acts);
       setSubIssues(subs);
@@ -541,6 +544,92 @@ export function IssueDetailPanel({
           )}
         </div>
 
+        {/* Git / GitHub */}
+        <div className="mt-6 border-t border-border/50 px-5 pt-4">
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">Git & GitHub</h3>
+
+          {/* Existing git links */}
+          {gitLinks.length > 0 && (
+            <div className="space-y-1.5 mb-3">
+              {gitLinks.map(link => (
+                <div key={link.id} className="flex items-center gap-2 rounded-lg border border-border/50 px-3 py-2 text-xs">
+                  {link.link_type === "branch" && <GitBranch className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+                  {link.link_type === "pr" && <GitPullRequest className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
+
+                  <span className="font-mono truncate flex-1">
+                    {link.link_type === "pr" && link.pr_number ? `#${link.pr_number} ` : ""}
+                    {link.ref_name}
+                  </span>
+
+                  {/* PR state badges */}
+                  {link.link_type === "pr" && link.pr_state && (
+                    <span className={cn(
+                      "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                      link.pr_merged ? "bg-purple-500/10 text-purple-500" :
+                      link.pr_state === "open" ? "bg-green-500/10 text-green-500" :
+                      "bg-red-500/10 text-red-500"
+                    )}>
+                      {link.pr_merged ? "merged" : link.pr_state}
+                    </span>
+                  )}
+
+                  {/* Review status */}
+                  {link.review_status && link.review_status !== "none" && (
+                    <span className={cn(
+                      "flex items-center gap-0.5 text-[10px]",
+                      link.review_status === "approved" ? "text-green-500" :
+                      link.review_status === "changes_requested" ? "text-orange-500" :
+                      "text-yellow-500"
+                    )}>
+                      {link.review_status === "approved" && <CheckCircle2 className="h-3 w-3" />}
+                      {link.review_status === "changes_requested" && <XCircle className="h-3 w-3" />}
+                      {link.review_status === "pending" && <Clock className="h-3 w-3" />}
+                    </span>
+                  )}
+
+                  {/* CI status */}
+                  {link.ci_status && (
+                    <span className={cn(
+                      "h-2 w-2 rounded-full flex-shrink-0",
+                      link.ci_status === "success" ? "bg-green-500" :
+                      link.ci_status === "failure" ? "bg-red-500" :
+                      "bg-yellow-500"
+                    )} title={`CI: ${link.ci_status}`} />
+                  )}
+
+                  {link.url && (
+                    <a href={link.url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Create branch button */}
+          {projectId && issue && (
+            <button
+              onClick={async () => {
+                setCreatingBranch(true);
+                try {
+                  await api.createBranchForIssue(projectId, issue.identifier);
+                  await loadIssue();
+                } catch (e) {
+                  console.error("Failed to create branch", e);
+                } finally {
+                  setCreatingBranch(false);
+                }
+              }}
+              disabled={creatingBranch}
+              className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+            >
+              {creatingBranch ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitBranch className="h-3.5 w-3.5" />}
+              Create Branch
+            </button>
+          )}
+        </div>
+
         {/* Task Contract */}
         <div className="mt-4 px-5">
           <button
@@ -560,14 +649,15 @@ export function IssueDetailPanel({
           {gitLinks.length > 0 && (
             <div className="space-y-1.5 mb-3">
               {gitLinks.map((link) => {
-                const Icon = link.link_type === "branch" ? GitBranch : link.link_type === "pull_request" ? GitPullRequest : GitCommitHorizontal;
-                const statusColor = link.status === "merged" ? "text-purple-500 bg-purple-500/10" : link.status === "closed" ? "text-red-500 bg-red-500/10" : "text-green-500 bg-green-500/10";
+                const Icon = link.link_type === "branch" ? GitBranch : link.link_type === "pr" ? GitPullRequest : GitCommitHorizontal;
+                const linkStatus = link.pr_merged ? "merged" : link.pr_state === "closed" ? "closed" : "open";
+                const statusColor = linkStatus === "merged" ? "text-purple-500 bg-purple-500/10" : linkStatus === "closed" ? "text-red-500 bg-red-500/10" : "text-green-500 bg-green-500/10";
                 return (
                   <div key={link.id} className="group flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-muted transition-colors">
                     <Icon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                     <span className="text-[13px] font-mono truncate flex-1">{link.ref_name}</span>
                     <span className={cn("text-[10px] font-medium rounded-full px-2 py-0.5", statusColor)}>
-                      {link.status}
+                      {linkStatus}
                     </span>
                     {link.url && (
                       <a href={link.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-muted-foreground/50 hover:text-foreground">
@@ -589,13 +679,13 @@ export function IssueDetailPanel({
           {showGitLinkForm ? (
             <div className="rounded-lg border border-border bg-background p-3 space-y-2">
               <div className="text-[11px] font-medium text-muted-foreground/70 capitalize">
-                {showGitLinkForm === "pull_request" ? "Pull Request" : showGitLinkForm}
+                {showGitLinkForm === "pr" ? "Pull Request" : showGitLinkForm}
               </div>
               <input
                 autoFocus
                 value={gitLinkRefName}
                 onChange={(e) => setGitLinkRefName(e.target.value)}
-                placeholder={showGitLinkForm === "branch" ? "Branch name..." : showGitLinkForm === "pull_request" ? "PR number (e.g. #42)..." : "Commit SHA..."}
+                placeholder={showGitLinkForm === "branch" ? "Branch name..." : showGitLinkForm === "pr" ? "PR number (e.g. #42)..." : "Commit SHA..."}
                 className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus:border-primary/50"
               />
               <input
@@ -641,7 +731,7 @@ export function IssueDetailPanel({
                 Branch
               </button>
               <button
-                onClick={() => setShowGitLinkForm("pull_request")}
+                onClick={() => setShowGitLinkForm("pr")}
                 className="flex items-center gap-1 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
               >
                 <GitPullRequest className="h-3 w-3" />

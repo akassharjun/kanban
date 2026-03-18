@@ -10,6 +10,8 @@ import type {
   ProjectAgentConfig, ExecutionLog, TaskGraph,
   IssueWithLabels, Epic, Milestone, MilestoneWithProgress, SavedView, GitLink,
   AutomationRule, AutomationLogEntry,
+  GithubConfig, GithubEvent, CIStatus, PRStatus,
+  ConnectionTestResult, BranchNamePreview,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -150,11 +152,11 @@ const recentlyViewed: { issue_id: number; member_id: number; viewed_at: string }
 ];
 const gitLinks: Record<number, GitLink[]> = {
   6: [
-    { id: 1, issue_id: 6, link_type: "branch", url: null, ref_name: "fix/drag-drop-nan", status: "open", created_at: ago(50), updated_at: ago(50) },
+    { id: 1, issue_id: 6, link_type: "branch", url: null, ref_name: "fix/drag-drop-nan", pr_number: null, pr_state: null, pr_merged: false, ci_status: null, review_status: null, created_at: ago(50), updated_at: ago(50) },
   ],
   9: [
-    { id: 2, issue_id: 9, link_type: "pull_request", url: "https://github.com/akassharjun/kanban/pull/42", ref_name: "#42", status: "merged", created_at: ago(70), updated_at: ago(60) },
-    { id: 3, issue_id: 9, link_type: "branch", url: null, ref_name: "feat/undo-redo", status: "merged", created_at: ago(80), updated_at: ago(60) },
+    { id: 2, issue_id: 9, link_type: "pr", url: "https://github.com/akassharjun/kanban/pull/42", ref_name: "#42", pr_number: 42, pr_state: "closed", pr_merged: true, ci_status: "success", review_status: "approved", created_at: ago(70), updated_at: ago(60) },
+    { id: 3, issue_id: 9, link_type: "branch", url: null, ref_name: "feat/undo-redo", pr_number: null, pr_state: null, pr_merged: false, ci_status: null, review_status: null, created_at: ago(80), updated_at: ago(60) },
   ],
 };
 
@@ -540,7 +542,7 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     // Git Links
     case "list_git_links": return gitLinks[args?.issueId] ?? [];
     case "create_git_link": {
-      const gl: GitLink = { id: id(), ...args!.input, status: args!.input.status ?? "open", url: args!.input.url ?? null, created_at: now, updated_at: now };
+      const gl: GitLink = { id: id(), ...args!.input, url: args!.input.url ?? null, pr_number: args!.input.pr_number ?? null, pr_state: args!.input.pr_state ?? null, pr_merged: args!.input.pr_merged ?? false, ci_status: args!.input.ci_status ?? null, review_status: args!.input.review_status ?? null, created_at: now, updated_at: now };
       (gitLinks[args!.input.issue_id] ??= []).push(gl);
       return gl;
     }
@@ -604,6 +606,39 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
       const rule = automationRules.find(r => r.id === l.rule_id);
       return rule && rule.project_id === args?.projectId;
     }).slice(0, args?.limit ?? 50);
+
+    // GitHub Integration
+    case "get_github_config": {
+      return { id: 1, project_id: args?.projectId, repo_owner: "akassharjun", repo_name: "kanban", access_token: null, branch_pattern: "{{prefix}}-{{number}}/{{slug}}", auto_link_prs: true, auto_transition_on_merge: true, merge_target_status_id: 5, created_at: ago(1000), updated_at: ago(10) } as GithubConfig;
+    }
+    case "set_github_config": {
+      return { id: 1, project_id: args?.projectId, ...args?.input, created_at: ago(1000), updated_at: now } as GithubConfig;
+    }
+    case "test_github_connection": {
+      return { success: true, message: "Connected to akassharjun/kanban", rate_limit_remaining: 4985 } as ConnectionTestResult;
+    }
+    case "generate_branch_name": {
+      return { branch_name: "KAN-6/fix-drag-drop-position-calculation", pattern: "{{prefix}}-{{number}}/{{slug}}" } as BranchNamePreview;
+    }
+    case "create_branch_for_issue": {
+      return { id: id(), issue_id: 6, link_type: "branch", url: "https://github.com/akassharjun/kanban/tree/KAN-6/fix-drag-drop", ref_name: "KAN-6/fix-drag-drop", pr_number: null, pr_state: null, pr_merged: false, ci_status: null, review_status: null, created_at: now, updated_at: now } as GitLink;
+    }
+    case "sync_github_prs": {
+      return [
+        { id: id(), issue_id: 9, link_type: "pr", url: "https://github.com/akassharjun/kanban/pull/42", ref_name: "KAN-9/implement-undo-redo", pr_number: 42, pr_state: "open", pr_merged: false, ci_status: "success", review_status: "approved", created_at: ago(60), updated_at: ago(5) },
+      ] as GitLink[];
+    }
+    case "get_pr_status": {
+      return { number: 42, title: "Implement undo/redo for issue edits", state: "open", merged: false, review_status: "approved", ci_status: "success", url: "https://github.com/akassharjun/kanban/pull/42", author: "claude-agent" } as PRStatus;
+    }
+    case "get_ci_status": {
+      return { status: "success", checks: [{ name: "build", status: "completed", conclusion: "success", url: "https://github.com/akassharjun/kanban/actions/runs/1" }, { name: "test", status: "completed", conclusion: "success", url: "https://github.com/akassharjun/kanban/actions/runs/2" }] } as CIStatus;
+    }
+    case "list_github_events": {
+      return [
+        { id: 1, project_id: args?.projectId, event_type: "pr_opened", issue_id: 6, payload: JSON.stringify({ pr_number: 15, pr_title: "Fix drag-drop position calculation" }), processed: true, created_at: ago(50) },
+      ] as GithubEvent[];
+    }
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);
