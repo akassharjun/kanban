@@ -4,6 +4,7 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SortableIssueCard } from "./SortableIssueCard";
+import { motion, AnimatePresence } from "framer-motion";
 import type { Issue, Status, Member, Label, Epic } from "@/types";
 
 export interface BoardColumnProps {
@@ -62,7 +63,7 @@ export function BoardColumn({ status, issues, allIssues, members, epics: _epics,
         {!collapsed && (
           <>
             <span className="truncate text-[13px]">{status.name}</span>
-            <span className="text-[11px] font-normal text-muted-foreground/50">{issues.length}</span>
+            <motion.span key={issues.length} initial={{ scale: 1.3 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 400, damping: 15 }} className="text-[11px] font-normal text-muted-foreground/50">{issues.length}</motion.span>
           </>
         )}
       </button>
@@ -76,20 +77,30 @@ export function BoardColumn({ status, issues, allIssues, members, epics: _epics,
           )}
         >
           <SortableContext items={issues.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-            {issues.map((issue) => (
-              <SortableIssueCard
-                key={issue.id}
-                issue={issue}
-                member={getMember(issue.assignee_id)}
-                labels={getLabelsForIssue(issue.id)}
-                issues={allIssues}
-                members={members}
-                hasGitLinks={(issueGitLinkCounts?.get(issue.id) ?? 0) > 0}
-                isStaleSoon={staleSoonIssueIds?.has(issue.id)}
-                onClick={() => onClickIssue(issue)}
-                onUpdateIssue={onUpdateIssue}
-              />
-            ))}
+            <AnimatePresence mode="popLayout">
+              {issues.map((issue) => (
+                <motion.div
+                  key={issue.id}
+                  layout
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                >
+                  <SortableIssueCard
+                    issue={issue}
+                    member={getMember(issue.assignee_id)}
+                    labels={getLabelsForIssue(issue.id)}
+                    issues={allIssues}
+                    members={members}
+                    hasGitLinks={(issueGitLinkCounts?.get(issue.id) ?? 0) > 0}
+                    isStaleSoon={staleSoonIssueIds?.has(issue.id)}
+                    onClick={() => onClickIssue(issue)}
+                    onUpdateIssue={onUpdateIssue}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </SortableContext>
 
           {isAdding ? (
