@@ -54,9 +54,10 @@ export async function openIssue(page: Page, identifier: string) {
   await page.locator('[title="Close (Esc)"]').waitFor({ state: "visible" });
 }
 
-/** Open search dialog via Cmd+K */
+/** Open search dialog via Cmd+K (Meta+k on Mac, Control+k on Linux/Windows) */
 export async function openSearch(page: Page) {
-  await page.keyboard.press("Meta+k");
+  const isMac = process.platform === "darwin";
+  await page.keyboard.press(isMac ? "Meta+k" : "Control+k");
   await page.getByPlaceholder(/Search issues/).waitFor({ state: "visible" });
 }
 
