@@ -23,6 +23,13 @@ import type {
   TaskGraph,
   ProjectAgentConfig,
   Hook,
+  GithubConfig,
+  GithubEvent,
+  GitLink,
+  CIStatus,
+  PRStatus,
+  ConnectionTestResult,
+  BranchNamePreview,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -244,3 +251,23 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// GitHub Integration
+export const getGithubConfig = (projectId: number) => invoke<GithubConfig | null>("get_github_config", { projectId });
+export const setGithubConfig = (projectId: number, input: {
+  repo_owner: string;
+  repo_name: string;
+  access_token?: string | null;
+  branch_pattern?: string;
+  auto_link_prs?: boolean;
+  auto_transition_on_merge?: boolean;
+  merge_target_status_id?: number | null;
+}) => invoke<GithubConfig>("set_github_config", { projectId, input });
+export const testGithubConnection = (projectId: number) => invoke<ConnectionTestResult>("test_github_connection", { projectId });
+export const generateBranchName = (projectId: number, issueIdentifier: string) => invoke<BranchNamePreview>("generate_branch_name", { projectId, issueIdentifier });
+export const createBranchForIssue = (projectId: number, issueIdentifier: string) => invoke<GitLink>("create_branch_for_issue", { projectId, issueIdentifier });
+export const syncGithubPrs = (projectId: number) => invoke<GitLink[]>("sync_github_prs", { projectId });
+export const getPrStatus = (projectId: number, gitLinkId: number) => invoke<PRStatus>("get_pr_status", { projectId, gitLinkId });
+export const getCiStatus = (projectId: number, issueIdentifier: string) => invoke<CIStatus>("get_ci_status", { projectId, issueIdentifier });
+export const listGitLinks = (issueId: number) => invoke<GitLink[]>("list_git_links", { issueId });
+export const listGithubEvents = (projectId: number) => invoke<GithubEvent[]>("list_github_events", { projectId });

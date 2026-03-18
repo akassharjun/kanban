@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { Plus, Pencil, Trash2, X } from "lucide-react";
+import { Plus, Pencil, Trash2, X, CheckCircle2, XCircle, Loader2, RefreshCw, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Project, Status, Label, IssueTemplate, Hook, ProjectAgentConfig } from "@/types";
+import type { Project, Status, Label, IssueTemplate, Hook, ProjectAgentConfig, GithubConfig, ConnectionTestResult } from "@/types";
 import * as api from "@/tauri/commands";
 
 export interface ProjectSettingsViewProps {
@@ -12,7 +12,7 @@ export interface ProjectSettingsViewProps {
   onDeleteProject?: (id: number) => Promise<unknown>;
 }
 
-type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents";
+type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents" | "github";
 
 const statusCategories = [
   { value: "unstarted", label: "Unstarted" },
@@ -37,6 +37,21 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
   const [agentConfig, setAgentConfig] = useState<ProjectAgentConfig | null>(null);
   const [agentConfigSaving, setAgentConfigSaving] = useState(false);
   const [path, setPath] = useState(project.path || "");
+
+  // GitHub config state
+  const [githubConfig, setGithubConfig] = useState<GithubConfig | null>(null);
+  const [ghRepoOwner, setGhRepoOwner] = useState("");
+  const [ghRepoName, setGhRepoName] = useState("");
+  const [ghAccessToken, setGhAccessToken] = useState("");
+  const [ghBranchPattern, setGhBranchPattern] = useState("{{prefix}}-{{number}}/{{slug}}");
+  const [ghAutoLinkPrs, setGhAutoLinkPrs] = useState(true);
+  const [ghAutoTransition, setGhAutoTransition] = useState(true);
+  const [ghMergeTargetStatusId, setGhMergeTargetStatusId] = useState<number | null>(null);
+  const [ghConnectionTest, setGhConnectionTest] = useState<ConnectionTestResult | null>(null);
+  const [ghTesting, setGhTesting] = useState(false);
+  const [ghSaving, setGhSaving] = useState(false);
+  const [ghSyncing, setGhSyncing] = useState(false);
+  const [ghSyncResult, setGhSyncResult] = useState<string | null>(null);
 
   // General form
   const [name, setName] = useState(project.name);
@@ -74,18 +89,29 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
   }, [project.id]);
 
   const loadData = async () => {
-    const [s, l, t, h, ac] = await Promise.all([
+    const [s, l, t, h, ac, ghc] = await Promise.all([
       api.listStatuses(project.id),
       api.listLabels(project.id),
       api.listTemplates(project.id),
       api.listHooks(project.id),
       api.getProjectAgentConfig(project.id),
+      api.getGithubConfig(project.id).catch(() => null),
     ]);
     setStatuses(s);
     setLabels(l);
     setTemplates(t);
     setHooks(h);
     setAgentConfig(ac);
+    if (ghc) {
+      setGithubConfig(ghc);
+      setGhRepoOwner(ghc.repo_owner);
+      setGhRepoName(ghc.repo_name);
+      setGhAccessToken(ghc.access_token || "");
+      setGhBranchPattern(ghc.branch_pattern);
+      setGhAutoLinkPrs(ghc.auto_link_prs);
+      setGhAutoTransition(ghc.auto_transition_on_merge);
+      setGhMergeTargetStatusId(ghc.merge_target_status_id);
+    }
   };
 
   const handleSaveGeneral = async () => {
@@ -196,7 +222,60 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     { value: "templates", label: "Templates" },
     { value: "hooks", label: "Hooks" },
     { value: "agents", label: "Agent Config" },
+    { value: "github", label: "GitHub" },
   ];
+
+  const handleSaveGithubConfig = async () => {
+    setGhSaving(true);
+    try {
+      const result = await api.setGithubConfig(project.id, {
+        repo_owner: ghRepoOwner,
+        repo_name: ghRepoName,
+        access_token: ghAccessToken || null,
+        branch_pattern: ghBranchPattern,
+        auto_link_prs: ghAutoLinkPrs,
+        auto_transition_on_merge: ghAutoTransition,
+        merge_target_status_id: ghMergeTargetStatusId,
+      });
+      setGithubConfig(result);
+    } catch (e) {
+      console.error("Failed to save GitHub config", e);
+    } finally {
+      setGhSaving(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setGhTesting(true);
+    setGhConnectionTest(null);
+    try {
+      const result = await api.testGithubConnection(project.id);
+      setGhConnectionTest(result);
+    } catch (e) {
+      setGhConnectionTest({ success: false, message: String(e), rate_limit_remaining: null });
+    } finally {
+      setGhTesting(false);
+    }
+  };
+
+  const handleSyncPrs = async () => {
+    setGhSyncing(true);
+    setGhSyncResult(null);
+    try {
+      const links = await api.syncGithubPrs(project.id);
+      setGhSyncResult(`Synced ${links.length} PR(s)`);
+    } catch (e) {
+      setGhSyncResult(`Error: ${String(e)}`);
+    } finally {
+      setGhSyncing(false);
+    }
+  };
+
+  // Generate branch name preview
+  const branchPreview = ghBranchPattern
+    .replace("{{prefix}}", project.prefix)
+    .replace("{{number}}", "5")
+    .replace("{{slug}}", "fix-login-bug");
 
   const handleSaveAgentConfig = async () => {
     if (!agentConfig) return;
@@ -538,6 +617,160 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
         )}
         {tab === "agents" && !agentConfig && (
           <div className="py-8 text-center text-sm text-muted-foreground">Loading agent configuration...</div>
+        )}
+
+        {/* GitHub Tab */}
+        {tab === "github" && (
+          <div className="space-y-6">
+            <p className="text-sm text-muted-foreground">Connect to a GitHub repository to auto-sync branches, PRs, and CI status with issues.</p>
+
+            {/* Repository */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium">Repository</h3>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-xs text-muted-foreground mb-1">Owner</label>
+                  <input
+                    value={ghRepoOwner}
+                    onChange={e => setGhRepoOwner(e.target.value)}
+                    placeholder="akassharjun"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary font-mono"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-xs text-muted-foreground mb-1">Repository</label>
+                  <input
+                    value={ghRepoName}
+                    onChange={e => setGhRepoName(e.target.value)}
+                    placeholder="kanban"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Access Token */}
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Access Token</label>
+              <p className="text-xs text-muted-foreground/70 mb-1">GitHub Personal Access Token. Falls back to GITHUB_PAT env var if empty.</p>
+              <input
+                type="password"
+                value={ghAccessToken}
+                onChange={e => setGhAccessToken(e.target.value)}
+                placeholder="ghp_..."
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary font-mono"
+              />
+            </div>
+
+            {/* Branch Pattern */}
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Branch Pattern</label>
+              <p className="text-xs text-muted-foreground/70 mb-1">
+                Template for auto-generated branch names. Available: <code className="bg-accent px-1 rounded">{"{{prefix}}"}</code> <code className="bg-accent px-1 rounded">{"{{number}}"}</code> <code className="bg-accent px-1 rounded">{"{{slug}}"}</code>
+              </p>
+              <input
+                value={ghBranchPattern}
+                onChange={e => setGhBranchPattern(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary font-mono"
+              />
+              <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground/60">
+                <GitBranch className="h-3 w-3" />
+                Preview: <code className="bg-accent px-1.5 py-0.5 rounded font-mono">{branchPreview}</code>
+              </div>
+            </div>
+
+            {/* Auto-link PRs */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium">Automation</h3>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ghAutoLinkPrs}
+                  onChange={e => setGhAutoLinkPrs(e.target.checked)}
+                  className="rounded border-border"
+                />
+                Auto-link PRs to issues (match by branch name or PR body)
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ghAutoTransition}
+                  onChange={e => setGhAutoTransition(e.target.checked)}
+                  className="rounded border-border"
+                />
+                Auto-transition issue when PR is merged
+              </label>
+              {ghAutoTransition && (
+                <div className="ml-6">
+                  <label className="block text-xs text-muted-foreground mb-1">Target status on merge</label>
+                  <select
+                    value={ghMergeTargetStatusId ?? ""}
+                    onChange={e => setGhMergeTargetStatusId(e.target.value ? Number(e.target.value) : null)}
+                    className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
+                  >
+                    <option value="">-- Select status --</option>
+                    {statuses.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.category})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={handleSaveGithubConfig}
+                disabled={ghSaving || !ghRepoOwner || !ghRepoName}
+                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {ghSaving ? "Saving..." : "Save Config"}
+              </button>
+
+              <button
+                onClick={handleTestConnection}
+                disabled={ghTesting || !githubConfig}
+                className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50"
+              >
+                {ghTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                Test Connection
+              </button>
+
+              <button
+                onClick={handleSyncPrs}
+                disabled={ghSyncing || !githubConfig}
+                className="flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50"
+              >
+                {ghSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Sync PRs Now
+              </button>
+            </div>
+
+            {/* Connection test result */}
+            {ghConnectionTest && (
+              <div className={cn(
+                "flex items-center gap-2 rounded-lg border px-4 py-3 text-sm",
+                ghConnectionTest.success
+                  ? "border-green-500/30 bg-green-500/5 text-green-600 dark:text-green-400"
+                  : "border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400"
+              )}>
+                {ghConnectionTest.success ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
+                {ghConnectionTest.message}
+                {ghConnectionTest.rate_limit_remaining != null && (
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    Rate limit: {ghConnectionTest.rate_limit_remaining} remaining
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Sync result */}
+            {ghSyncResult && (
+              <div className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+                {ghSyncResult}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

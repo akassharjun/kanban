@@ -197,6 +197,17 @@ pub fn run_gui(database_url: Option<String>) {
             commands::execution_logs::task_replay,
             commands::execution_logs::task_attempts,
             commands::execution_logs::recent_activity,
+            // GitHub Integration
+            commands::github::get_github_config,
+            commands::github::set_github_config,
+            commands::github::test_github_connection,
+            commands::github::generate_branch_name,
+            commands::github::create_branch_for_issue,
+            commands::github::sync_github_prs,
+            commands::github::get_pr_status,
+            commands::github::get_ci_status,
+            commands::github::list_git_links,
+            commands::github::list_github_events,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

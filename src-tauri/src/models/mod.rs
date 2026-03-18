@@ -1,5 +1,7 @@
 pub mod agent;
+pub mod github;
 pub use agent::*;
+pub use github::*;
 
 use serde::{Deserialize, Serialize};
 

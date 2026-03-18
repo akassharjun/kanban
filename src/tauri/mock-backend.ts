@@ -8,6 +8,8 @@ import type {
   ProjectMetrics, CustomField, IssueTemplate, Hook,
   ProjectAgentConfig, FullTaskContract, ExecutionLog, TaskGraph,
   IssueWithLabels, UndoLogEntry,
+  GithubConfig, GithubEvent, GitLink, CIStatus, PRStatus,
+  ConnectionTestResult, BranchNamePreview,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -356,6 +358,45 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "reject_task": return;
     case "unclaim_task": return;
     case "log_task_activity": return;
+
+    // GitHub Integration
+    case "get_github_config": {
+      return { id: 1, project_id: args?.projectId, repo_owner: "akassharjun", repo_name: "kanban", access_token: null, branch_pattern: "{{prefix}}-{{number}}/{{slug}}", auto_link_prs: true, auto_transition_on_merge: true, merge_target_status_id: 5, created_at: ago(1000), updated_at: ago(10) } as GithubConfig;
+    }
+    case "set_github_config": {
+      return { id: 1, project_id: args?.projectId, ...args?.input, created_at: ago(1000), updated_at: now } as GithubConfig;
+    }
+    case "test_github_connection": {
+      return { success: true, message: "Connected to akassharjun/kanban", rate_limit_remaining: 4985 } as ConnectionTestResult;
+    }
+    case "generate_branch_name": {
+      return { branch_name: "KAN-6/fix-drag-drop-position-calculation", pattern: "{{prefix}}-{{number}}/{{slug}}" } as BranchNamePreview;
+    }
+    case "create_branch_for_issue": {
+      return { id: id(), issue_id: 6, link_type: "branch", url: "https://github.com/akassharjun/kanban/tree/KAN-6/fix-drag-drop", ref_name: "KAN-6/fix-drag-drop", pr_number: null, pr_state: null, pr_merged: false, ci_status: null, review_status: null, created_at: now, updated_at: now } as GitLink;
+    }
+    case "sync_github_prs": {
+      return [
+        { id: id(), issue_id: 9, link_type: "pr", url: "https://github.com/akassharjun/kanban/pull/42", ref_name: "KAN-9/implement-undo-redo", pr_number: 42, pr_state: "open", pr_merged: false, ci_status: "success", review_status: "approved", created_at: ago(60), updated_at: ago(5) },
+      ] as GitLink[];
+    }
+    case "get_pr_status": {
+      return { number: 42, title: "Implement undo/redo for issue edits", state: "open", merged: false, review_status: "approved", ci_status: "success", url: "https://github.com/akassharjun/kanban/pull/42", author: "claude-agent" } as PRStatus;
+    }
+    case "get_ci_status": {
+      return { status: "success", checks: [{ name: "build", status: "completed", conclusion: "success", url: "https://github.com/akassharjun/kanban/actions/runs/1" }, { name: "test", status: "completed", conclusion: "success", url: "https://github.com/akassharjun/kanban/actions/runs/2" }] } as CIStatus;
+    }
+    case "list_git_links": {
+      return [
+        { id: 1, issue_id: args?.issueId, link_type: "branch", url: "https://github.com/akassharjun/kanban/tree/KAN-6/fix-drag-drop", ref_name: "KAN-6/fix-drag-drop", pr_number: null, pr_state: null, pr_merged: false, ci_status: null, review_status: null, created_at: ago(100), updated_at: ago(50) },
+        { id: 2, issue_id: args?.issueId, link_type: "pr", url: "https://github.com/akassharjun/kanban/pull/15", ref_name: "KAN-6/fix-drag-drop", pr_number: 15, pr_state: "open", pr_merged: false, ci_status: "success", review_status: "pending", created_at: ago(50), updated_at: ago(5) },
+      ] as GitLink[];
+    }
+    case "list_github_events": {
+      return [
+        { id: 1, project_id: args?.projectId, event_type: "pr_opened", issue_id: 6, payload: JSON.stringify({ pr_number: 15, pr_title: "Fix drag-drop position calculation" }), processed: true, created_at: ago(50) },
+      ] as GithubEvent[];
+    }
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);

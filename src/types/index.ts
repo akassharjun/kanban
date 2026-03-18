@@ -268,3 +268,78 @@ export interface ProjectAgentConfig {
   heartbeat_interval_seconds: number;
   missed_heartbeats_before_offline: number;
 }
+
+// GitHub Integration Types
+
+export interface GithubConfig {
+  id: number;
+  project_id: number;
+  repo_owner: string;
+  repo_name: string;
+  access_token: string | null;
+  branch_pattern: string;
+  auto_link_prs: boolean;
+  auto_transition_on_merge: boolean;
+  merge_target_status_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GithubEvent {
+  id: number;
+  project_id: number;
+  event_type: "pr_opened" | "pr_merged" | "pr_closed" | "pr_review" | "check_run" | "push";
+  issue_id: number | null;
+  payload: string;
+  processed: boolean;
+  created_at: string;
+}
+
+export interface GitLink {
+  id: number;
+  issue_id: number;
+  link_type: "branch" | "pr" | "commit";
+  url: string | null;
+  ref_name: string;
+  pr_number: number | null;
+  pr_state: string | null;
+  pr_merged: boolean;
+  ci_status: string | null;
+  review_status: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CIStatus {
+  status: "pending" | "success" | "failure" | "neutral" | "unknown";
+  checks: CICheck[];
+}
+
+export interface CICheck {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  url: string | null;
+}
+
+export interface PRStatus {
+  number: number;
+  title: string;
+  state: string;
+  merged: boolean;
+  review_status: "approved" | "changes_requested" | "pending" | "none";
+  ci_status: "pending" | "success" | "failure";
+  url: string;
+  author: string;
+}
+
+export interface ConnectionTestResult {
+  success: boolean;
+  message: string;
+  rate_limit_remaining: number | null;
+}
+
+export interface BranchNamePreview {
+  branch_name: string;
+  pattern: string;
+}

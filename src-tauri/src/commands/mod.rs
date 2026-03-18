@@ -2,6 +2,7 @@ pub mod agents;
 pub mod comments;
 pub mod custom_fields;
 pub mod execution_logs;
+pub mod github;
 pub mod health;
 pub mod hooks;
 pub mod issues;
