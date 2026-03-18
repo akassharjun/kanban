@@ -403,3 +403,19 @@ export const syncGithubPrs = (projectId: number) => invoke<GitLink[]>("sync_gith
 export const getPrStatus = (projectId: number, gitLinkId: number) => invoke<PRStatus>("get_pr_status", { projectId, gitLinkId });
 export const getCiStatus = (projectId: number, issueIdentifier: string) => invoke<CIStatus>("get_ci_status", { projectId, issueIdentifier });
 export const listGithubEvents = (projectId: number) => invoke<GithubEvent[]>("list_github_events", { projectId });
+
+// AI Agent Intelligence
+import type { TriageSuggestion, DecomposedTask, ParsedIssue } from "@/types";
+
+export const triageIssue = (projectId: number, title: string, description?: string) =>
+  invoke<TriageSuggestion>("triage_issue", { projectId, title, description });
+export const autoTriageAndApply = (issueId: number) =>
+  invoke<TriageSuggestion>("auto_triage_and_apply", { issueId });
+export const decomposeIssue = (issueId: number) =>
+  invoke<DecomposedTask[]>("decompose_issue", { issueId });
+export const applyDecomposition = (issueId: number) =>
+  invoke<Issue[]>("apply_decomposition", { issueId });
+export const parseNaturalLanguage = (projectId: number, text: string) =>
+  invoke<ParsedIssue>("parse_natural_language", { projectId, text });
+export const createFromNaturalLanguage = (projectId: number, text: string, statusId: number) =>
+  invoke<Issue>("create_from_natural_language", { projectId, text, statusId });

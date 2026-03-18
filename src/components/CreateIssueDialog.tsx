@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { DialogOverlay, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Check } from "lucide-react";
-import type { Status, Member, Label, IssueTemplate, Epic, MilestoneWithProgress } from "@/types";
+import { Check, Sparkles } from "lucide-react";
+import type { Status, Member, Label, IssueTemplate, Epic, MilestoneWithProgress, TriageSuggestion } from "@/types";
+import * as api from "@/tauri/commands";
 
 interface CreateIssueDialogProps {
   projectId: number;
@@ -54,6 +55,40 @@ export function CreateIssueDialog({
   const [selectedLabels, setSelectedLabels] = useState<number[]>([]);
   const [epicId, setEpicId] = useState<number | undefined>();
   const [milestoneId, setMilestoneId] = useState<number | undefined>();
+  const [smartTriage, setSmartTriage] = useState(false);
+  const [triageSuggestion, setTriageSuggestion] = useState<TriageSuggestion | null>(null);
+  const triageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced triage on title change when smart triage is enabled
+  const runTriage = useCallback(async (titleText: string) => {
+    if (!smartTriage || !titleText.trim() || titleText.trim().length < 5) {
+      setTriageSuggestion(null);
+      return;
+    }
+    try {
+      const suggestion = await api.triageIssue(projectId, titleText, description || undefined);
+      setTriageSuggestion(suggestion);
+      // Auto-fill only if user hasn't manually set values
+      if (suggestion.suggested_priority && priority === "none") {
+        setPriority(suggestion.suggested_priority);
+      }
+      if (suggestion.suggested_label_ids.length > 0 && selectedLabels.length === 0) {
+        setSelectedLabels(suggestion.suggested_label_ids);
+      }
+      if (suggestion.suggested_assignee_id && !assigneeId) {
+        setAssigneeId(suggestion.suggested_assignee_id);
+      }
+    } catch {
+      // triage is best-effort
+    }
+  }, [smartTriage, projectId, description, priority, selectedLabels.length, assigneeId]);
+
+  useEffect(() => {
+    if (!smartTriage) return;
+    if (triageTimerRef.current) clearTimeout(triageTimerRef.current);
+    triageTimerRef.current = setTimeout(() => runTriage(title), 500);
+    return () => { if (triageTimerRef.current) clearTimeout(triageTimerRef.current); };
+  }, [title, smartTriage, runTriage]);
 
   const applyTemplate = (template: IssueTemplate) => {
     if (template.description_template) setDescription(template.description_template);
@@ -105,6 +140,28 @@ export function CreateIssueDialog({
         )}
 
         <div className="space-y-4">
+          {/* Smart Triage Toggle */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSmartTriage(!smartTriage)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-all",
+                smartTriage
+                  ? "bg-primary/10 text-primary ring-1 ring-primary/30"
+                  : "text-muted-foreground hover:bg-muted"
+              )}
+            >
+              <Sparkles className="h-3 w-3" />
+              Smart Triage
+            </button>
+            {triageSuggestion && smartTriage && (
+              <span className="text-[10px] text-muted-foreground/60">
+                {Math.round(triageSuggestion.confidence * 100)}% confidence
+              </span>
+            )}
+          </div>
+
           <div>
             <label className="block text-[13px] text-muted-foreground mb-1.5">Title</label>
             <Input

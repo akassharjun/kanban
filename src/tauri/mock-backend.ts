@@ -12,6 +12,7 @@ import type {
   AutomationRule, AutomationLogEntry,
   GithubConfig, GithubEvent, CIStatus, PRStatus,
   ConnectionTestResult, BranchNamePreview,
+  TriageSuggestion, DecomposedTask, ParsedIssue,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -638,6 +639,61 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
       return [
         { id: 1, project_id: args?.projectId, event_type: "pr_opened", issue_id: 6, payload: JSON.stringify({ pr_number: 15, pr_title: "Fix drag-drop position calculation" }), processed: true, created_at: ago(50) },
       ] as GithubEvent[];
+    }
+
+    // AI Agent Intelligence
+    case "triage_issue": {
+      return {
+        suggested_priority: "medium",
+        suggested_label_ids: [],
+        suggested_assignee_id: null,
+        suggested_epic_id: null,
+        confidence: 0.5,
+        reasoning: "Mock triage suggestion",
+      } as TriageSuggestion;
+    }
+    case "auto_triage_and_apply": {
+      return {
+        suggested_priority: "medium",
+        suggested_label_ids: [],
+        suggested_assignee_id: null,
+        suggested_epic_id: null,
+        confidence: 0.5,
+        reasoning: "Mock auto-triage applied",
+      } as TriageSuggestion;
+    }
+    case "decompose_issue": {
+      return [
+        { title: "Sub-task 1", description: null, suggested_priority: null, suggested_labels: [] },
+        { title: "Sub-task 2", description: null, suggested_priority: null, suggested_labels: [] },
+      ] as DecomposedTask[];
+    }
+    case "apply_decomposition": {
+      return [] as Issue[];
+    }
+    case "parse_natural_language": {
+      return {
+        title: args?.text ?? "Parsed issue",
+        description: args?.text ?? "",
+        suggested_priority: "medium",
+        suggested_label_ids: [],
+        suggested_assignee_id: null,
+      } as ParsedIssue;
+    }
+    case "create_from_natural_language": {
+      const proj = projects.find(p => p.id === args?.projectId);
+      const counter = proj ? ++proj.issue_counter : id();
+      const prefix = proj?.prefix ?? "ISS";
+      const i: Issue = {
+        id: id(), project_id: args?.projectId, identifier: `${prefix}-${counter}`,
+        title: args?.text ?? "New issue", description: args?.text ?? null,
+        status_id: args?.statusId, priority: "medium", assignee_id: null,
+        parent_id: null, position: 0, estimate: null, due_date: null,
+        epic_id: null, milestone_id: null,
+        created_at: now, updated_at: now,
+      };
+      issues.push(i);
+      return i;
     }
 
     default:

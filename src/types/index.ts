@@ -441,6 +441,32 @@ export interface AutomationLogEntry {
   executed_at: string;
 }
 
+// AI Agent Intelligence Types
+
+export interface TriageSuggestion {
+  suggested_priority: string | null;
+  suggested_label_ids: number[];
+  suggested_assignee_id: number | null;
+  suggested_epic_id: number | null;
+  confidence: number;
+  reasoning: string;
+}
+
+export interface DecomposedTask {
+  title: string;
+  description: string | null;
+  suggested_priority: string | null;
+  suggested_labels: string[];
+}
+
+export interface ParsedIssue {
+  title: string;
+  description: string;
+  suggested_priority: string | null;
+  suggested_label_ids: number[];
+  suggested_assignee_id: number | null;
+}
+
 export interface ProjectAgentConfig {
   project_id: number;
   auto_accept_threshold: number;
