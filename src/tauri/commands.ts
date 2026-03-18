@@ -23,6 +23,12 @@ import type {
   TaskGraph,
   ProjectAgentConfig,
   Hook,
+  AgentPerformance,
+  ProjectAgentSummary,
+  AgentRanking,
+  AgentRegistryEntry,
+  AgentCapability,
+  AgentMatch,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -244,3 +250,32 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// Agent Analytics
+export const recordTaskMetric = (input: {
+  agent_id: string; task_identifier: string; outcome: string;
+  started_at?: string; completed_at?: string; duration_seconds?: number;
+  confidence?: number; attempt_number?: number; complexity?: string;
+  task_type?: string; files_changed?: number; lines_added?: number; lines_removed?: number;
+}) => invoke<void>("record_task_metric", { input });
+export const getAgentPerformance = (agentId: string) => invoke<AgentPerformance>("get_agent_performance", { agentId });
+export const getProjectAgentSummary = (projectId: number) => invoke<ProjectAgentSummary>("get_project_agent_summary", { projectId });
+export const getAgentLeaderboard = (projectId: number) => invoke<AgentRanking[]>("get_agent_leaderboard", { projectId });
+
+// Marketplace
+export const marketplaceRegister = (input: {
+  agent_id: string; name: string; description?: string; provider?: string;
+  version?: string; endpoint?: string; capabilities: string[];
+  max_concurrent?: number; max_complexity?: string; hourly_rate?: number;
+}) => invoke<AgentRegistryEntry>("marketplace_register", { input });
+export const marketplaceUpdate = (agentId: string, input: {
+  name?: string; description?: string; version?: string; endpoint?: string;
+  capabilities?: string[]; max_concurrent?: number; max_complexity?: string; hourly_rate?: number;
+}) => invoke<AgentRegistryEntry>("marketplace_update", { agentId, input });
+export const marketplaceDeregister = (agentId: string) => invoke<void>("marketplace_deregister", { agentId });
+export const marketplaceList = () => invoke<AgentRegistryEntry[]>("marketplace_list");
+export const marketplaceSearch = (skills: string[], maxComplexity?: string) => invoke<AgentRegistryEntry[]>("marketplace_search", { skills, maxComplexity });
+export const marketplaceGet = (agentId: string) => invoke<AgentRegistryEntry>("marketplace_get", { agentId });
+export const updateAgentProficiency = (agentId: string, capability: string, success: boolean) => invoke<void>("update_agent_proficiency", { agentId, capability, success });
+export const getAgentCapabilities = (agentId: string) => invoke<AgentCapability[]>("get_agent_capabilities", { agentId });
+export const findBestAgent = (taskSkills: string[], complexity: string) => invoke<AgentMatch[]>("find_best_agent", { taskSkills, complexity });

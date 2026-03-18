@@ -1,3 +1,4 @@
+pub mod agent_analytics;
 pub mod agents;
 pub mod comments;
 pub mod custom_fields;
@@ -6,6 +7,7 @@ pub mod health;
 pub mod hooks;
 pub mod issues;
 pub mod labels;
+pub mod marketplace;
 pub mod members;
 pub mod notifications;
 pub mod projects;

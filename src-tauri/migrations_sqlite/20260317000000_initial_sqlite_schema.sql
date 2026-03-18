@@ -245,3 +245,57 @@ CREATE TABLE IF NOT EXISTS project_agent_config (
     heartbeat_interval_seconds INTEGER NOT NULL DEFAULT 60,
     missed_heartbeats_before_offline INTEGER NOT NULL DEFAULT 3
 );
+
+-- Agent task metrics (analytics)
+CREATE TABLE IF NOT EXISTS agent_task_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL,
+    task_identifier TEXT NOT NULL,
+    started_at TEXT,
+    completed_at TEXT,
+    duration_seconds INTEGER,
+    confidence REAL,
+    attempt_number INTEGER NOT NULL DEFAULT 1,
+    outcome TEXT NOT NULL CHECK(outcome IN ('completed', 'failed', 'rejected', 'timeout')),
+    complexity TEXT,
+    task_type TEXT,
+    files_changed INTEGER DEFAULT 0,
+    lines_added INTEGER DEFAULT 0,
+    lines_removed INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_agent_task_metrics_agent ON agent_task_metrics(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_task_metrics_date ON agent_task_metrics(created_at);
+
+-- Agent capabilities (marketplace)
+CREATE TABLE IF NOT EXISTS agent_capabilities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    capability TEXT NOT NULL,
+    proficiency REAL NOT NULL DEFAULT 0.5,
+    tasks_completed INTEGER NOT NULL DEFAULT 0,
+    tasks_failed INTEGER NOT NULL DEFAULT 0,
+    avg_confidence REAL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(agent_id, capability)
+);
+
+-- Agent registry (marketplace)
+CREATE TABLE IF NOT EXISTS agent_registry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT,
+    provider TEXT,
+    version TEXT,
+    endpoint TEXT,
+    auth_token TEXT,
+    capabilities TEXT NOT NULL DEFAULT '[]',
+    max_concurrent INTEGER NOT NULL DEFAULT 1,
+    max_complexity TEXT NOT NULL DEFAULT 'medium',
+    hourly_rate REAL,
+    rating REAL,
+    total_tasks INTEGER NOT NULL DEFAULT 0,
+    registered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen_at TEXT
+);

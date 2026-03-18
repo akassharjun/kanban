@@ -70,6 +70,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: TaskAction,
     },
+    /// Agent marketplace
+    Marketplace {
+        #[command(subcommand)]
+        action: MarketplaceAction,
+    },
     /// View system metrics
     Metrics {
         #[arg(long)]
@@ -298,6 +303,49 @@ pub enum AgentAction {
 }
 
 #[derive(Subcommand)]
+pub enum MarketplaceAction {
+    /// List all agents in the marketplace
+    List,
+    /// Register an agent in the marketplace
+    Register {
+        #[arg(long)]
+        agent_id: String,
+        #[arg(long)]
+        name: String,
+        /// Comma-delimited capabilities
+        #[arg(long)]
+        skills: String,
+        #[arg(long)]
+        provider: Option<String>,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        max_complexity: Option<String>,
+    },
+    /// Search marketplace for agents with specific skills
+    Search {
+        /// Comma-delimited skills to search
+        #[arg(long)]
+        skills: String,
+        #[arg(long)]
+        max_complexity: Option<String>,
+    },
+    /// Find best agent for a task
+    BestMatch {
+        /// Comma-delimited required skills
+        #[arg(long)]
+        skills: String,
+        #[arg(long, default_value = "medium")]
+        complexity: String,
+    },
+    /// Deregister an agent from marketplace
+    Deregister {
+        #[arg(long)]
+        agent_id: String,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum TaskAction {
     /// Get next available task for an agent
     Next {
@@ -494,6 +542,7 @@ pub async fn run(
         Commands::Notifications { action } => handle_notifications(pool, action, json).await?,
         Commands::Comment { action } => handle_comment(pool, action, json).await?,
         Commands::Agent { action } => handle_agent(pool, backend, action, json).await?,
+        Commands::Marketplace { action } => handle_marketplace(pool, backend, action, json).await?,
         Commands::Task { action } => handle_task(pool, backend, action, json).await?,
         Commands::Metrics { project, agent } => handle_metrics(pool, backend, project, agent, json).await?,
         Commands::Export { output } => handle_export(pool, output).await?,
@@ -1329,6 +1378,140 @@ async fn handle_agent(
                 println!("  Avg confidence: {:.2}", avg);
                 println!("  Total time: {}s", stats.total_completion_time_seconds);
             }
+        }
+    }
+    Ok(())
+}
+
+async fn handle_marketplace(
+    pool: &AnyPool,
+    backend: &crate::db::DbBackend,
+    action: MarketplaceAction,
+    json: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        MarketplaceAction::List => {
+            let entries: Vec<(String, String, Option<String>, Option<String>, String, Option<f64>, i64)> = sqlx::query_as(
+                "SELECT agent_id, name, description, provider, capabilities, rating, total_tasks FROM agent_registry ORDER BY rating DESC NULLS LAST"
+            ).fetch_all(pool).await?;
+            if json {
+                let results: Vec<serde_json::Value> = entries.iter().map(|(aid, name, desc, provider, caps, rating, tasks)| {
+                    serde_json::json!({"agent_id": aid, "name": name, "description": desc, "provider": provider, "capabilities": serde_json::from_str::<serde_json::Value>(caps).unwrap_or(serde_json::json!([])), "rating": rating, "total_tasks": tasks})
+                }).collect();
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            } else {
+                for (aid, name, _desc, provider, _caps, rating, tasks) in &entries {
+                    println!("{} | {} | {} | rating: {} | tasks: {}", aid, name, provider.as_deref().unwrap_or("-"), rating.map(|r| format!("{:.2}", r)).unwrap_or_else(|| "-".to_string()), tasks);
+                }
+                if entries.is_empty() { println!("No agents registered in marketplace."); }
+            }
+        }
+        MarketplaceAction::Register { agent_id, name, skills, provider, description, max_complexity } => {
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            let caps: Vec<String> = skills.split(',').map(|s| s.trim().to_string()).collect();
+            let caps_json = serde_json::to_string(&caps)?;
+            let jb = crate::db::compat::jsonb_cast(backend);
+            let mx = max_complexity.as_deref().unwrap_or("medium");
+
+            sqlx::query(&format!(
+                "INSERT INTO agent_registry (agent_id, name, description, provider, capabilities, max_concurrent, max_complexity, registered_at, last_seen_at) VALUES ($1, $2, $3, $4, $5{jb}, 1, $6, $7, $8) ON CONFLICT(agent_id) DO UPDATE SET name=$2, description=$3, provider=$4, capabilities=$5{jb}, max_complexity=$6, last_seen_at=$8"
+            ))
+            .bind(&agent_id).bind(&name).bind(&description).bind(&provider)
+            .bind(&caps_json).bind(mx).bind(&now).bind(&now)
+            .execute(pool).await?;
+
+            for cap in &caps {
+                let _ = sqlx::query(
+                    "INSERT INTO agent_capabilities (agent_id, capability) VALUES ($1, $2) ON CONFLICT(agent_id, capability) DO NOTHING"
+                ).bind(&agent_id).bind(cap).execute(pool).await;
+            }
+
+            if json {
+                println!("{}", serde_json::json!({"agent_id": agent_id, "name": name, "capabilities": caps, "status": "registered"}));
+            } else {
+                println!("Registered {} in marketplace (skills: {})", name, skills);
+            }
+            notify_change();
+        }
+        MarketplaceAction::Search { skills, max_complexity } => {
+            let skill_list: Vec<String> = skills.split(',').map(|s| s.trim().to_string()).collect();
+            let all: Vec<(String, String, String, String, Option<f64>, i64)> = sqlx::query_as(
+                "SELECT agent_id, name, capabilities, max_complexity, rating, total_tasks FROM agent_registry ORDER BY rating DESC NULLS LAST"
+            ).fetch_all(pool).await?;
+
+            let complexity_order = |c: &str| match c { "small" => 1, "medium" => 2, "large" => 3, _ => 2 };
+            let max_cx_val = complexity_order(max_complexity.as_deref().unwrap_or("large"));
+
+            let results: Vec<&(String, String, String, String, Option<f64>, i64)> = all.iter().filter(|(_, _, caps, mx, _, _)| {
+                if complexity_order(mx) < max_cx_val { return false; }
+                let caps_list: Vec<String> = serde_json::from_str(caps).unwrap_or_default();
+                skill_list.iter().any(|s| caps_list.iter().any(|c| c.contains(s) || s.contains(c)))
+            }).collect();
+
+            if json {
+                let r: Vec<serde_json::Value> = results.iter().map(|(aid, name, caps, _, rating, tasks)| {
+                    serde_json::json!({"agent_id": aid, "name": name, "capabilities": serde_json::from_str::<serde_json::Value>(caps).unwrap_or(serde_json::json!([])), "rating": rating, "total_tasks": tasks})
+                }).collect();
+                println!("{}", serde_json::to_string_pretty(&r)?);
+            } else {
+                for (aid, name, _, _, rating, tasks) in &results {
+                    println!("{} | {} | rating: {} | tasks: {}", aid, name, rating.map(|r| format!("{:.2}", r)).unwrap_or_else(|| "-".to_string()), tasks);
+                }
+                if results.is_empty() { println!("No matching agents found."); }
+            }
+        }
+        MarketplaceAction::BestMatch { skills, complexity } => {
+            let skill_list: Vec<String> = skills.split(',').map(|s| s.trim().to_string()).collect();
+            let entries: Vec<(String, String, String, Option<f64>)> = sqlx::query_as(
+                "SELECT agent_id, name, max_complexity, rating FROM agent_registry"
+            ).fetch_all(pool).await?;
+
+            let complexity_order = |c: &str| match c { "small" => 1, "medium" => 2, "large" => 3, _ => 2 };
+            let target_cx = complexity_order(&complexity);
+
+            let mut matches: Vec<(String, String, f64, Vec<String>)> = Vec::new();
+            for (agent_id, name, max_cx, rating) in entries {
+                if complexity_order(&max_cx) < target_cx { continue; }
+                let caps: Vec<(String, f64)> = sqlx::query_as(
+                    "SELECT capability, proficiency FROM agent_capabilities WHERE agent_id = $1"
+                ).bind(&agent_id).fetch_all(pool).await?;
+
+                let mut matched = Vec::new();
+                let mut total_prof = 0.0;
+                for skill in &skill_list {
+                    if let Some((_, prof)) = caps.iter().find(|(c, _)| c.contains(skill) || skill.contains(c)) {
+                        matched.push(skill.clone());
+                        total_prof += prof;
+                    }
+                }
+                if matched.is_empty() && !skill_list.is_empty() { continue; }
+                let avg_prof = if matched.is_empty() { 0.5 } else { total_prof / matched.len() as f64 };
+                let skill_ratio = if skill_list.is_empty() { 1.0 } else { matched.len() as f64 / skill_list.len() as f64 };
+                let r = rating.unwrap_or(0.5);
+                let score = skill_ratio * 0.4 + avg_prof * 0.3 + r * 0.3;
+                matches.push((agent_id, name, score, matched));
+            }
+            matches.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+
+            if json {
+                let r: Vec<serde_json::Value> = matches.iter().map(|(aid, name, score, matched)| {
+                    serde_json::json!({"agent_id": aid, "name": name, "score": score, "matched_skills": matched})
+                }).collect();
+                println!("{}", serde_json::to_string_pretty(&r)?);
+            } else {
+                for (aid, name, score, matched) in &matches {
+                    println!("{} | {} | score: {:.2} | matched: {}", aid, name, score, matched.join(", "));
+                }
+                if matches.is_empty() { println!("No matching agents found."); }
+            }
+        }
+        MarketplaceAction::Deregister { agent_id } => {
+            sqlx::query("DELETE FROM agent_capabilities WHERE agent_id = $1")
+                .bind(&agent_id).execute(pool).await?;
+            sqlx::query("DELETE FROM agent_registry WHERE agent_id = $1")
+                .bind(&agent_id).execute(pool).await?;
+            println!("Deregistered {} from marketplace", agent_id);
+            notify_change();
         }
     }
     Ok(())
