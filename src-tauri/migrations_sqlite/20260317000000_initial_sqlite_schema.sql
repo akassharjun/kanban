@@ -245,3 +245,17 @@ CREATE TABLE IF NOT EXISTS project_agent_config (
     heartbeat_interval_seconds INTEGER NOT NULL DEFAULT 60,
     missed_heartbeats_before_offline INTEGER NOT NULL DEFAULT 3
 );
+
+-- Git Links (branch/PR/commit linking to issues)
+CREATE TABLE IF NOT EXISTS git_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    link_type TEXT NOT NULL CHECK(link_type IN ('branch', 'pull_request', 'commit')),
+    url TEXT,
+    ref_name TEXT NOT NULL,
+    status TEXT DEFAULT 'open' CHECK(status IN ('open', 'merged', 'closed')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_git_links_issue ON git_links(issue_id);

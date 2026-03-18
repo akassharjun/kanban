@@ -178,6 +178,28 @@ function App() {
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
 
+  // Compute "stale soon" issues - within 7 days of being auto-closed
+  const staleSoonIssueIds = useMemo(() => {
+    const ids = new Set<number>();
+    if (!selectedProject?.stale_days) return ids;
+    const staleDays = selectedProject.stale_days;
+    const warningDays = staleDays - 7; // warn 7 days before
+    if (warningDays < 0) return ids;
+    const unstartedStatuses = new Set(
+      statuses.filter(s => s.category === "unstarted").map(s => s.id)
+    );
+    const now = Date.now();
+    for (const issue of issues) {
+      if (!unstartedStatuses.has(issue.status_id)) continue;
+      const updatedAt = new Date(issue.updated_at).getTime();
+      const daysSinceUpdate = (now - updatedAt) / (1000 * 60 * 60 * 24);
+      if (daysSinceUpdate >= warningDays) {
+        ids.add(issue.id);
+      }
+    }
+    return ids;
+  }, [issues, statuses, selectedProject]);
+
   return (
     <ErrorBoundary>
     <div className="flex h-screen bg-background text-foreground">
@@ -226,6 +248,7 @@ function App() {
                   members={members}
                   labels={labels}
                   getLabelsForIssue={getLabelsForIssue}
+                  staleSoonIssueIds={staleSoonIssueIds}
                   onUpdateIssue={updateIssue}
                   onClickIssue={(issue) => setSelectedIssueId(issue.id)}
                   onQuickCreate={handleQuickCreate}

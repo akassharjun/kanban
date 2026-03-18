@@ -54,6 +54,8 @@ pub struct Project {
     pub created_at: String,
     pub updated_at: String,
     pub path: Option<String>,
+    pub stale_days: Option<i64>,
+    pub stale_close_status_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -190,4 +192,16 @@ pub struct CustomFieldValue {
     pub issue_id: i64,
     pub field_id: i64,
     pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct GitLink {
+    pub id: i64,
+    pub issue_id: i64,
+    pub link_type: String,
+    pub url: Option<String>,
+    pub ref_name: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
 }

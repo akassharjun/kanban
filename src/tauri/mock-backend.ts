@@ -7,7 +7,7 @@ import type {
   ActivityLogEntry, Notification, Agent, AgentMetrics,
   ProjectMetrics, CustomField, IssueTemplate, Hook,
   ProjectAgentConfig, FullTaskContract, ExecutionLog, TaskGraph,
-  IssueWithLabels, UndoLogEntry,
+  IssueWithLabels, UndoLogEntry, GitLink,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -28,8 +28,8 @@ const members: Member[] = [
 ];
 
 const projects: Project[] = [
-  { id: 1, name: "Kanban Core", description: "Core kanban board features", icon: "📋", status: "active", prefix: "KAN", issue_counter: 24, path: null, created_at: ago(10000), updated_at: ago(10) },
-  { id: 2, name: "Agent Platform", description: "AI agent task orchestration", icon: "🤖", status: "active", prefix: "AGT", issue_counter: 12, path: null, created_at: ago(5000), updated_at: ago(30) },
+  { id: 1, name: "Kanban Core", description: "Core kanban board features", icon: "📋", status: "active", prefix: "KAN", issue_counter: 24, path: null, stale_days: null, stale_close_status_id: null, created_at: ago(10000), updated_at: ago(10) },
+  { id: 2, name: "Agent Platform", description: "AI agent task orchestration", icon: "🤖", status: "active", prefix: "AGT", issue_counter: 12, path: null, stale_days: null, stale_close_status_id: null, created_at: ago(5000), updated_at: ago(30) },
 ];
 
 const statuses: Record<number, Status[]> = {
@@ -116,6 +116,16 @@ const agents: Agent[] = [
   { id: "research-agent-1", name: "Research Agent", agent_type: "research", skills: ["analysis", "documentation"], task_types: ["research", "decomposition"], max_concurrent: 2, max_complexity: "low", member_id: null, worktree_path: null, status: "offline", registered_at: ago(2000), last_heartbeat: ago(600), last_activity_at: ago(500) },
 ];
 
+const gitLinks: Record<number, GitLink[]> = {
+  6: [
+    { id: 1, issue_id: 6, link_type: "branch", url: null, ref_name: "fix/drag-drop-nan", status: "open", created_at: ago(50), updated_at: ago(50) },
+  ],
+  9: [
+    { id: 2, issue_id: 9, link_type: "pull_request", url: "https://github.com/akassharjun/kanban/pull/42", ref_name: "#42", status: "merged", created_at: ago(70), updated_at: ago(60) },
+    { id: 3, issue_id: 9, link_type: "branch", url: null, ref_name: "feat/undo-redo", status: "merged", created_at: ago(80), updated_at: ago(60) },
+  ],
+};
+
 const notifications: Notification[] = [
   { id: 1, type: "mention", issue_id: 6, message: "Claude mentioned you in KAN-6", read: false, created_at: ago(80) },
   { id: 2, type: "status_change", issue_id: 9, message: "KAN-9 moved to In Review", read: false, created_at: ago(60) },
@@ -136,7 +146,7 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "list_projects": return [...projects];
     case "get_project": return projects.find(p => p.id === args?.id) ?? null;
     case "create_project": {
-      const p: Project = { id: id(), ...args!.input, status: "active", issue_counter: 0, path: null, created_at: now, updated_at: now };
+      const p: Project = { id: id(), ...args!.input, status: "active", issue_counter: 0, path: null, stale_days: null, stale_close_status_id: null, created_at: now, updated_at: now };
       projects.push(p);
       statuses[p.id] = [
         { id: id(), project_id: p.id, name: "Backlog", category: "unstarted", color: "#94a3b8", icon: null, position: 0 },
@@ -356,6 +366,40 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "reject_task": return;
     case "unclaim_task": return;
     case "log_task_activity": return;
+
+    // Git Links
+    case "list_git_links": return gitLinks[args?.issueId] ?? [];
+    case "create_git_link": {
+      const gl: GitLink = { id: id(), ...args!.input, status: args!.input.status ?? "open", url: args!.input.url ?? null, created_at: now, updated_at: now };
+      (gitLinks[args!.input.issue_id] ??= []).push(gl);
+      return gl;
+    }
+    case "update_git_link": {
+      for (const arr of Object.values(gitLinks)) {
+        const gl = arr.find(x => x.id === args?.id);
+        if (gl) { Object.assign(gl, args!.input, { updated_at: now }); return gl; }
+      }
+      return null;
+    }
+    case "delete_git_link": {
+      for (const arr of Object.values(gitLinks)) {
+        const idx = arr.findIndex(x => x.id === args?.id);
+        if (idx >= 0) { arr.splice(idx, 1); return; }
+      }
+      return;
+    }
+    case "git_link_count": return (gitLinks[args?.issueId] ?? []).length;
+
+    // Stale Issues
+    case "update_stale_config": {
+      const p = projects.find(x => x.id === args?.projectId);
+      if (p) {
+        p.stale_days = args!.input.stale_days;
+        p.stale_close_status_id = args!.input.stale_close_status_id;
+      }
+      return;
+    }
+    case "check_stale_issues": return [];
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);

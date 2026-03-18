@@ -12,7 +12,7 @@ export interface ProjectSettingsViewProps {
   onDeleteProject?: (id: number) => Promise<unknown>;
 }
 
-type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents";
+type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents" | "stale";
 
 const statusCategories = [
   { value: "unstarted", label: "Unstarted" },
@@ -68,6 +68,11 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
   const [showAddHook, setShowAddHook] = useState(false);
   const [hookEventType, setHookEventType] = useState("task_completed");
   const [hookCommand, setHookCommand] = useState("");
+
+  // Stale issues config
+  const [staleEnabled, setStaleEnabled] = useState(project.stale_days !== null);
+  const [staleDays, setStaleDays] = useState(project.stale_days ?? 30);
+  const [staleCloseStatusId, setStaleCloseStatusId] = useState<number | null>(project.stale_close_status_id);
 
   useEffect(() => {
     loadData();
@@ -195,6 +200,7 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     { value: "labels", label: "Labels" },
     { value: "templates", label: "Templates" },
     { value: "hooks", label: "Hooks" },
+    { value: "stale", label: "Stale Issues" },
     { value: "agents", label: "Agent Config" },
   ];
 
@@ -490,6 +496,94 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
               ))}
               {hooks.length === 0 && <div className="py-8 text-center text-sm text-muted-foreground">No hooks configured yet</div>}
             </div>
+          </div>
+        )}
+
+        {/* Stale Issues Tab */}
+        {tab === "stale" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              Automatically close issues that have been inactive for a specified number of days. Only affects issues in &quot;unstarted&quot; category statuses (e.g. Backlog, Todo).
+            </p>
+
+            <div className="flex items-center gap-3">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={staleEnabled}
+                  onChange={(e) => setStaleEnabled(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
+              </label>
+              <span className="text-sm font-medium">Enable auto-close for stale issues</span>
+            </div>
+
+            {staleEnabled && (
+              <>
+                <div>
+                  <label className="block text-sm text-muted-foreground mb-1">Days before marking stale</label>
+                  <p className="text-xs text-muted-foreground/70 mb-1">Issues with no activity for this many days will be auto-closed</p>
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={staleDays}
+                    onChange={(e) => setStaleDays(parseInt(e.target.value) || 30)}
+                    className="w-32 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm text-muted-foreground mb-1">Move stale issues to</label>
+                  <p className="text-xs text-muted-foreground/70 mb-1">Status to assign when an issue is auto-closed</p>
+                  <select
+                    value={staleCloseStatusId ?? ""}
+                    onChange={(e) => setStaleCloseStatusId(e.target.value ? parseInt(e.target.value) : null)}
+                    className="w-64 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
+                  >
+                    <option value="">Select a status...</option>
+                    {statuses
+                      .filter(s => s.category === "completed" || s.category === "discarded")
+                      .map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.category})</option>
+                      ))
+                    }
+                  </select>
+                </div>
+              </>
+            )}
+
+            <button
+              onClick={async () => {
+                await api.updateStaleConfig(project.id, {
+                  stale_days: staleEnabled ? staleDays : null,
+                  stale_close_status_id: staleEnabled ? staleCloseStatusId : null,
+                });
+              }}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              Save Changes
+            </button>
+
+            {staleEnabled && (
+              <div className="mt-6 border-t border-border pt-4">
+                <button
+                  onClick={async () => {
+                    const closed = await api.checkStaleIssues(project.id);
+                    if (closed.length === 0) {
+                      alert("No stale issues found.");
+                    } else {
+                      alert(`Auto-closed ${closed.length} stale issue(s).`);
+                    }
+                  }}
+                  className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+                >
+                  Run Stale Check Now
+                </button>
+                <p className="text-xs text-muted-foreground mt-1">Manually trigger the stale issue check for this project</p>
+              </div>
+            )}
           </div>
         )}
 

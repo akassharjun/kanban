@@ -23,6 +23,7 @@ import type {
   TaskGraph,
   ProjectAgentConfig,
   Hook,
+  GitLink,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -244,3 +245,23 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// Git Links
+export const createGitLink = (input: {
+  issue_id: number;
+  link_type: string;
+  ref_name: string;
+  url?: string;
+  status?: string;
+}) => invoke<GitLink>("create_git_link", { input });
+export const listGitLinks = (issueId: number) => invoke<GitLink[]>("list_git_links", { issueId });
+export const updateGitLink = (id: number, input: { status?: string; url?: string }) => invoke<GitLink>("update_git_link", { id, input });
+export const deleteGitLink = (id: number) => invoke<void>("delete_git_link", { id });
+export const gitLinkCount = (issueId: number) => invoke<number>("git_link_count", { issueId });
+
+// Stale Issues
+export const updateStaleConfig = (projectId: number, input: {
+  stale_days: number | null;
+  stale_close_status_id: number | null;
+}) => invoke<void>("update_stale_config", { projectId, input });
+export const checkStaleIssues = (projectId: number) => invoke<Issue[]>("check_stale_issues", { projectId });

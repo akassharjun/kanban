@@ -18,6 +18,8 @@ pub struct UpdateProjectInput {
     pub icon: Option<String>,
     pub status: Option<String>,
     pub path: Option<String>,
+    pub stale_days: Option<i64>,
+    pub stale_close_status_id: Option<i64>,
 }
 
 #[tauri::command]

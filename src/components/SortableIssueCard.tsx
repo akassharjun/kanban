@@ -8,10 +8,14 @@ interface Props {
   member?: Member;
   labels: Label[];
   issues?: Issue[];
+  members?: Member[];
+  hasGitLinks?: boolean;
+  isStaleSoon?: boolean;
   onClick: () => void;
+  onUpdateIssue?: (id: number, input: { title?: string; priority?: string; assignee_id?: number }) => Promise<unknown>;
 }
 
-export function SortableIssueCard({ issue, member, labels, issues, onClick }: Props) {
+export function SortableIssueCard({ issue, member, labels, issues, members, hasGitLinks, isStaleSoon, onClick, onUpdateIssue }: Props) {
   const {
     attributes,
     listeners,
@@ -34,7 +38,11 @@ export function SortableIssueCard({ issue, member, labels, issues, onClick }: Pr
         member={member}
         labels={labels}
         issues={issues}
+        members={members}
+        hasGitLinks={hasGitLinks}
+        isStaleSoon={isStaleSoon}
         onClick={onClick}
+        onUpdateIssue={onUpdateIssue}
       />
     </div>
   );

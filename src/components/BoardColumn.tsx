@@ -12,11 +12,14 @@ interface BoardColumnProps {
   allIssues?: Issue[];
   members: Member[];
   getLabelsForIssue: (issueId: number) => Label[];
+  issueGitLinkCounts?: Map<number, number>;
+  staleSoonIssueIds?: Set<number>;
   onClickIssue: (issue: Issue) => void;
   onQuickCreate: (title: string) => Promise<unknown>;
+  onUpdateIssue?: (id: number, input: { title?: string; priority?: string; assignee_id?: number }) => Promise<unknown>;
 }
 
-export function BoardColumn({ status, issues, allIssues, members, getLabelsForIssue, onClickIssue, onQuickCreate }: BoardColumnProps) {
+export function BoardColumn({ status, issues, allIssues, members, getLabelsForIssue, issueGitLinkCounts, staleSoonIssueIds, onClickIssue, onQuickCreate, onUpdateIssue }: BoardColumnProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -77,7 +80,11 @@ export function BoardColumn({ status, issues, allIssues, members, getLabelsForIs
                 member={getMember(issue.assignee_id)}
                 labels={getLabelsForIssue(issue.id)}
                 issues={allIssues}
+                members={members}
+                hasGitLinks={(issueGitLinkCounts?.get(issue.id) ?? 0) > 0}
+                isStaleSoon={staleSoonIssueIds?.has(issue.id)}
                 onClick={() => onClickIssue(issue)}
+                onUpdateIssue={onUpdateIssue}
               />
             ))}
           </SortableContext>

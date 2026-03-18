@@ -197,6 +197,15 @@ pub fn run_gui(database_url: Option<String>) {
             commands::execution_logs::task_replay,
             commands::execution_logs::task_attempts,
             commands::execution_logs::recent_activity,
+            // Git Links
+            commands::git_links::create_git_link,
+            commands::git_links::list_git_links,
+            commands::git_links::update_git_link,
+            commands::git_links::delete_git_link,
+            commands::git_links::git_link_count,
+            // Stale Issues
+            commands::stale_issues::update_stale_config,
+            commands::stale_issues::check_stale_issues,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

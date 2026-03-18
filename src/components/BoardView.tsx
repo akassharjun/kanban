@@ -20,7 +20,9 @@ interface BoardViewProps {
   members: Member[];
   labels: Label[];
   getLabelsForIssue: (issueId: number) => Label[];
-  onUpdateIssue: (id: number, input: { status_id?: number; position?: number }) => Promise<unknown>;
+  issueGitLinkCounts?: Map<number, number>;
+  staleSoonIssueIds?: Set<number>;
+  onUpdateIssue: (id: number, input: { status_id?: number; position?: number; title?: string; priority?: string; assignee_id?: number }) => Promise<unknown>;
   onClickIssue: (issue: Issue) => void;
   onQuickCreate: (statusId: number, title: string) => Promise<unknown>;
 }
@@ -32,6 +34,8 @@ export function BoardView({
   members,
   labels,
   getLabelsForIssue,
+  issueGitLinkCounts,
+  staleSoonIssueIds,
   onUpdateIssue,
   onClickIssue,
   onQuickCreate,
@@ -128,8 +132,11 @@ export function BoardView({
               allIssues={allIssues || issues}
               members={members}
               getLabelsForIssue={getLabelsForIssue}
+              issueGitLinkCounts={issueGitLinkCounts}
+              staleSoonIssueIds={staleSoonIssueIds}
               onClickIssue={onClickIssue}
               onQuickCreate={(title) => onQuickCreate(status.id, title)}
+              onUpdateIssue={onUpdateIssue}
             />
           );
         })}

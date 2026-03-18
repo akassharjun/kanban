@@ -22,6 +22,8 @@ export interface Project {
   path: string | null;
   created_at: string;
   updated_at: string;
+  stale_days: number | null;
+  stale_close_status_id: number | null;
 }
 
 export interface Status {
@@ -258,6 +260,20 @@ export interface Hook {
   project_id: number;
   event_type: string;
   command: string;
+}
+
+export type GitLinkType = "branch" | "pull_request" | "commit";
+export type GitLinkStatus = "open" | "merged" | "closed";
+
+export interface GitLink {
+  id: number;
+  issue_id: number;
+  link_type: GitLinkType;
+  url: string | null;
+  ref_name: string;
+  status: GitLinkStatus;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ProjectAgentConfig {
