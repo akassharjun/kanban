@@ -33,12 +33,6 @@ function toDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function parseDate(s: string): Date {
-  // Parse YYYY-MM-DD as local date (not UTC)
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
 export function CalendarView({ issues, members, onClickIssue }: CalendarViewProps) {
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();

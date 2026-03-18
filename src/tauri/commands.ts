@@ -10,6 +10,9 @@ import type {
   IssueRelation,
   IssueTemplate,
   ActivityLogEntry,
+  AuditLogEntry,
+  IssueHistoryEntry,
+  MentionEntry,
   UndoLogEntry,
   Notification,
   Comment,
@@ -119,6 +122,17 @@ export const getSubIssues = (parentId: number) => invoke<Issue[]>("get_sub_issue
 export const setIssueLabels = (issueId: number, labelIds: number[]) => invoke<void>("set_issue_labels", { issueId, labelIds });
 export const listIssueLabelMappings = (projectId: number) => invoke<{ issue_id: number; label_id: number }[]>("list_issue_label_mappings", { projectId });
 export const getActivityLog = (issueId: number, limit?: number, offset?: number) => invoke<ActivityLogEntry[]>("get_activity_log", { issueId, limit, offset });
+export const getAuditLog = (filter: {
+  project_id: number;
+  actor_id?: number;
+  issue_id?: number;
+  field_changed?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  offset?: number;
+}) => invoke<AuditLogEntry[]>("get_audit_log", { filter });
+export const getIssueHistory = (issueId: number) => invoke<IssueHistoryEntry[]>("get_issue_history", { issueId });
 
 // Members
 export const listMembers = () => invoke<Member[]>("list_members");
@@ -200,6 +214,10 @@ export const updateComment = (id: number, input: {
 }) => invoke<Comment>("update_comment", { id, input });
 export const deleteComment = (id: number) => invoke<void>("delete_comment", { id });
 export const commentCount = (issueId: number) => invoke<number>("comment_count", { issueId });
+
+// Mentions
+export const listMentions = (memberId: number) => invoke<MentionEntry[]>("list_mentions", { memberId });
+export const searchMembersForMention = (query: string) => invoke<Member[]>("search_members_for_mention", { query });
 
 // Custom Fields
 export const listCustomFields = (projectId: number) => invoke<CustomField[]>("list_custom_fields", { projectId });

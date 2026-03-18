@@ -92,7 +92,48 @@ export interface ActivityLogEntry {
   field_changed: string;
   old_value: string | null;
   new_value: string | null;
+  actor_id: number | null;
+  actor_type: string | null;
   timestamp: string;
+}
+
+export interface AuditLogEntry {
+  id: number;
+  issue_id: number;
+  issue_identifier: string;
+  issue_title: string;
+  field_changed: string;
+  old_value: string | null;
+  new_value: string | null;
+  actor_id: number | null;
+  actor_type: string | null;
+  actor_name: string | null;
+  actor_avatar_color: string | null;
+  timestamp: string;
+}
+
+export interface IssueHistoryEntry {
+  id: number;
+  issue_id: number;
+  field_changed: string;
+  old_value: string | null;
+  new_value: string | null;
+  actor_id: number | null;
+  actor_type: string | null;
+  actor_name: string | null;
+  actor_avatar_color: string | null;
+  timestamp: string;
+}
+
+export interface MentionEntry {
+  id: number;
+  issue_id: number;
+  issue_identifier: string;
+  issue_title: string;
+  comment_id: number | null;
+  member_id: number;
+  source: "description" | "comment";
+  created_at: string;
 }
 
 export interface IssueWithLabels extends Issue {

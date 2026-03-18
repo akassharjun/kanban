@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use crate::models::{Issue, ActivityLogEntry};
+use crate::models::{Issue, ActivityLogEntry, AuditLogEntry, IssueHistoryEntry};
 use tauri::State;
 use serde::{Deserialize, Serialize};
 
@@ -56,11 +56,15 @@ pub struct IssueWithLabels {
     pub labels: Vec<crate::models::Label>,
 }
 
-// Helper to log activity
+// Helper to log activity with optional actor tracking
 async fn log_activity(pool: &sqlx::AnyPool, issue_id: i64, field: &str, old_val: Option<String>, new_val: Option<String>) -> Result<(), sqlx::Error> {
+    log_activity_with_actor(pool, issue_id, field, old_val, new_val, None, None).await
+}
+
+async fn log_activity_with_actor(pool: &sqlx::AnyPool, issue_id: i64, field: &str, old_val: Option<String>, new_val: Option<String>, actor_id: Option<i64>, actor_type: Option<String>) -> Result<(), sqlx::Error> {
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
-    sqlx::query("INSERT INTO activity_log (issue_id, field_changed, old_value, new_value, timestamp) VALUES ($1, $2, $3, $4, $5)")
-        .bind(issue_id).bind(field).bind(old_val).bind(new_val).bind(&now)
+    sqlx::query("INSERT INTO activity_log (issue_id, field_changed, old_value, new_value, actor_id, actor_type, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+        .bind(issue_id).bind(field).bind(old_val).bind(new_val).bind(actor_id).bind(actor_type).bind(&now)
         .execute(pool).await?;
     Ok(())
 }
@@ -237,6 +241,9 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
             log_activity(&state.pool, id, "description", old_issue.description.clone(), Some(desc.clone())).await?;
             sqlx::query("UPDATE issues SET description = $1, updated_at = $2 WHERE id = $3")
                 .bind(desc).bind(&now).bind(id).execute(&state.pool).await?;
+            // Re-process @mentions in description
+            crate::commands::mentions::clear_mentions(&state.pool, id, None, "description").await?;
+            crate::commands::mentions::process_mentions(&state.pool, id, None, "description", desc).await?;
         }
         if let Some(status_id) = input.status_id {
             if status_id != old_issue.status_id {
@@ -575,4 +582,142 @@ pub fn get_activity_log(state: State<AppState>, issue_id: i64, limit: Option<i64
             .fetch_all(&state.pool)
             .await
     }).map_err(|e| e.to_string())
+}
+
+#[derive(Deserialize)]
+pub struct AuditLogFilter {
+    pub project_id: i64,
+    pub actor_id: Option<i64>,
+    pub issue_id: Option<i64>,
+    pub field_changed: Option<String>,
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+#[tauri::command]
+pub fn get_audit_log(state: State<AppState>, filter: AuditLogFilter) -> Result<Vec<AuditLogEntry>, String> {
+    state.rt.block_on(async {
+        let mut qb: sqlx::QueryBuilder<sqlx::Any> = sqlx::QueryBuilder::new(
+            "SELECT a.id, a.issue_id, i.identifier as issue_identifier, i.title as issue_title, \
+             a.field_changed, a.old_value, a.new_value, a.actor_id, a.actor_type, \
+             m.display_name as actor_name, m.avatar_color as actor_avatar_color, a.timestamp \
+             FROM activity_log a \
+             JOIN issues i ON a.issue_id = i.id \
+             LEFT JOIN members m ON a.actor_id = m.id \
+             WHERE i.project_id = "
+        );
+        qb.push_bind(filter.project_id);
+
+        if let Some(actor_id) = filter.actor_id {
+            qb.push(" AND a.actor_id = ");
+            qb.push_bind(actor_id);
+        }
+        if let Some(issue_id) = filter.issue_id {
+            qb.push(" AND a.issue_id = ");
+            qb.push_bind(issue_id);
+        }
+        if let Some(ref field) = filter.field_changed {
+            qb.push(" AND a.field_changed = ");
+            qb.push_bind(field.clone());
+        }
+        if let Some(ref date_from) = filter.date_from {
+            qb.push(" AND a.timestamp >= ");
+            qb.push_bind(date_from.clone());
+        }
+        if let Some(ref date_to) = filter.date_to {
+            qb.push(" AND a.timestamp <= ");
+            qb.push_bind(date_to.clone());
+        }
+
+        qb.push(" ORDER BY a.timestamp DESC");
+
+        let limit = filter.limit.unwrap_or(50);
+        let offset = filter.offset.unwrap_or(0);
+        qb.push(" LIMIT ");
+        qb.push_bind(limit);
+        qb.push(" OFFSET ");
+        qb.push_bind(offset);
+
+        let rows = qb.build_query_as::<AuditLogRow>()
+            .fetch_all(&state.pool)
+            .await?;
+
+        Ok(rows.into_iter().map(|r| AuditLogEntry {
+            id: r.id,
+            issue_id: r.issue_id,
+            issue_identifier: r.issue_identifier,
+            issue_title: r.issue_title,
+            field_changed: r.field_changed,
+            old_value: r.old_value,
+            new_value: r.new_value,
+            actor_id: r.actor_id,
+            actor_type: r.actor_type,
+            actor_name: r.actor_name,
+            actor_avatar_color: r.actor_avatar_color,
+            timestamp: r.timestamp,
+        }).collect())
+    }).map_err(|e: sqlx::Error| e.to_string())
+}
+
+#[derive(sqlx::FromRow)]
+struct AuditLogRow {
+    id: i64,
+    issue_id: i64,
+    issue_identifier: String,
+    issue_title: String,
+    field_changed: String,
+    old_value: Option<String>,
+    new_value: Option<String>,
+    actor_id: Option<i64>,
+    actor_type: Option<String>,
+    actor_name: Option<String>,
+    actor_avatar_color: Option<String>,
+    timestamp: String,
+}
+
+#[tauri::command]
+pub fn get_issue_history(state: State<AppState>, issue_id: i64) -> Result<Vec<IssueHistoryEntry>, String> {
+    state.rt.block_on(async {
+        let rows = sqlx::query_as::<_, IssueHistoryRow>(
+            "SELECT a.id, a.issue_id, a.field_changed, a.old_value, a.new_value, \
+             a.actor_id, a.actor_type, m.display_name as actor_name, m.avatar_color as actor_avatar_color, \
+             a.timestamp \
+             FROM activity_log a \
+             LEFT JOIN members m ON a.actor_id = m.id \
+             WHERE a.issue_id = $1 \
+             ORDER BY a.timestamp DESC"
+        )
+        .bind(issue_id)
+        .fetch_all(&state.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| IssueHistoryEntry {
+            id: r.id,
+            issue_id: r.issue_id,
+            field_changed: r.field_changed,
+            old_value: r.old_value,
+            new_value: r.new_value,
+            actor_id: r.actor_id,
+            actor_type: r.actor_type,
+            actor_name: r.actor_name,
+            actor_avatar_color: r.actor_avatar_color,
+            timestamp: r.timestamp,
+        }).collect())
+    }).map_err(|e: sqlx::Error| e.to_string())
+}
+
+#[derive(sqlx::FromRow)]
+struct IssueHistoryRow {
+    id: i64,
+    issue_id: i64,
+    field_changed: String,
+    old_value: Option<String>,
+    new_value: Option<String>,
+    actor_id: Option<i64>,
+    actor_type: Option<String>,
+    actor_name: Option<String>,
+    actor_avatar_color: Option<String>,
+    timestamp: String,
 }

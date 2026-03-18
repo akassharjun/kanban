@@ -1,5 +1,6 @@
 use crate::state::AppState;
 use crate::models::Comment;
+use crate::commands::mentions;
 use tauri::State;
 use serde::Deserialize;
 
@@ -50,10 +51,15 @@ pub fn create_comment(state: State<AppState>, input: CreateCommentInput) -> Resu
             .execute(&state.pool)
             .await?;
 
-        sqlx::query_as::<_, Comment>("SELECT * FROM comments WHERE id = $1")
+        let comment = sqlx::query_as::<_, Comment>("SELECT * FROM comments WHERE id = $1")
             .bind(id)
             .fetch_one(&state.pool)
-            .await
+            .await?;
+
+        // Process @mentions in comment
+        mentions::process_mentions(&state.pool, input.issue_id, Some(id), "comment", &input.content).await?;
+
+        Ok(comment)
     }).map_err(|e: sqlx::Error| e.to_string())
 }
 
@@ -75,10 +81,16 @@ pub fn update_comment(state: State<AppState>, id: i64, input: UpdateCommentInput
             return Err(sqlx::Error::RowNotFound);
         }
 
-        sqlx::query_as::<_, Comment>("SELECT * FROM comments WHERE id = $1")
+        let comment = sqlx::query_as::<_, Comment>("SELECT * FROM comments WHERE id = $1")
             .bind(id)
             .fetch_one(&state.pool)
-            .await
+            .await?;
+
+        // Re-process @mentions on update (clear old, insert new)
+        mentions::clear_mentions(&state.pool, comment.issue_id, Some(id), "comment").await?;
+        mentions::process_mentions(&state.pool, comment.issue_id, Some(id), "comment", &input.content).await?;
+
+        Ok(comment)
     }).map_err(|e: sqlx::Error| e.to_string())
 }
 

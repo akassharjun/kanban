@@ -131,7 +131,61 @@ pub struct ActivityLogEntry {
     pub field_changed: String,
     pub old_value: Option<String>,
     pub new_value: Option<String>,
+    pub actor_id: Option<i64>,
+    pub actor_type: Option<String>,
     pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditLogEntry {
+    pub id: i64,
+    pub issue_id: i64,
+    pub issue_identifier: String,
+    pub issue_title: String,
+    pub field_changed: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub actor_id: Option<i64>,
+    pub actor_type: Option<String>,
+    pub actor_name: Option<String>,
+    pub actor_avatar_color: Option<String>,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueHistoryEntry {
+    pub id: i64,
+    pub issue_id: i64,
+    pub field_changed: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub actor_id: Option<i64>,
+    pub actor_type: Option<String>,
+    pub actor_name: Option<String>,
+    pub actor_avatar_color: Option<String>,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Mention {
+    pub id: i64,
+    pub issue_id: i64,
+    pub comment_id: Option<i64>,
+    pub member_id: i64,
+    pub source: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MentionWithContext {
+    pub id: i64,
+    pub issue_id: i64,
+    pub issue_identifier: String,
+    pub issue_title: String,
+    pub comment_id: Option<i64>,
+    pub member_id: i64,
+    pub source: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

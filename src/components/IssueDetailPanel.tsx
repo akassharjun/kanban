@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown } from "lucide-react";
+import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, History, MessageSquare, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment } from "@/types";
 import * as api from "@/tauri/commands";
 import { TaskContractDialog } from "./TaskContractDialog";
+import { IssueHistoryPanel } from "./IssueHistoryPanel";
+import { MentionInput, MentionText } from "./MentionInput";
 
 interface IssueDetailPanelProps {
   issueId: number;
@@ -84,6 +86,7 @@ export function IssueDetailPanel({
   const [commentError, setCommentError] = useState<string | null>(null);
   const [activityLimit, setActivityLimit] = useState(50);
   const isSavingRef = useRef(false);
+  const [activeTab, setActiveTab] = useState<"comments" | "history" | "activity">("comments");
 
   const loadIssue = useCallback(async () => {
     // Skip refresh while a save is in-flight to prevent overwriting user edits
@@ -388,15 +391,16 @@ export function IssueDetailPanel({
         <div className="mt-6 border-t border-border/50 px-5 pt-4">
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">Description</h3>
           {editingDesc ? (
-            <textarea
-              autoFocus
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              onBlur={handleDescSave}
-              rows={8}
-              className="w-full rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
-              placeholder="Add a description... (Markdown supported)"
-            />
+            <div onBlur={handleDescSave}>
+              <MentionInput
+                autoFocus
+                value={desc}
+                onChange={setDesc}
+                rows={8}
+                placeholder="Add a description... (@ to mention, Markdown supported)"
+                members={members}
+              />
+            </div>
           ) : (
             <div
               onClick={() => setEditingDesc(true)}
@@ -450,89 +454,128 @@ export function IssueDetailPanel({
           </div>
         )}
 
-        {/* Comments */}
-        <div className="mt-6 border-t border-border/50 px-5 pt-4">
-          <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-            Comments ({comments.length})
-          </h3>
-
-          <div className="space-y-4">
-            {comments.map((comment) => {
-              const commentMember = members.find(m => m.id === comment.member_id);
-              return (
-                <div key={comment.id} className="group">
-                  <div className="flex items-start gap-2.5">
-                    {commentMember ? (
-                      <div
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white mt-0.5"
-                        style={{ backgroundColor: commentMember.avatar_color }}
-                      >
-                        {(commentMember.display_name || commentMember.name).charAt(0).toUpperCase()}
-                      </div>
-                    ) : (
-                      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground mt-0.5">
-                        S
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[13px] font-medium">
-                          {commentMember ? (commentMember.display_name || commentMember.name) : "System"}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground/40">
-                          {comment.created_at.slice(0, 16).replace("T", " ")}
-                        </span>
-                        <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => { setEditingCommentId(comment.id); setEditingCommentContent(comment.content); }}
-                            className="rounded-md p-1 hover:bg-muted"
-                          >
-                            <Pencil className="h-3 w-3 text-muted-foreground/50" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteComment(comment.id)}
-                            className="rounded-md p-1 hover:bg-red-500/10"
-                          >
-                            <Trash2 className="h-3 w-3 text-muted-foreground/50" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {editingCommentId === comment.id ? (
-                        <div className="mt-1.5">
-                          <textarea
-                            autoFocus
-                            value={editingCommentContent}
-                            onChange={(e) => setEditingCommentContent(e.target.value)}
-                            rows={3}
-                            className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-primary/50"
-                          />
-                          <div className="mt-1.5 flex gap-1.5">
-                            <button
-                              onClick={() => handleUpdateComment(comment.id)}
-                              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => { setEditingCommentId(null); setEditingCommentContent(""); }}
-                              className="rounded-lg px-3 py-1.5 text-xs hover:bg-muted"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mt-1 prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{comment.content}</ReactMarkdown>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+        {/* Tabs: Comments / History / Activity */}
+        <div className="mt-6 border-t border-border/50">
+          <div className="flex items-center gap-0 px-5 border-b border-border/50">
+            <button
+              onClick={() => setActiveTab("comments")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors",
+                activeTab === "comments"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground/60 hover:text-muted-foreground"
+              )}
+            >
+              <MessageSquare className="h-3 w-3" />
+              Comments ({comments.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("history")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors",
+                activeTab === "history"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground/60 hover:text-muted-foreground"
+              )}
+            >
+              <History className="h-3 w-3" />
+              History
+            </button>
+            <button
+              onClick={() => setActiveTab("activity")}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors",
+                activeTab === "activity"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground/60 hover:text-muted-foreground"
+              )}
+            >
+              <Activity className="h-3 w-3" />
+              Activity
+            </button>
           </div>
+
+          {/* Comments tab */}
+          {activeTab === "comments" && (
+            <div className="px-5 pt-4">
+              <div className="space-y-4">
+                {comments.map((comment) => {
+                  const commentMember = members.find(m => m.id === comment.member_id);
+                  return (
+                    <div key={comment.id} className="group">
+                      <div className="flex items-start gap-2.5">
+                        {commentMember ? (
+                          <div
+                            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white mt-0.5"
+                            style={{ backgroundColor: commentMember.avatar_color }}
+                          >
+                            {(commentMember.display_name || commentMember.name).charAt(0).toUpperCase()}
+                          </div>
+                        ) : (
+                          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground mt-0.5">
+                            S
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-medium">
+                              {commentMember ? (commentMember.display_name || commentMember.name) : "System"}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground/40">
+                              {comment.created_at.slice(0, 16).replace("T", " ")}
+                            </span>
+                            <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => { setEditingCommentId(comment.id); setEditingCommentContent(comment.content); }}
+                                className="rounded-md p-1 hover:bg-muted"
+                              >
+                                <Pencil className="h-3 w-3 text-muted-foreground/50" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteComment(comment.id)}
+                                className="rounded-md p-1 hover:bg-red-500/10"
+                              >
+                                <Trash2 className="h-3 w-3 text-muted-foreground/50" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {editingCommentId === comment.id ? (
+                            <div className="mt-1.5">
+                              <MentionInput
+                                autoFocus
+                                value={editingCommentContent}
+                                onChange={setEditingCommentContent}
+                                rows={3}
+                                members={members}
+                                className="border-border bg-background"
+                              />
+                              <div className="mt-1.5 flex gap-1.5">
+                                <button
+                                  onClick={() => handleUpdateComment(comment.id)}
+                                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  onClick={() => { setEditingCommentId(null); setEditingCommentContent(""); }}
+                                  className="rounded-lg px-3 py-1.5 text-xs hover:bg-muted"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-1 prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed">
+                              <MentionText text={comment.content} members={members} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
           {commentError && (
             <div className="mt-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-500">
@@ -540,59 +583,76 @@ export function IssueDetailPanel({
             </div>
           )}
 
-          {/* Add comment */}
-          <div className="mt-4 pb-4">
-            <textarea
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  handleAddComment();
-                }
-              }}
-              rows={3}
-              placeholder="Leave a comment... (Markdown supported, Cmd+Enter to submit)"
-              className="w-full rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 placeholder:text-muted-foreground/40"
-            />
-            <div className="mt-2 flex justify-end">
-              <button
-                onClick={handleAddComment}
-                disabled={!newComment.trim()}
-                className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
-              >
-                Comment
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Activity log */}
-        {activity.length > 0 && (
-          <div className="border-t border-border/50 px-5 pt-4 pb-4">
-            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">Activity</h3>
-            <div className="space-y-2">
-              {activity.slice(0, activityLimit).map(entry => (
-                <div key={entry.id} className="flex items-start gap-2 text-xs text-muted-foreground/60">
-                  <span className="shrink-0 font-mono">{entry.timestamp.slice(0, 16)}</span>
-                  <span>
-                    Changed <span className="text-foreground/80">{entry.field_changed}</span>
-                    {entry.old_value && <> from <span className="text-foreground/80">{entry.old_value}</span></>}
-                    {entry.new_value && <> to <span className="text-foreground/80">{entry.new_value}</span></>}
-                  </span>
+              {/* Add comment */}
+              <div className="mt-4 pb-4">
+                <MentionInput
+                  value={newComment}
+                  onChange={setNewComment}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handleAddComment();
+                    }
+                  }}
+                  rows={3}
+                  placeholder="Leave a comment... (@ to mention, Cmd+Enter to submit)"
+                  members={members}
+                />
+                <div className="mt-2 flex justify-end">
+                  <button
+                    onClick={handleAddComment}
+                    disabled={!newComment.trim()}
+                    className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
+                  >
+                    Comment
+                  </button>
                 </div>
-              ))}
+              </div>
             </div>
-            {activity.length > activityLimit && (
-              <button
-                onClick={() => setActivityLimit(prev => prev + 50)}
-                className="mt-2 text-xs text-primary hover:text-primary/80 transition-colors"
-              >
-                Load more activity ({activity.length - activityLimit} remaining)
-              </button>
-            )}
-          </div>
-        )}
+          )}
+
+          {/* History tab */}
+          {activeTab === "history" && (
+            <div className="px-5 pt-4 pb-4">
+              <IssueHistoryPanel
+                issueId={issueId}
+                statuses={statuses}
+                members={members}
+                createdAt={issue.created_at}
+              />
+            </div>
+          )}
+
+          {/* Activity tab */}
+          {activeTab === "activity" && (
+            <div className="px-5 pt-4 pb-4">
+              {activity.length === 0 ? (
+                <div className="py-4 text-center text-xs text-muted-foreground/40">No activity yet</div>
+              ) : (
+                <div className="space-y-2">
+                  {activity.slice(0, activityLimit).map(entry => (
+                    <div key={entry.id} className="flex items-start gap-2 text-xs text-muted-foreground/60">
+                      <span className="shrink-0 font-mono">{entry.timestamp.slice(0, 16)}</span>
+                      <span>
+                        Changed <span className="text-foreground/80">{entry.field_changed}</span>
+                        {entry.old_value && <> from <span className="text-foreground/80">{entry.old_value}</span></>}
+                        {entry.new_value && <> to <span className="text-foreground/80">{entry.new_value}</span></>}
+                      </span>
+                    </div>
+                  ))}
+                  {activity.length > activityLimit && (
+                    <button
+                      onClick={() => setActivityLimit(prev => prev + 50)}
+                      className="mt-2 text-xs text-primary hover:text-primary/80 transition-colors"
+                    >
+                      Load more activity ({activity.length - activityLimit} remaining)
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {showTaskContractDialog && (
