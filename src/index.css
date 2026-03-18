@@ -106,4 +106,12 @@
   .text-primary-custom { color: hsl(var(--text-primary)); }
   .text-secondary-custom { color: hsl(var(--text-secondary)); }
   .text-muted-custom { color: hsl(var(--text-muted)); }
+
+  @keyframes breathe {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+  .agent-ring-active {
+    animation: breathe 2s ease-in-out infinite;
+  }
 }
