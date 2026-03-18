@@ -562,3 +562,41 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline ON pipeline_runs(pipeline_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status);
+-- Agent permissions (sandboxing)
+CREATE TABLE IF NOT EXISTS agent_permissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL,
+    permission_type TEXT NOT NULL CHECK(permission_type IN (
+        'project_access',
+        'file_access',
+        'action',
+        'task_type',
+        'max_cost'
+    )),
+    scope TEXT NOT NULL,
+    allowed INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_permissions_agent ON agent_permissions(agent_id);
+
+-- Agent permission presets
+CREATE TABLE IF NOT EXISTS agent_permission_presets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    permissions TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Seed default presets (idempotent via INSERT OR IGNORE)
+INSERT OR IGNORE INTO agent_permission_presets (name, description, permissions) VALUES
+('Full Access', 'No restrictions (for trusted internal agents)', '[]');
+INSERT OR IGNORE INTO agent_permission_presets (name, description, permissions) VALUES
+('Read Only', 'Can view issues but not modify', '[{"permission_type":"action","scope":"create_issue","allowed":false},{"permission_type":"action","scope":"update_issue","allowed":false},{"permission_type":"action","scope":"delete_issue","allowed":false},{"permission_type":"action","scope":"create_branch","allowed":false},{"permission_type":"action","scope":"merge_pr","allowed":false}]');
+INSERT OR IGNORE INTO agent_permission_presets (name, description, permissions) VALUES
+('Code Review Only', 'Can review and comment but not implement', '[{"permission_type":"task_type","scope":"review","allowed":true},{"permission_type":"action","scope":"create_comment","allowed":true},{"permission_type":"action","scope":"create_branch","allowed":false}]');
+INSERT OR IGNORE INTO agent_permission_presets (name, description, permissions) VALUES
+('Frontend Only', 'Can only modify frontend files', '[{"permission_type":"file_access","scope":"src/**/*.tsx","allowed":true},{"permission_type":"file_access","scope":"src/**/*.ts","allowed":true},{"permission_type":"file_access","scope":"src/**/*.css","allowed":true}]');
+INSERT OR IGNORE INTO agent_permission_presets (name, description, permissions) VALUES
+('Untrusted', 'Limited access for untrusted agents', '[{"permission_type":"action","scope":"delete_issue","allowed":false},{"permission_type":"action","scope":"deploy","allowed":false},{"permission_type":"action","scope":"merge_pr","allowed":false},{"permission_type":"max_cost","scope":"1","allowed":true}]');

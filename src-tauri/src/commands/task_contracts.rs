@@ -255,6 +255,61 @@ pub fn next_task(
             .await?;
 
             if let Some(ref contract) = result {
+                // Check permissions before allowing claim
+                let claim_check = crate::commands::permissions::check_permission_async(
+                    &state.pool,
+                    &agent_id,
+                    "project_access",
+                    &contract.project_id.to_string(),
+                )
+                .await?;
+
+                if !claim_check.allowed {
+                    let reason = claim_check.reason.unwrap_or_default();
+                    let _ = crate::commands::permissions::log_permission_denied(
+                        &state.pool,
+                        contract.issue_id,
+                        &agent_id,
+                        &format!("Project access denied: {}", reason),
+                    )
+                    .await;
+                    // Unclaim the task
+                    sqlx::query(
+                        "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL WHERE issue_id = $1",
+                    )
+                    .bind(contract.issue_id)
+                    .execute(&state.pool)
+                    .await?;
+                    return Ok(None);
+                }
+
+                // Check task_type permission
+                let type_check = crate::commands::permissions::check_permission_async(
+                    &state.pool,
+                    &agent_id,
+                    "task_type",
+                    &contract.r#type.as_deref().unwrap_or("implementation"),
+                )
+                .await?;
+
+                if !type_check.allowed {
+                    let reason = type_check.reason.unwrap_or_default();
+                    let _ = crate::commands::permissions::log_permission_denied(
+                        &state.pool,
+                        contract.issue_id,
+                        &agent_id,
+                        &format!("Task type denied: {}", reason),
+                    )
+                    .await;
+                    sqlx::query(
+                        "UPDATE task_contracts SET task_state = 'queued', claimed_by = NULL, claimed_at = NULL WHERE issue_id = $1",
+                    )
+                    .bind(contract.issue_id)
+                    .execute(&state.pool)
+                    .await?;
+                    return Ok(None);
+                }
+
                 let _ = auto_comment(&state.pool, contract.issue_id, &agent_id, "\u{1F916} Task claimed. Reading contract and preparing to execute.").await;
             }
 

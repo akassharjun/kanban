@@ -61,6 +61,9 @@ import type {
   AutoScoreResult,
   Pipeline,
   PipelineRun,
+  AgentPermission,
+  PermissionPreset,
+  PermissionCheckResult,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -274,6 +277,43 @@ const pipelineRuns: PipelineRun[] = [
     ]),
     context: "{}", started_at: ago(50), completed_at: null, error_message: null,
   },
+];
+
+const agentPermissions: AgentPermission[] = [
+  { id: 1, agent_id: "claude-opus-1", permission_type: "project_access", scope: "1", allowed: true, created_at: ago(1000) },
+  { id: 2, agent_id: "claude-opus-1", permission_type: "file_access", scope: "src/**/*.tsx", allowed: true, created_at: ago(1000) },
+  { id: 3, agent_id: "claude-opus-1", permission_type: "file_access", scope: "src/**/*.ts", allowed: true, created_at: ago(1000) },
+  { id: 4, agent_id: "claude-opus-1", permission_type: "action", scope: "deploy", allowed: false, created_at: ago(1000) },
+  { id: 5, agent_id: "review-bot-1", permission_type: "task_type", scope: "review", allowed: true, created_at: ago(900) },
+  { id: 6, agent_id: "review-bot-1", permission_type: "task_type", scope: "testing", allowed: true, created_at: ago(900) },
+  { id: 7, agent_id: "review-bot-1", permission_type: "action", scope: "create_branch", allowed: false, created_at: ago(900) },
+];
+
+const permissionPresets: PermissionPreset[] = [
+  { id: 1, name: "Full Access", description: "No restrictions (for trusted internal agents)", permissions: "[]", created_at: ago(5000) },
+  { id: 2, name: "Read Only", description: "Can view issues but not modify", permissions: JSON.stringify([
+    { permission_type: "action", scope: "create_issue", allowed: false },
+    { permission_type: "action", scope: "update_issue", allowed: false },
+    { permission_type: "action", scope: "delete_issue", allowed: false },
+    { permission_type: "action", scope: "create_branch", allowed: false },
+    { permission_type: "action", scope: "merge_pr", allowed: false },
+  ]), created_at: ago(5000) },
+  { id: 3, name: "Code Review Only", description: "Can review and comment but not implement", permissions: JSON.stringify([
+    { permission_type: "task_type", scope: "review", allowed: true },
+    { permission_type: "action", scope: "create_comment", allowed: true },
+    { permission_type: "action", scope: "create_branch", allowed: false },
+  ]), created_at: ago(5000) },
+  { id: 4, name: "Frontend Only", description: "Can only modify frontend files", permissions: JSON.stringify([
+    { permission_type: "file_access", scope: "src/**/*.tsx", allowed: true },
+    { permission_type: "file_access", scope: "src/**/*.ts", allowed: true },
+    { permission_type: "file_access", scope: "src/**/*.css", allowed: true },
+  ]), created_at: ago(5000) },
+  { id: 5, name: "Untrusted", description: "Limited access for untrusted agents", permissions: JSON.stringify([
+    { permission_type: "action", scope: "delete_issue", allowed: false },
+    { permission_type: "action", scope: "deploy", allowed: false },
+    { permission_type: "action", scope: "merge_pr", allowed: false },
+    { permission_type: "max_cost", scope: "1", allowed: true },
+  ]), created_at: ago(5000) },
 ];
 
 const notifications: Notification[] = [
@@ -1178,6 +1218,73 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     }
     case "get_pipeline_run": return pipelineRuns.find(r => r.id === args?.runId) ?? null;
     case "list_pipeline_runs": return pipelineRuns.filter(r => r.pipeline_id === args?.pipelineId);
+    // Agent Permissions
+    case "list_agent_permissions":
+      return agentPermissions.filter(p => p.agent_id === args?.agentId);
+    case "set_agent_permission": {
+      const existing = agentPermissions.find(p => p.agent_id === args?.agentId && p.permission_type === args?.permissionType && p.scope === args?.scope);
+      if (existing) {
+        existing.allowed = args?.allowed;
+        return existing;
+      }
+      const newPerm: AgentPermission = { id: id(), agent_id: args!.agentId, permission_type: args!.permissionType, scope: args!.scope, allowed: args!.allowed, created_at: now };
+      agentPermissions.push(newPerm);
+      return newPerm;
+    }
+    case "remove_agent_permission": {
+      const idx = agentPermissions.findIndex(p => p.id === args?.id);
+      if (idx >= 0) agentPermissions.splice(idx, 1);
+      return;
+    }
+    case "clear_agent_permissions": {
+      const toRemove = agentPermissions.filter(p => p.agent_id === args?.agentId).map(p => p.id);
+      for (const rid of toRemove) {
+        const idx = agentPermissions.findIndex(p => p.id === rid);
+        if (idx >= 0) agentPermissions.splice(idx, 1);
+      }
+      return;
+    }
+    case "list_permission_presets":
+      return [...permissionPresets];
+    case "create_permission_preset": {
+      const preset: PermissionPreset = { id: id(), name: args!.name, description: args!.description, permissions: args!.permissions, created_at: now };
+      permissionPresets.push(preset);
+      return preset;
+    }
+    case "apply_preset_to_agent": {
+      // Clear existing, apply preset perms
+      const toRemove2 = agentPermissions.filter(p => p.agent_id === args?.agentId).map(p => p.id);
+      for (const rid of toRemove2) {
+        const idx2 = agentPermissions.findIndex(p => p.id === rid);
+        if (idx2 >= 0) agentPermissions.splice(idx2, 1);
+      }
+      const preset2 = permissionPresets.find(p => p.id === args?.presetId);
+      if (preset2) {
+        const entries = JSON.parse(preset2.permissions);
+        for (const e of entries) {
+          agentPermissions.push({ id: id(), agent_id: args!.agentId, permission_type: e.permission_type, scope: e.scope, allowed: e.allowed, created_at: now });
+        }
+      }
+      return agentPermissions.filter(p => p.agent_id === args?.agentId);
+    }
+    case "delete_permission_preset": {
+      const idx3 = permissionPresets.findIndex(p => p.id === args?.id);
+      if (idx3 >= 0) permissionPresets.splice(idx3, 1);
+      return;
+    }
+    case "check_permission": {
+      const perms = agentPermissions.filter(p => p.agent_id === args?.agentId && p.permission_type === args?.permissionType);
+      if (perms.length === 0) return { allowed: true, reason: "No rules configured, default allow", matched_rule: null } as PermissionCheckResult;
+      const deny = perms.find(p => !p.allowed && (p.scope === args?.scope || p.scope === "*"));
+      if (deny) return { allowed: false, reason: `Denied by rule: ${deny.permission_type} scope=${deny.scope}`, matched_rule: deny } as PermissionCheckResult;
+      const allow = perms.find(p => p.allowed && (p.scope === args?.scope || p.scope === "*"));
+      if (allow) return { allowed: true, reason: `Allowed by rule: ${allow.permission_type} scope=${allow.scope}`, matched_rule: allow } as PermissionCheckResult;
+      return { allowed: false, reason: "No matching rule (whitelist mode)", matched_rule: null } as PermissionCheckResult;
+    }
+    case "check_file_access":
+      return { allowed: true, reason: "Mock: default allow", matched_rule: null } as PermissionCheckResult;
+    case "check_task_claim":
+      return { allowed: true, reason: "Mock: default allow", matched_rule: null } as PermissionCheckResult;
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);

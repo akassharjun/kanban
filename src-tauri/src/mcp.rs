@@ -716,6 +716,34 @@ fn tools_list() -> Vec<Value> {
                 "run_id": prop("number", "Pipeline run ID")
             }),
             vec!["run_id"],
+        tool_def(
+            "list_permissions",
+            "List all permissions for an agent",
+            json!({
+                "agent_id": prop("string", "Agent ID")
+            }),
+            vec!["agent_id"],
+        ),
+        tool_def(
+            "set_permission",
+            "Set a permission for an agent (grant or deny)",
+            json!({
+                "agent_id": prop("string", "Agent ID"),
+                "permission_type": prop("string", "Permission type: project_access, file_access, action, task_type, max_cost"),
+                "scope": prop("string", "Scope: project_id, glob pattern, action name, task type, or cost limit"),
+                "allowed": prop("boolean", "true=allow, false=deny")
+            }),
+            vec!["agent_id", "permission_type", "scope", "allowed"],
+        ),
+        tool_def(
+            "check_permission",
+            "Check if an agent has a specific permission",
+            json!({
+                "agent_id": prop("string", "Agent ID"),
+                "permission_type": prop("string", "Permission type to check"),
+                "scope": prop("string", "Scope to check")
+            }),
+            vec!["agent_id", "permission_type", "scope"],
         ),
     ]
 }
@@ -2577,6 +2605,61 @@ async fn handle_tool_call(
                 "SELECT * FROM issue_file_links WHERE id = $1",
             let pipeline = sqlx::query_as::<_, crate::commands::pipelines::Pipeline>(
                 "SELECT * FROM pipelines WHERE id = $1",
+        "list_permissions" => {
+            use crate::commands::permissions::AgentPermission;
+            let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
+            let perms = sqlx::query_as::<_, AgentPermission>(
+                "SELECT * FROM agent_permissions WHERE agent_id = $1 ORDER BY permission_type, scope",
+            )
+            .bind(agent_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            Ok(json!(perms))
+        }
+        "set_permission" => {
+            use crate::commands::permissions::AgentPermission;
+            let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
+            let permission_type = args["permission_type"].as_str().ok_or("permission_type required")?;
+            let scope = args["scope"].as_str().ok_or("scope required")?;
+            let allowed = args["allowed"].as_bool().ok_or("allowed required")?;
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+            // Upsert
+            let existing: Option<AgentPermission> = sqlx::query_as(
+                "SELECT * FROM agent_permissions WHERE agent_id = $1 AND permission_type = $2 AND scope = $3",
+            )
+            .bind(agent_id)
+            .bind(permission_type)
+            .bind(scope)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let id = if let Some(existing) = existing {
+                sqlx::query("UPDATE agent_permissions SET allowed = $1 WHERE id = $2")
+                    .bind(allowed)
+                    .bind(existing.id)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                existing.id
+            } else {
+                sqlx::query_scalar::<_, i64>(
+                    "INSERT INTO agent_permissions (agent_id, permission_type, scope, allowed, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+                )
+                .bind(agent_id)
+                .bind(permission_type)
+                .bind(scope)
+                .bind(allowed)
+                .bind(&now)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| e.to_string())?
+            };
+
+            let perm = sqlx::query_as::<_, AgentPermission>(
+                "SELECT * FROM agent_permissions WHERE id = $1",
             )
             .bind(id)
             .fetch_one(pool)
@@ -3143,6 +3226,21 @@ async fn handle_tool_call(
                 "total_stages": stages.len(),
                 "stages": stages,
             }))
+        }
+            Ok(json!(perm))
+        }
+        "check_permission" => {
+            let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
+            let permission_type = args["permission_type"].as_str().ok_or("permission_type required")?;
+            let scope = args["scope"].as_str().ok_or("scope required")?;
+
+            let result = crate::commands::permissions::check_permission_async(
+                pool, agent_id, permission_type, scope,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+            Ok(json!(result))
         }
         _ => Err(format!("Unknown tool: {}", name)),
     }

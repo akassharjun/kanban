@@ -326,6 +326,18 @@ pub fn run_gui(database_url: Option<String>) {
             commands::pipelines::cancel_pipeline,
             commands::pipelines::get_pipeline_run,
             commands::pipelines::list_pipeline_runs,
+            // Permissions
+            commands::permissions::list_agent_permissions,
+            commands::permissions::set_agent_permission,
+            commands::permissions::remove_agent_permission,
+            commands::permissions::clear_agent_permissions,
+            commands::permissions::list_permission_presets,
+            commands::permissions::create_permission_preset,
+            commands::permissions::apply_preset_to_agent,
+            commands::permissions::delete_permission_preset,
+            commands::permissions::check_permission,
+            commands::permissions::check_file_access,
+            commands::permissions::check_task_claim,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -825,3 +825,30 @@ export interface PipelineRun {
   completed_at: string | null;
   error_message: string | null;
 }
+
+// Agent Permissions
+
+export type PermissionType = "project_access" | "file_access" | "action" | "task_type" | "max_cost";
+
+export interface AgentPermission {
+  id: number;
+  agent_id: string;
+  permission_type: PermissionType;
+  scope: string;
+  allowed: boolean;
+  created_at: string;
+}
+
+export interface PermissionPreset {
+  id: number;
+  name: string;
+  description: string | null;
+  permissions: string; // JSON array of {permission_type, scope, allowed}
+  created_at: string;
+}
+
+export interface PermissionCheckResult {
+  allowed: boolean;
+  reason: string | null;
+  matched_rule: AgentPermission | null;
+}
