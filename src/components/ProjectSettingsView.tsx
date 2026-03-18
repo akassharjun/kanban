@@ -29,8 +29,10 @@ const labelColors = [
   "#a855f7", "#d946ef", "#ec4899", "#f43f5e",
 ];
 
-export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels, onDeleteProject: _onDeleteProject }: ProjectSettingsViewProps) {
+export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels, onDeleteProject }: ProjectSettingsViewProps) {
   const [tab, setTab] = useState<Tab>("general");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
   const [templates, setTemplates] = useState<IssueTemplate[]>([]);
@@ -276,6 +278,56 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
             <button onClick={handleSaveGeneral} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
               Save Changes
             </button>
+
+            {/* Danger Zone */}
+            {onDeleteProject && (
+              <div className="mt-10 border-t border-red-500/20 pt-6">
+                <h3 className="text-sm font-semibold text-red-500 mb-2">Danger Zone</h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Permanently delete this project and all its issues, statuses, labels, and data. This action cannot be undone.
+                </p>
+                {!showDeleteConfirm ? (
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="rounded-md border border-red-500/50 px-4 py-2 text-sm font-medium text-red-500 hover:bg-red-500/10 transition-colors"
+                  >
+                    Delete Project
+                  </button>
+                ) : (
+                  <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4 space-y-3">
+                    <p className="text-sm text-red-400">
+                      Type <span className="font-mono font-bold">{project.name}</span> to confirm deletion:
+                    </p>
+                    <input
+                      autoFocus
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      placeholder={project.name}
+                      className="w-full rounded-md border border-red-500/30 bg-background px-3 py-2 text-sm outline-none focus:border-red-500"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          if (deleteConfirmText === project.name) {
+                            await onDeleteProject(project.id);
+                          }
+                        }}
+                        disabled={deleteConfirmText !== project.name}
+                        className="rounded-md bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Delete Forever
+                      </button>
+                      <button
+                        onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(""); }}
+                        className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
