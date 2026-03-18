@@ -1,4 +1,5 @@
 pub mod advanced_search;
+pub mod agent_analytics;
 pub mod agents;
 pub mod automations;
 pub mod code_analysis;
@@ -15,6 +16,7 @@ pub mod health;
 pub mod hooks;
 pub mod issues;
 pub mod labels;
+pub mod marketplace;
 pub mod members;
 pub mod mentions;
 pub mod milestones;

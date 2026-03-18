@@ -408,6 +408,42 @@ fn tools_list() -> Vec<Value> {
         ),
         tool_def("list_agents", "List all registered agents", json!({}), vec![]),
         tool_def(
+            "marketplace_register",
+            "Register an agent in the marketplace",
+            json!({
+                "agent_id": prop("string", "Agent ID"),
+                "name": prop("string", "Agent display name"),
+                "description": prop("string", "Agent description"),
+                "provider": prop("string", "Provider: claude, gpt, custom"),
+                "version": prop("string", "Agent version"),
+                "endpoint": prop("string", "MCP endpoint or webhook URL"),
+                "capabilities": {"type": "array", "items": {"type": "string"}, "description": "List of capabilities/skills"},
+                "max_concurrent": prop("number", "Max concurrent tasks"),
+                "max_complexity": prop("string", "Max complexity: small, medium, large"),
+                "hourly_rate": prop("number", "Optional hourly rate for cost tracking")
+            }),
+            vec!["agent_id", "name", "capabilities"],
+        ),
+        tool_def(
+            "marketplace_search",
+            "Search marketplace for agents with specific skills",
+            json!({
+                "skills": {"type": "array", "items": {"type": "string"}, "description": "Required skills"},
+                "max_complexity": prop("string", "Max complexity filter: small, medium, large")
+            }),
+            vec!["skills"],
+        ),
+        tool_def(
+            "find_best_agent",
+            "Find the best agent for a task based on skills, proficiency, and availability",
+            json!({
+                "task_skills": {"type": "array", "items": {"type": "string"}, "description": "Required task skills"},
+                "complexity": prop("string", "Task complexity: small, medium, large")
+            }),
+            vec!["task_skills", "complexity"],
+        ),
+        tool_def("marketplace_list", "List all agents in the marketplace", json!({}), vec![]),
+        tool_def(
             "system_metrics",
             "Get system-wide metrics for a project",
             json!({
@@ -2407,6 +2443,117 @@ async fn handle_tool_call(
             ).await?;
             notify_change();
             Ok(json!(issue))
+        "marketplace_register" => {
+            let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
+            let name = args["name"].as_str().ok_or("name required")?;
+            let description = args.get("description").and_then(|v| v.as_str());
+            let provider = args.get("provider").and_then(|v| v.as_str());
+            let version = args.get("version").and_then(|v| v.as_str());
+            let endpoint = args.get("endpoint").and_then(|v| v.as_str());
+            let capabilities: Vec<String> = args.get("capabilities")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            let caps_json = serde_json::to_string(&capabilities).unwrap_or_else(|_| "[]".to_string());
+            let max_concurrent = args.get("max_concurrent").and_then(|v| v.as_i64()).unwrap_or(1);
+            let max_complexity = args.get("max_complexity").and_then(|v| v.as_str()).unwrap_or("medium");
+            let hourly_rate = args.get("hourly_rate").and_then(|v| v.as_f64());
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+            let jb = crate::db::compat::jsonb_cast(backend);
+            sqlx::query(&format!(
+                "INSERT INTO agent_registry (agent_id, name, description, provider, version, endpoint, capabilities, max_concurrent, max_complexity, hourly_rate, registered_at, last_seen_at) VALUES ($1, $2, $3, $4, $5, $6, $7{jb}, $8, $9, $10, $11, $12) ON CONFLICT(agent_id) DO UPDATE SET name=$2, description=$3, provider=$4, version=$5, endpoint=$6, capabilities=$7{jb}, max_concurrent=$8, max_complexity=$9, hourly_rate=$10, last_seen_at=$12"
+            ))
+            .bind(agent_id).bind(name).bind(description).bind(provider).bind(version).bind(endpoint)
+            .bind(&caps_json).bind(max_concurrent).bind(max_complexity).bind(hourly_rate).bind(&now).bind(&now)
+            .execute(pool).await.map_err(|e| e.to_string())?;
+
+            for cap in &capabilities {
+                let _ = sqlx::query(
+                    "INSERT INTO agent_capabilities (agent_id, capability) VALUES ($1, $2) ON CONFLICT(agent_id, capability) DO NOTHING"
+                ).bind(agent_id).bind(cap).execute(pool).await;
+            }
+
+            notify_change();
+            Ok(json!({"agent_id": agent_id, "name": name, "capabilities": capabilities, "status": "registered"}))
+        }
+        "marketplace_search" => {
+            let skills: Vec<String> = args.get("skills")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            let max_complexity = args.get("max_complexity").and_then(|v| v.as_str());
+
+            let all: Vec<(String, String, String, String, Option<f64>, i64)> = sqlx::query_as(
+                "SELECT agent_id, name, capabilities, max_complexity, rating, total_tasks FROM agent_registry ORDER BY rating DESC NULLS LAST"
+            ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+            let complexity_order = |c: &str| match c { "small" => 1, "medium" => 2, "large" => 3, _ => 2 };
+            let max_cx_val = complexity_order(max_complexity.unwrap_or("large"));
+
+            let results: Vec<Value> = all.into_iter().filter(|(_, _, caps, mx, _, _)| {
+                if complexity_order(mx) < max_cx_val { return false; }
+                if skills.is_empty() { return true; }
+                let caps_list: Vec<String> = serde_json::from_str(caps).unwrap_or_default();
+                skills.iter().any(|s| caps_list.iter().any(|c| c.contains(s) || s.contains(c)))
+            }).map(|(aid, name, caps, mx, rating, tasks)| {
+                json!({"agent_id": aid, "name": name, "capabilities": serde_json::from_str::<Value>(&caps).unwrap_or(json!([])), "max_complexity": mx, "rating": rating, "total_tasks": tasks})
+            }).collect();
+
+            Ok(json!(results))
+        }
+        "find_best_agent" => {
+            let task_skills: Vec<String> = args.get("task_skills")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            let complexity = args["complexity"].as_str().ok_or("complexity required")?;
+
+            let entries: Vec<(String, String, String, Option<f64>)> = sqlx::query_as(
+                "SELECT agent_id, name, max_complexity, rating FROM agent_registry"
+            ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+            let complexity_order = |c: &str| match c { "small" => 1, "medium" => 2, "large" => 3, _ => 2 };
+            let target_cx = complexity_order(complexity);
+
+            let mut matches = Vec::new();
+            for (agent_id, name, max_cx, rating) in entries {
+                if complexity_order(&max_cx) < target_cx { continue; }
+                let caps: Vec<(String, f64)> = sqlx::query_as(
+                    "SELECT capability, proficiency FROM agent_capabilities WHERE agent_id = $1"
+                ).bind(&agent_id).fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+                let mut matched = Vec::new();
+                let mut total_prof = 0.0;
+                for skill in &task_skills {
+                    if let Some((_, prof)) = caps.iter().find(|(c, _)| c.contains(skill) || skill.contains(c)) {
+                        matched.push(skill.clone());
+                        total_prof += prof;
+                    }
+                }
+                if matched.is_empty() && !task_skills.is_empty() { continue; }
+
+                let avg_prof = if matched.is_empty() { 0.5 } else { total_prof / matched.len() as f64 };
+                let skill_ratio = if task_skills.is_empty() { 1.0 } else { matched.len() as f64 / task_skills.len() as f64 };
+                let r = rating.unwrap_or(0.5);
+                let score = skill_ratio * 0.4 + avg_prof * 0.3 + r * 0.3;
+
+                matches.push(json!({"agent_id": agent_id, "name": name, "score": score, "matched_skills": matched, "avg_proficiency": avg_prof, "rating": rating}));
+            }
+
+            matches.sort_by(|a, b| b["score"].as_f64().unwrap_or(0.0).partial_cmp(&a["score"].as_f64().unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
+            Ok(json!(matches))
+        }
+        "marketplace_list" => {
+            let entries: Vec<(String, String, Option<String>, Option<String>, String, Option<f64>, i64)> = sqlx::query_as(
+                "SELECT agent_id, name, description, provider, capabilities, rating, total_tasks FROM agent_registry ORDER BY rating DESC NULLS LAST"
+            ).fetch_all(pool).await.map_err(|e| e.to_string())?;
+
+            let results: Vec<Value> = entries.into_iter().map(|(aid, name, desc, provider, caps, rating, tasks)| {
+                json!({"agent_id": aid, "name": name, "description": desc, "provider": provider, "capabilities": serde_json::from_str::<Value>(&caps).unwrap_or(json!([])), "rating": rating, "total_tasks": tasks})
+            }).collect();
+
+            Ok(json!(results))
         }
         _ => Err(format!("Unknown tool: {}", name)),
     }

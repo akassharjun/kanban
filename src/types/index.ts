@@ -630,3 +630,89 @@ export interface TaskContext {
   project_path: string | null;
   context_files: string[];
 }
+
+// Agent Analytics Types
+
+export interface DailyMetric {
+  date: string;
+  completed: number;
+  failed: number;
+}
+
+export interface AgentPerformance {
+  agent_id: string;
+  agent_name: string;
+  total_tasks: number;
+  completed: number;
+  failed: number;
+  rejected: number;
+  timeout: number;
+  success_rate: number;
+  avg_confidence: number;
+  avg_duration_minutes: number;
+  total_lines_changed: number;
+  tasks_by_type: Record<string, number>;
+  tasks_by_complexity: Record<string, number>;
+  daily_completions: DailyMetric[];
+}
+
+export interface AgentRanking {
+  agent_id: string;
+  agent_name: string;
+  score: number;
+  success_rate: number;
+  avg_confidence: number;
+  tasks_completed: number;
+}
+
+export interface ProjectAgentSummary {
+  total_agent_tasks: number;
+  total_completed: number;
+  total_failed: number;
+  avg_completion_time_minutes: number;
+  agents_active: number;
+  top_performers: AgentRanking[];
+  task_type_distribution: Record<string, number>;
+  completion_trend: DailyMetric[];
+}
+
+// Marketplace Types
+
+export interface AgentRegistryEntry {
+  id: number;
+  agent_id: string;
+  name: string;
+  description: string | null;
+  provider: string | null;
+  version: string | null;
+  endpoint: string | null;
+  capabilities: string; // JSON string of string[]
+  max_concurrent: number;
+  max_complexity: string;
+  hourly_rate: number | null;
+  rating: number | null;
+  total_tasks: number;
+  registered_at: string;
+  last_seen_at: string | null;
+}
+
+export interface AgentCapability {
+  id: number;
+  agent_id: string;
+  capability: string;
+  proficiency: number;
+  tasks_completed: number;
+  tasks_failed: number;
+  avg_confidence: number | null;
+  updated_at: string;
+}
+
+export interface AgentMatch {
+  agent_id: string;
+  name: string;
+  score: number;
+  matched_skills: string[];
+  avg_proficiency: number;
+  rating: number | null;
+  status: string;
+}

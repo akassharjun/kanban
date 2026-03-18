@@ -285,6 +285,21 @@ pub fn run_gui(database_url: Option<String>) {
             commands::code_analysis::get_issues_for_file,
             // Diff Issues
             commands::diff_issues::create_issue_from_diff,
+            // Agent Analytics
+            commands::agent_analytics::record_task_metric,
+            commands::agent_analytics::get_agent_performance,
+            commands::agent_analytics::get_project_agent_summary,
+            commands::agent_analytics::get_agent_leaderboard,
+            // Marketplace
+            commands::marketplace::marketplace_register,
+            commands::marketplace::marketplace_update,
+            commands::marketplace::marketplace_deregister,
+            commands::marketplace::marketplace_list,
+            commands::marketplace::marketplace_search,
+            commands::marketplace::marketplace_get,
+            commands::marketplace::update_agent_proficiency,
+            commands::marketplace::get_agent_capabilities,
+            commands::marketplace::find_best_agent,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

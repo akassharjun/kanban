@@ -3,20 +3,57 @@
  * Provides realistic demo data when running outside Tauri.
  */
 import type {
-  Project, Status, Issue, Label, Member, Comment,
-  ActivityLogEntry, AuditLogEntry, IssueHistoryEntry, MentionEntry,
-  Notification, Agent, AgentMetrics,
-  ProjectMetrics, Hook,
-  ProjectAgentConfig, ExecutionLog, TaskGraph,
-  IssueWithLabels, Epic, Milestone, MilestoneWithProgress, SavedView, GitLink,
-  AutomationRule, AutomationLogEntry,
-  GithubConfig, GithubEvent, CIStatus, PRStatus,
-  ConnectionTestResult, BranchNamePreview,
-  TriageSuggestion, DecomposedTask, ParsedIssue,
-  IssueFileLink, FileHeatEntry,
-  DirectoryHeatEntry, TaskContext,
-  RecurringIssue, RecurringPreview,
-  DependencyGraph, DependencyNode, DependencyEdge, IssueRelation,
+  Project,
+  Status,
+  Issue,
+  Label,
+  Member,
+  Comment,
+  ActivityLogEntry,
+  AuditLogEntry,
+  IssueHistoryEntry,
+  MentionEntry,
+  Notification,
+  Agent,
+  AgentMetrics,
+  ProjectMetrics,
+  Hook,
+  ProjectAgentConfig,
+  ExecutionLog,
+  TaskGraph,
+  IssueWithLabels,
+  Epic,
+  Milestone,
+  MilestoneWithProgress,
+  SavedView,
+  GitLink,
+  AutomationRule,
+  AutomationLogEntry,
+  GithubConfig,
+  GithubEvent,
+  CIStatus,
+  PRStatus,
+  ConnectionTestResult,
+  BranchNamePreview,
+  TriageSuggestion,
+  DecomposedTask,
+  ParsedIssue,
+  IssueFileLink,
+  FileHeatEntry,
+  DirectoryHeatEntry,
+  TaskContext,
+  RecurringIssue,
+  RecurringPreview,
+  DependencyGraph,
+  DependencyNode,
+  DependencyEdge,
+  IssueRelation,
+  AgentPerformance,
+  ProjectAgentSummary,
+  AgentRanking,
+  AgentRegistryEntry,
+  AgentCapability,
+  AgentMatch,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -902,6 +939,67 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
         next_dates: [r.next_run_at, new Date(Date.now() + 86400000 * 2).toISOString(), new Date(Date.now() + 86400000 * 3).toISOString()],
       } as RecurringPreview;
     }
+    // Agent Analytics
+    case "record_task_metric": return;
+    case "get_agent_performance": {
+      const a = agents.find(x => x.id === args?.agentId);
+      return {
+        agent_id: a?.id ?? "", agent_name: a?.name ?? "Unknown",
+        total_tasks: 48, completed: 42, failed: 3, rejected: 2, timeout: 1,
+        success_rate: 0.875, avg_confidence: 0.89, avg_duration_minutes: 14.5,
+        total_lines_changed: 2847,
+        tasks_by_type: { implementation: 28, review: 10, testing: 7, research: 3 },
+        tasks_by_complexity: { small: 15, medium: 22, large: 11 },
+        daily_completions: Array.from({ length: 14 }, (_, i) => ({
+          date: new Date(Date.now() - (13 - i) * 86400000).toISOString().slice(0, 10),
+          completed: Math.floor(Math.random() * 5) + 1,
+          failed: Math.random() > 0.7 ? 1 : 0,
+        })),
+      } as AgentPerformance;
+    }
+    case "get_project_agent_summary": return {
+      total_agent_tasks: 96, total_completed: 82, total_failed: 8,
+      avg_completion_time_minutes: 16.3, agents_active: 2,
+      top_performers: [
+        { agent_id: "claude-opus-1", agent_name: "Claude Opus", score: 0.91, success_rate: 0.93, avg_confidence: 0.89, tasks_completed: 42 },
+        { agent_id: "review-bot-1", agent_name: "Review Bot", score: 0.78, success_rate: 0.85, avg_confidence: 0.82, tasks_completed: 28 },
+        { agent_id: "research-agent-1", agent_name: "Research Agent", score: 0.62, success_rate: 0.75, avg_confidence: 0.71, tasks_completed: 12 },
+      ] as AgentRanking[],
+      task_type_distribution: { implementation: 45, review: 25, testing: 18, research: 8 },
+      completion_trend: Array.from({ length: 14 }, (_, i) => ({
+        date: new Date(Date.now() - (13 - i) * 86400000).toISOString().slice(0, 10),
+        completed: Math.floor(Math.random() * 8) + 2,
+        failed: Math.random() > 0.6 ? Math.floor(Math.random() * 2) + 1 : 0,
+      })),
+    } as ProjectAgentSummary;
+    case "get_agent_leaderboard": return [
+      { agent_id: "claude-opus-1", agent_name: "Claude Opus", score: 0.91, success_rate: 0.93, avg_confidence: 0.89, tasks_completed: 42 },
+      { agent_id: "review-bot-1", agent_name: "Review Bot", score: 0.78, success_rate: 0.85, avg_confidence: 0.82, tasks_completed: 28 },
+      { agent_id: "research-agent-1", agent_name: "Research Agent", score: 0.62, success_rate: 0.75, avg_confidence: 0.71, tasks_completed: 12 },
+    ] as AgentRanking[];
+
+    // Marketplace
+    case "marketplace_register": return { id: id(), ...args!.input, capabilities: JSON.stringify(args!.input.capabilities), total_tasks: 0, rating: null, registered_at: now, last_seen_at: now } as AgentRegistryEntry;
+    case "marketplace_update": return args?.input;
+    case "marketplace_deregister": return;
+    case "marketplace_list": return [
+      { id: 1, agent_id: "claude-opus-1", name: "Claude Opus", description: "High-performance implementation agent with broad language support", provider: "claude", version: "4.0", endpoint: "mcp://localhost:3100", capabilities: JSON.stringify(["rust", "typescript", "react", "sql", "python"]), max_concurrent: 3, max_complexity: "large", hourly_rate: null, rating: 0.91, total_tasks: 42, registered_at: ago(5000), last_seen_at: ago(1) },
+      { id: 2, agent_id: "review-bot-1", name: "Review Bot", description: "Specialized code review and testing agent", provider: "claude", version: "3.5", endpoint: "mcp://localhost:3101", capabilities: JSON.stringify(["code-review", "testing", "security-review"]), max_concurrent: 5, max_complexity: "medium", hourly_rate: 0.02, rating: 0.82, total_tasks: 28, registered_at: ago(3000), last_seen_at: ago(5) },
+      { id: 3, agent_id: "research-agent-1", name: "Research Agent", description: "Documentation and analysis specialist", provider: "gpt", version: "4.1", endpoint: null, capabilities: JSON.stringify(["analysis", "documentation", "research"]), max_concurrent: 2, max_complexity: "medium", hourly_rate: 0.01, rating: 0.71, total_tasks: 12, registered_at: ago(2000), last_seen_at: ago(600) },
+    ] as AgentRegistryEntry[];
+    case "marketplace_search": return [] as AgentRegistryEntry[];
+    case "marketplace_get": return null;
+    case "update_agent_proficiency": return;
+    case "get_agent_capabilities": return [
+      { id: 1, agent_id: args?.agentId ?? "", capability: "rust", proficiency: 0.92, tasks_completed: 18, tasks_failed: 1, avg_confidence: 0.91, updated_at: ago(10) },
+      { id: 2, agent_id: args?.agentId ?? "", capability: "typescript", proficiency: 0.88, tasks_completed: 15, tasks_failed: 2, avg_confidence: 0.87, updated_at: ago(20) },
+      { id: 3, agent_id: args?.agentId ?? "", capability: "react", proficiency: 0.85, tasks_completed: 12, tasks_failed: 1, avg_confidence: 0.85, updated_at: ago(30) },
+      { id: 4, agent_id: args?.agentId ?? "", capability: "sql", proficiency: 0.78, tasks_completed: 8, tasks_failed: 2, avg_confidence: 0.80, updated_at: ago(50) },
+    ] as AgentCapability[];
+    case "find_best_agent": return [
+      { agent_id: "claude-opus-1", name: "Claude Opus", score: 0.92, matched_skills: args?.taskSkills ?? [], avg_proficiency: 0.88, rating: 0.91, status: "idle" },
+      { agent_id: "review-bot-1", name: "Review Bot", score: 0.65, matched_skills: ["testing"], avg_proficiency: 0.75, rating: 0.82, status: "busy" },
+    ] as AgentMatch[];
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);
