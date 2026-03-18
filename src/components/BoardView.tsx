@@ -18,7 +18,6 @@ interface BoardViewProps {
   allIssues?: Issue[];
   statuses: Status[];
   members: Member[];
-  labels: Label[];
   getLabelsForIssue: (issueId: number) => Label[];
   onUpdateIssue: (id: number, input: { status_id?: number; position?: number }) => Promise<unknown>;
   onClickIssue: (issue: Issue) => void;
@@ -30,7 +29,6 @@ export function BoardView({
   allIssues,
   statuses,
   members,
-  labels,
   getLabelsForIssue,
   onUpdateIssue,
   onClickIssue,
@@ -140,7 +138,7 @@ export function BoardView({
           <IssueCard
             issue={activeIssue}
             member={getMember(activeIssue.assignee_id)}
-            labels={[]}
+            labels={getLabelsForIssue(activeIssue.id)}
             issues={issues}
             onClick={() => {}}
             isDragging

@@ -5,9 +5,9 @@
 import type {
   Project, Status, Issue, Label, Member, Comment,
   ActivityLogEntry, Notification, Agent, AgentMetrics,
-  ProjectMetrics, CustomField, IssueTemplate, Hook,
-  ProjectAgentConfig, FullTaskContract, ExecutionLog, TaskGraph,
-  IssueWithLabels, UndoLogEntry,
+  ProjectMetrics, Hook,
+  ProjectAgentConfig, ExecutionLog, TaskGraph,
+  IssueWithLabels,
 } from "@/types";
 
 // Check if we're running inside Tauri

@@ -224,7 +224,6 @@ function App() {
                   allIssues={issues}
                   statuses={statuses}
                   members={members}
-                  labels={labels}
                   getLabelsForIssue={getLabelsForIssue}
                   onUpdateIssue={updateIssue}
                   onClickIssue={(issue) => setSelectedIssueId(issue.id)}
