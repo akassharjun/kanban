@@ -74,6 +74,7 @@ pub enum Commands {
     Code {
         #[command(subcommand)]
         action: CodeAction,
+    },
     /// Agent marketplace
     Marketplace {
         #[command(subcommand)]
@@ -391,6 +392,10 @@ pub enum CodeAction {
         file_path: String,
         #[arg(long)]
         project: i64,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum MarketplaceAction {
     /// List all agents in the marketplace
     List,
