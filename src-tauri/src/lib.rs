@@ -197,6 +197,18 @@ pub fn run_gui(database_url: Option<String>) {
             commands::task_contracts::task_graph,
             commands::task_contracts::project_metrics,
             commands::task_contracts::agent_metrics_cmd,
+            // Epics
+            commands::epics::list_epics,
+            commands::epics::get_epic,
+            commands::epics::create_epic,
+            commands::epics::update_epic,
+            commands::epics::delete_epic,
+            // Milestones
+            commands::milestones::list_milestones,
+            commands::milestones::get_milestone,
+            commands::milestones::create_milestone,
+            commands::milestones::update_milestone,
+            commands::milestones::delete_milestone,
             // Execution Logs
             commands::execution_logs::log_task_activity,
             commands::execution_logs::task_replay,

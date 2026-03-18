@@ -26,6 +26,9 @@ import type {
   TaskGraph,
   ProjectAgentConfig,
   Hook,
+  Epic,
+  Milestone,
+  MilestoneWithProgress,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -86,6 +89,8 @@ export const createIssue = (input: {
   estimate?: number;
   due_date?: string;
   label_ids?: number[];
+  epic_id?: number;
+  milestone_id?: number;
 }) => invoke<Issue>("create_issue", { input });
 export const getIssue = (id: number) => invoke<IssueWithLabels>("get_issue", { id });
 export const getIssueByIdentifier = (identifier: string) => invoke<IssueWithLabels>("get_issue_by_identifier", { identifier });
@@ -108,6 +113,8 @@ export const updateIssue = (id: number, input: {
   position?: number;
   estimate?: number;
   due_date?: string;
+  epic_id?: number;
+  milestone_id?: number;
 }) => invoke<Issue>("update_issue", { id, input });
 export const deleteIssue = (id: number) => invoke<void>("delete_issue", { id });
 export const duplicateIssue = (id: number) => invoke<Issue>("duplicate_issue", { id });
@@ -262,3 +269,37 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// Epics
+export const listEpics = (projectId: number) => invoke<Epic[]>("list_epics", { projectId });
+export const getEpic = (id: number) => invoke<Epic>("get_epic", { id });
+export const createEpic = (input: {
+  project_id: number;
+  title: string;
+  description?: string;
+  color?: string;
+}) => invoke<Epic>("create_epic", { input });
+export const updateEpic = (id: number, input: {
+  title?: string;
+  description?: string;
+  color?: string;
+  status?: string;
+}) => invoke<Epic>("update_epic", { id, input });
+export const deleteEpic = (id: number) => invoke<void>("delete_epic", { id });
+
+// Milestones
+export const listMilestones = (projectId: number) => invoke<MilestoneWithProgress[]>("list_milestones", { projectId });
+export const getMilestone = (id: number) => invoke<MilestoneWithProgress>("get_milestone", { id });
+export const createMilestone = (input: {
+  project_id: number;
+  title: string;
+  description?: string;
+  due_date?: string;
+}) => invoke<Milestone>("create_milestone", { input });
+export const updateMilestone = (id: number, input: {
+  title?: string;
+  description?: string;
+  due_date?: string;
+  status?: string;
+}) => invoke<Milestone>("update_milestone", { id, input });
+export const deleteMilestone = (id: number) => invoke<void>("delete_milestone", { id });

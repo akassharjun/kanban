@@ -8,6 +8,7 @@ import { ListView } from "./components/ListView";
 import { TreeView } from "./components/TreeView";
 import { CalendarView } from "./components/CalendarView";
 import { GanttView } from "./components/GanttView";
+import { RoadmapView } from "./components/RoadmapView";
 import { IssueDetailPanel } from "./components/IssueDetailPanel";
 import { FilterBar, type Filters } from "./components/FilterBar";
 import { CreateProjectDialog } from "./components/CreateProjectDialog";
@@ -25,6 +26,8 @@ import { useMembers } from "./hooks/use-members";
 import { useStatuses } from "./hooks/use-statuses";
 import { useLabels } from "./hooks/use-labels";
 import { useIssueLabelMap } from "./hooks/use-issue-labels";
+import { useEpics } from "./hooks/use-epics";
+import { useMilestones } from "./hooks/use-milestones";
 import { useAgents } from "./hooks/use-agents";
 import * as api from "./tauri/commands";
 import type { IssueTemplate } from "./types";
@@ -64,6 +67,8 @@ function App() {
   const { statuses, refresh: refreshStatuses } = useStatuses(selectedProjectId);
   const { labels, refresh: refreshLabels } = useLabels(selectedProjectId);
   const { getLabelsForIssue, refresh: refreshIssueLabelMap } = useIssueLabelMap(selectedProjectId, labels);
+  const { epics, refresh: refreshEpics } = useEpics(selectedProjectId);
+  const { milestones, refresh: refreshMilestones } = useMilestones(selectedProjectId);
   const { agents: allAgents } = useAgents();
   const onlineAgentCount = allAgents.filter(a => a.status !== "offline").length;
 
@@ -123,6 +128,10 @@ function App() {
       if (e.key === "5" && !e.metaKey) {
         setViewMode("gantt");
       }
+      if (e.key === "5" && !e.metaKey) {
+        setViewMode("roadmap");
+        setPage("project");
+      }
       if (e.key === "Escape") {
         if (selectedIssueId) setSelectedIssueId(null);
         else if (showSearch) setShowSearch(false);
@@ -152,9 +161,11 @@ function App() {
       refreshStatuses();
       refreshLabels();
       refreshIssueLabelMap();
+      refreshEpics();
+      refreshMilestones();
     });
     return () => { unlisten.then(fn => fn()); };
-  }, [refreshProjects, refreshIssues, refreshStatuses, refreshLabels, refreshIssueLabelMap]);
+  }, [refreshProjects, refreshIssues, refreshStatuses, refreshLabels, refreshIssueLabelMap, refreshEpics, refreshMilestones]);
 
   const handleQuickCreate = async (statusId: number, title: string) => {
     if (!selectedProjectId) return;
@@ -177,6 +188,8 @@ function App() {
       if (filters.status_id && issue.status_id !== filters.status_id) return false;
       if (filters.priority && issue.priority !== filters.priority) return false;
       if (filters.assignee_id && issue.assignee_id !== filters.assignee_id) return false;
+      if (filters.epic_id && issue.epic_id !== filters.epic_id) return false;
+      if (filters.milestone_id && issue.milestone_id !== filters.milestone_id) return false;
       return true;
     });
   }, [issues, filters]);
@@ -218,6 +231,8 @@ function App() {
               statuses={statuses}
               members={members}
               labels={labels}
+              epics={epics}
+              milestones={milestones}
               filters={filters}
               onFiltersChange={setFilters}
             />
@@ -229,6 +244,7 @@ function App() {
                   allIssues={issues}
                   statuses={statuses}
                   members={members}
+                  epics={epics}
                   getLabelsForIssue={getLabelsForIssue}
                   onUpdateIssue={updateIssue}
                   onClickIssue={(issue) => setSelectedIssueId(issue.id)}
@@ -269,6 +285,15 @@ function App() {
                   onClickIssue={(issue) => setSelectedIssueId(issue.id)}
                 />
               )}
+              {viewMode === "roadmap" && (
+                <RoadmapView
+                  issues={filteredIssues}
+                  epics={epics}
+                  milestones={milestones}
+                  statuses={statuses}
+                  onClickIssue={(issue) => setSelectedIssueId(issue.id)}
+                />
+              )}
 
             </div>
           </>
@@ -300,6 +325,8 @@ function App() {
             onUpdateProject={updateProject}
             onRefreshStatuses={refreshStatuses}
             onRefreshLabels={refreshLabels}
+            onRefreshEpics={refreshEpics}
+            onRefreshMilestones={refreshMilestones}
             onDeleteProject={async (id) => {
               await _removeProject(id);
               setSelectedProjectId(null);
@@ -325,6 +352,8 @@ function App() {
           statuses={statuses}
           members={members}
           projectLabels={labels}
+          epics={epics}
+          milestones={milestones}
           onClose={() => setSelectedIssueId(null)}
           onUpdate={async (id, input) => { await updateIssue(id, input); }}
           onDelete={async (id) => { await deleteIssue(id); setSelectedIssueId(null); }}
@@ -347,6 +376,8 @@ function App() {
           statuses={statuses}
           members={members}
           labels={labels}
+          epics={epics}
+          milestones={milestones}
           templates={templates}
           defaultStatusId={createIssueStatusId || statuses.find(s => s.category === "unstarted")?.id}
           onClose={() => setShowCreateIssue(false)}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Pencil, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Project, Status, Label, Member, IssueTemplate, Hook, ProjectAgentConfig } from "@/types";
+import type { Project, Status, Label, Member, IssueTemplate, Hook, ProjectAgentConfig, Epic, MilestoneWithProgress } from "@/types";
 import * as api from "@/tauri/commands";
 import { AuditLogView } from "./AuditLogView";
 
@@ -10,10 +10,12 @@ export interface ProjectSettingsViewProps {
   onUpdateProject: (id: number, input: { name?: string; description?: string; icon?: string; status?: string; path?: string }) => Promise<unknown>;
   onRefreshStatuses: () => void;
   onRefreshLabels: () => void;
+  onRefreshEpics?: () => void;
+  onRefreshMilestones?: () => void;
   onDeleteProject?: (id: number) => Promise<unknown>;
 }
 
-type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents" | "audit";
+type Tab = "general" | "statuses" | "labels" | "epics" | "milestones" | "templates" | "hooks" | "agents" | "audit";
 
 const statusCategories = [
   { value: "unstarted", label: "Unstarted" },
@@ -29,12 +31,14 @@ const labelColors = [
   "#a855f7", "#d946ef", "#ec4899", "#f43f5e",
 ];
 
-export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels, onDeleteProject: _onDeleteProject }: ProjectSettingsViewProps) {
+export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels, onRefreshEpics, onRefreshMilestones, onDeleteProject: _onDeleteProject }: ProjectSettingsViewProps) {
   const [tab, setTab] = useState<Tab>("general");
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
   const [templates, setTemplates] = useState<IssueTemplate[]>([]);
   const [hooks, setHooks] = useState<Hook[]>([]);
+  const [epicsData, setEpicsData] = useState<Epic[]>([]);
+  const [milestonesData, setMilestonesData] = useState<MilestoneWithProgress[]>([]);
   const [agentConfig, setAgentConfig] = useState<ProjectAgentConfig | null>(null);
   const [agentConfigSaving, setAgentConfigSaving] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
@@ -71,18 +75,34 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
   const [hookEventType, setHookEventType] = useState("task_completed");
   const [hookCommand, setHookCommand] = useState("");
 
+  // Epic form
+  const [showAddEpic, setShowAddEpic] = useState(false);
+  const [epicName, setEpicName] = useState("");
+  const [epicDesc, setEpicDesc] = useState("");
+  const [epicColor, setEpicColor] = useState("#6366f1");
+  const [editingEpicId, setEditingEpicId] = useState<number | null>(null);
+
+  // Milestone form
+  const [showAddMilestone, setShowAddMilestone] = useState(false);
+  const [milestoneName, setMilestoneName] = useState("");
+  const [milestoneDesc, setMilestoneDesc] = useState("");
+  const [milestoneDueDate, setMilestoneDueDate] = useState("");
+  const [editingMilestoneId, setEditingMilestoneId] = useState<number | null>(null);
+
   useEffect(() => {
     loadData();
   }, [project.id]);
 
   const loadData = async () => {
-    const [s, l, t, h, ac, m] = await Promise.all([
+    const [s, l, t, h, ac, m, ep, ms] = await Promise.all([
       api.listStatuses(project.id),
       api.listLabels(project.id),
       api.listTemplates(project.id),
       api.listHooks(project.id),
       api.getProjectAgentConfig(project.id),
       api.listMembers(),
+      api.listEpics(project.id),
+      api.listMilestones(project.id),
     ]);
     setStatuses(s);
     setLabels(l);
@@ -90,6 +110,8 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     setHooks(h);
     setAgentConfig(ac);
     setMembers(m);
+    setEpicsData(ep);
+    setMilestonesData(ms);
   };
 
   const handleSaveGeneral = async () => {
@@ -193,10 +215,78 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     await loadData();
   };
 
+  // Epic handlers
+  const handleAddEpic = async () => {
+    if (!epicName.trim()) return;
+    if (editingEpicId) {
+      await api.updateEpic(editingEpicId, { title: epicName, description: epicDesc || undefined, color: epicColor });
+    } else {
+      await api.createEpic({ project_id: project.id, title: epicName, description: epicDesc || undefined, color: epicColor });
+    }
+    setShowAddEpic(false); setEditingEpicId(null); setEpicName(""); setEpicDesc(""); setEpicColor("#6366f1");
+    await loadData();
+    onRefreshEpics?.();
+  };
+
+  const handleDeleteEpic = async (id: number) => {
+    await api.deleteEpic(id);
+    await loadData();
+    onRefreshEpics?.();
+  };
+
+  const handleToggleEpicStatus = async (epic: Epic) => {
+    await api.updateEpic(epic.id, { status: epic.status === "active" ? "closed" : "active" });
+    await loadData();
+    onRefreshEpics?.();
+  };
+
+  const startEditEpic = (e: Epic) => {
+    setEditingEpicId(e.id);
+    setEpicName(e.title);
+    setEpicDesc(e.description || "");
+    setEpicColor(e.color);
+    setShowAddEpic(true);
+  };
+
+  // Milestone handlers
+  const handleAddMilestone = async () => {
+    if (!milestoneName.trim()) return;
+    if (editingMilestoneId) {
+      await api.updateMilestone(editingMilestoneId, { title: milestoneName, description: milestoneDesc || undefined, due_date: milestoneDueDate || undefined });
+    } else {
+      await api.createMilestone({ project_id: project.id, title: milestoneName, description: milestoneDesc || undefined, due_date: milestoneDueDate || undefined });
+    }
+    setShowAddMilestone(false); setEditingMilestoneId(null); setMilestoneName(""); setMilestoneDesc(""); setMilestoneDueDate("");
+    await loadData();
+    onRefreshMilestones?.();
+  };
+
+  const handleDeleteMilestone = async (id: number) => {
+    await api.deleteMilestone(id);
+    await loadData();
+    onRefreshMilestones?.();
+  };
+
+  const handleToggleMilestoneStatus = async (ms: MilestoneWithProgress) => {
+    await api.updateMilestone(ms.id, { status: ms.status === "open" ? "closed" : "open" });
+    await loadData();
+    onRefreshMilestones?.();
+  };
+
+  const startEditMilestone = (m: MilestoneWithProgress) => {
+    setEditingMilestoneId(m.id);
+    setMilestoneName(m.title);
+    setMilestoneDesc(m.description || "");
+    setMilestoneDueDate(m.due_date || "");
+    setShowAddMilestone(true);
+  };
+
   const tabs: { value: Tab; label: string }[] = [
     { value: "general", label: "General" },
     { value: "statuses", label: "Statuses" },
     { value: "labels", label: "Labels" },
+    { value: "epics", label: "Epics" },
+    { value: "milestones", label: "Milestones" },
     { value: "templates", label: "Templates" },
     { value: "hooks", label: "Hooks" },
     { value: "agents", label: "Agent Config" },
@@ -381,6 +471,126 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
                 </div>
               ))}
               {labels.length === 0 && <div className="py-8 text-center text-sm text-muted-foreground">No labels yet</div>}
+            </div>
+          </div>
+        )}
+
+        {/* Epics Tab */}
+        {tab === "epics" && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-muted-foreground">Manage epics for grouping related issues</p>
+              <button onClick={() => { setShowAddEpic(true); setEditingEpicId(null); setEpicName(""); setEpicDesc(""); setEpicColor("#6366f1"); }} className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                <Plus className="h-4 w-4" /> Add Epic
+              </button>
+            </div>
+
+            {showAddEpic && (
+              <div className="mb-4 rounded-lg border border-border bg-card p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium">{editingEpicId ? "Edit Epic" : "New Epic"}</h3>
+                  <button onClick={() => { setShowAddEpic(false); setEditingEpicId(null); }}><X className="h-4 w-4" /></button>
+                </div>
+                <input value={epicName} onChange={e => setEpicName(e.target.value)} placeholder="Epic name" className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
+                <textarea value={epicDesc} onChange={e => setEpicDesc(e.target.value)} placeholder="Description (optional)" rows={2} className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Color</label>
+                  <div className="flex flex-wrap gap-1">
+                    {labelColors.map(c => (
+                      <button key={c} onClick={() => setEpicColor(c)} className={`h-6 w-6 rounded-full border-2 ${epicColor === c ? "border-white" : "border-transparent"}`} style={{ backgroundColor: c }} />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => { setShowAddEpic(false); setEditingEpicId(null); }} className="rounded-md px-3 py-1.5 text-sm hover:bg-accent">Cancel</button>
+                  <button onClick={handleAddEpic} className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">{editingEpicId ? "Save" : "Add"}</button>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              {epicsData.map(e => (
+                <div key={e.id} className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: e.color }} />
+                    <span className="text-sm font-medium">{e.title}</span>
+                    <span className={cn("rounded-full px-2 py-0.5 text-[10px]", e.status === "active" ? "bg-green-500/15 text-green-600" : "bg-muted text-muted-foreground")}>{e.status}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => handleToggleEpicStatus(e)} className="rounded px-2 py-1 text-[11px] hover:bg-accent text-muted-foreground">
+                      {e.status === "active" ? "Close" : "Reopen"}
+                    </button>
+                    <button onClick={() => startEditEpic(e)} className="rounded p-1.5 hover:bg-accent"><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                    <button onClick={() => handleDeleteEpic(e.id)} className="rounded p-1.5 hover:bg-destructive/20"><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                  </div>
+                </div>
+              ))}
+              {epicsData.length === 0 && <div className="py-8 text-center text-sm text-muted-foreground">No epics yet</div>}
+            </div>
+          </div>
+        )}
+
+        {/* Milestones Tab */}
+        {tab === "milestones" && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm text-muted-foreground">Manage milestones with due dates and progress tracking</p>
+              <button onClick={() => { setShowAddMilestone(true); setEditingMilestoneId(null); setMilestoneName(""); setMilestoneDesc(""); setMilestoneDueDate(""); }} className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                <Plus className="h-4 w-4" /> Add Milestone
+              </button>
+            </div>
+
+            {showAddMilestone && (
+              <div className="mb-4 rounded-lg border border-border bg-card p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium">{editingMilestoneId ? "Edit Milestone" : "New Milestone"}</h3>
+                  <button onClick={() => { setShowAddMilestone(false); setEditingMilestoneId(null); }}><X className="h-4 w-4" /></button>
+                </div>
+                <input value={milestoneName} onChange={e => setMilestoneName(e.target.value)} placeholder="Milestone name" className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
+                <textarea value={milestoneDesc} onChange={e => setMilestoneDesc(e.target.value)} placeholder="Description (optional)" rows={2} className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Due Date</label>
+                  <input type="date" value={milestoneDueDate} onChange={e => setMilestoneDueDate(e.target.value)} className="rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => { setShowAddMilestone(false); setEditingMilestoneId(null); }} className="rounded-md px-3 py-1.5 text-sm hover:bg-accent">Cancel</button>
+                  <button onClick={handleAddMilestone} className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">{editingMilestoneId ? "Save" : "Add"}</button>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              {milestonesData.map(m => (
+                <div key={m.id} className="rounded-lg border border-border bg-card px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{m.title}</span>
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px]", m.status === "open" ? "bg-blue-500/15 text-blue-600" : "bg-green-500/15 text-green-600")}>{m.status}</span>
+                      {m.due_date && <span className="text-[11px] text-muted-foreground/60">{m.due_date}</span>}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => handleToggleMilestoneStatus(m)} className="rounded px-2 py-1 text-[11px] hover:bg-accent text-muted-foreground">
+                        {m.status === "open" ? "Close" : "Reopen"}
+                      </button>
+                      <button onClick={() => startEditMilestone(m)} className="rounded p-1.5 hover:bg-accent"><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                      <button onClick={() => handleDeleteMilestone(m.id)} className="rounded p-1.5 hover:bg-destructive/20"><Trash2 className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all"
+                        style={{ width: `${m.total_issues > 0 ? (m.completed_issues / m.total_issues) * 100 : 0}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] text-muted-foreground/60 whitespace-nowrap">
+                      {m.completed_issues}/{m.total_issues} done
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {milestonesData.length === 0 && <div className="py-8 text-center text-sm text-muted-foreground">No milestones yet</div>}
             </div>
           </div>
         )}

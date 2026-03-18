@@ -1,12 +1,14 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { EpicBadge } from "@/components/EpicBadge";
 import { AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, Calendar } from "lucide-react";
-import type { Issue, Member, Label } from "@/types";
+import type { Issue, Member, Label, Epic } from "@/types";
 
 interface IssueCardProps {
   issue: Issue;
   member?: Member;
   labels: Label[];
+  epic?: Epic;
   issues?: Issue[];
   onClick: () => void;
   isDragging?: boolean;
@@ -31,7 +33,7 @@ function formatDueDate(dateStr: string): { text: string; urgent: boolean } {
   return { text: dateStr, urgent: false };
 }
 
-export function IssueCard({ issue, member, labels, issues, onClick, isDragging }: IssueCardProps) {
+export function IssueCard({ issue, member, labels, epic, issues, onClick, isDragging }: IssueCardProps) {
   const priority = priorityConfig[issue.priority] || priorityConfig.none;
   const PriorityIcon = priority.icon;
   const parent = issue.parent_id ? issues?.find(i => i.id === issue.parent_id) : undefined;
@@ -74,8 +76,9 @@ export function IssueCard({ issue, member, labels, issues, onClick, isDragging }
         )}
       </div>
 
-      {(labels.length > 0 || issue.due_date) && (
+      {(labels.length > 0 || issue.due_date || epic) && (
         <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+          {epic && <EpicBadge epic={epic} />}
           {labels.map((label) => (
             <Badge
               key={label.id}

@@ -81,6 +81,32 @@ pub struct Issue {
     pub position: f64,
     pub estimate: Option<f64>,
     pub due_date: Option<String>,
+    pub epic_id: Option<i64>,
+    pub milestone_id: Option<i64>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Epic {
+    pub id: i64,
+    pub project_id: i64,
+    pub title: String,
+    pub description: Option<String>,
+    pub color: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct Milestone {
+    pub id: i64,
+    pub project_id: i64,
+    pub title: String,
+    pub description: Option<String>,
+    pub due_date: Option<String>,
+    pub status: String,
     pub created_at: String,
     pub updated_at: String,
 }

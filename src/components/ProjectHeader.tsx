@@ -1,10 +1,10 @@
-import { LayoutGrid, List, TreePine, Calendar, GanttChart, Search, Plus, Bell, Sun, Moon } from "lucide-react";
+import { LayoutGrid, List, TreePine, Calendar, GanttChart, Map, Search, Plus, Bell, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { Project } from "@/types";
 
-export type ViewMode = "board" | "list" | "tree" | "calendar" | "gantt";
+export type ViewMode = "board" | "list" | "tree" | "calendar" | "gantt" | "roadmap";
 
 interface ProjectHeaderProps {
   project: Project;
@@ -42,6 +42,7 @@ export function ProjectHeader({
             { mode: "tree" as const, icon: TreePine, label: "Tree" },
             { mode: "calendar" as const, icon: Calendar, label: "Calendar" },
             { mode: "gantt" as const, icon: GanttChart, label: "Gantt" },
+            { mode: "roadmap" as const, icon: Map, label: "Roadmap" },
           ]).map(({ mode, icon: Icon, label }) => (
             <button
               key={mode}
