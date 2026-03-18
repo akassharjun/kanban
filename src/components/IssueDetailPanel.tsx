@@ -9,6 +9,10 @@ import { useToast } from "./Toast";
 import { TaskContractDialog } from "./TaskContractDialog";
 import { IssueHistoryPanel } from "./IssueHistoryPanel";
 import { MentionInput, MentionText } from "./MentionInput";
+import { ReviewToolbar } from "./ReviewToolbar";
+import { AttemptTabs } from "./AttemptTabs";
+import { DiffPreview } from "./DiffPreview";
+import { useExecutionLogs } from "@/hooks/use-execution-logs";
 
 interface IssueDetailPanelProps {
   issueId: number;
@@ -117,6 +121,8 @@ export function IssueDetailPanel({
   const [showAddFile, setShowAddFile] = useState(false);
   const [handoffNotes, setHandoffNotes] = useState<HandoffNote[]>([]);
   const [taskLearnings, setTaskLearnings] = useState<TaskLearning[]>([]);
+  const [taskContract, setTaskContract] = useState<import("@/types").FullTaskContract | null>(null);
+  const [activeAttempt, setActiveAttempt] = useState(1);
   const [showWsjf, setShowWsjf] = useState(false);
   const [wsjfBv, setWsjfBv] = useState(5);
   const [wsjfTc, setWsjfTc] = useState(5);
@@ -157,6 +163,13 @@ export function IssueDetailPanel({
         setTaskLearnings(learnings);
       } catch {
         // Non-critical - don't block issue load
+      }
+      // Load task contract if exists
+      try {
+        const contract = await api.getTaskContract(data.identifier);
+        setTaskContract(contract);
+      } catch {
+        setTaskContract(null);
       }
     } catch (e) {
       console.error("Failed to load issue", e);
@@ -773,6 +786,31 @@ export function IssueDetailPanel({
             </button>
           )}
         </div>
+
+        {/* Review Toolbar for tasks in validating state */}
+        {taskContract && taskContract.task_state === "validating" && issue && (
+          <div className="mt-4 px-5">
+            <ReviewToolbar
+              issueIdentifier={issue.identifier}
+              onActionComplete={loadIssue}
+            />
+          </div>
+        )}
+
+        {/* Attempt Tabs for tasks with multiple attempts */}
+        {taskContract && taskContract.attempt_count > 1 && issue && (
+          <div className="mt-4 px-5">
+            <AttemptTabs
+              attempts={Array.from({ length: taskContract.attempt_count }, (_, i) => ({
+                number: i + 1,
+                confidence: i + 1 === taskContract.attempt_count ? taskContract.confidence : null,
+                agentName: taskContract.claimed_by || "unknown",
+              }))}
+              activeAttempt={activeAttempt}
+              onSelect={setActiveAttempt}
+            />
+          </div>
+        )}
 
         {/* Task Contract, Decompose & Dependencies */}
         <div className="mt-4 px-5 flex gap-2">
