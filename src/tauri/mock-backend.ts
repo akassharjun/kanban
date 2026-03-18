@@ -54,6 +54,9 @@ import type {
   AgentRegistryEntry,
   AgentCapability,
   AgentMatch,
+  HandoffNote,
+  TaskLearning,
+  SimilarTaskResult,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -1000,6 +1003,35 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
       { agent_id: "claude-opus-1", name: "Claude Opus", score: 0.92, matched_skills: args?.taskSkills ?? [], avg_proficiency: 0.88, rating: 0.91, status: "idle" },
       { agent_id: "review-bot-1", name: "Review Bot", score: 0.65, matched_skills: ["testing"], avg_proficiency: 0.75, rating: 0.82, status: "busy" },
     ] as AgentMatch[];
+
+    // Handoff Notes
+    case "create_handoff_note": {
+      const input = args!.input;
+      return {
+        id: id(), task_identifier: input.task_identifier, from_agent_id: input.from_agent_id,
+        to_agent_id: input.to_agent_id ?? null, note_type: input.note_type, summary: input.summary,
+        details: input.details ?? null, files_changed: input.files_changed ?? [],
+        risks: input.risks ?? [], test_results: input.test_results ?? null,
+        metadata: input.metadata ?? {}, created_at: now,
+      } as HandoffNote;
+    }
+    case "list_handoff_notes": return [] as HandoffNote[];
+    case "get_handoff_for_agent": return [] as HandoffNote[];
+
+    // Learnings
+    case "record_learning": {
+      const input = args!.input;
+      return {
+        id: id(), task_identifier: input.task_identifier, agent_id: input.agent_id,
+        outcome: input.outcome, approach_summary: input.approach_summary,
+        key_insight: input.key_insight ?? null, pitfalls: input.pitfalls ?? [],
+        effective_patterns: input.effective_patterns ?? [], relevant_files: input.relevant_files ?? [],
+        tags: input.tags ?? [], created_at: now,
+      } as TaskLearning;
+    }
+    case "find_similar_learnings": return [] as SimilarTaskResult[];
+    case "list_learnings": return [] as TaskLearning[];
+    case "get_learnings_for_task": return [] as TaskLearning[];
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);

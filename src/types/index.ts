@@ -716,3 +716,45 @@ export interface AgentMatch {
   rating: number | null;
   status: string;
 }
+
+// Handoff Notes Types
+
+export type HandoffNoteType = "completion" | "review_request" | "escalation" | "context" | "warning" | "suggestion";
+
+export interface HandoffNote {
+  id: number;
+  task_identifier: string;
+  from_agent_id: string;
+  to_agent_id: string | null;
+  note_type: HandoffNoteType;
+  summary: string;
+  details: string | null;
+  files_changed: string[];
+  risks: string[];
+  test_results: { passed?: number; failed?: number; skipped?: number } | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export type LearningOutcome = "success" | "failure" | "partial";
+
+export interface TaskLearning {
+  id: number;
+  task_identifier: string;
+  agent_id: string;
+  outcome: LearningOutcome;
+  approach_summary: string;
+  key_insight: string | null;
+  pitfalls: string[];
+  effective_patterns: string[];
+  relevant_files: string[];
+  tags: string[];
+  created_at: string;
+}
+
+export interface SimilarTaskResult {
+  learning: TaskLearning;
+  similarity_score: number;
+  issue_title: string;
+  issue_identifier: string;
+}

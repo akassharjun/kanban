@@ -178,6 +178,76 @@ impl ExecutionLog {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
+pub struct HandoffNote {
+    pub id: i64,
+    pub task_identifier: String,
+    pub from_agent_id: String,
+    pub to_agent_id: Option<String>,
+    pub note_type: String,
+    pub summary: String,
+    pub details: Option<String>,
+    pub files_changed: String,
+    pub risks: String,
+    pub test_results: Option<String>,
+    pub metadata: String,
+    pub created_at: String,
+}
+
+impl Serialize for HandoffNote {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("HandoffNote", 12)?;
+        s.serialize_field("id", &self.id)?;
+        s.serialize_field("task_identifier", &self.task_identifier)?;
+        s.serialize_field("from_agent_id", &self.from_agent_id)?;
+        s.serialize_field("to_agent_id", &self.to_agent_id)?;
+        s.serialize_field("note_type", &self.note_type)?;
+        s.serialize_field("summary", &self.summary)?;
+        s.serialize_field("details", &self.details)?;
+        s.serialize_field("files_changed", &parse_json(&self.files_changed))?;
+        s.serialize_field("risks", &parse_json(&self.risks))?;
+        s.serialize_field("test_results", &self.test_results.as_ref().map(|t| parse_json(t)))?;
+        s.serialize_field("metadata", &parse_json(&self.metadata))?;
+        s.serialize_field("created_at", &self.created_at)?;
+        s.end()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, sqlx::FromRow)]
+pub struct TaskLearning {
+    pub id: i64,
+    pub task_identifier: String,
+    pub agent_id: String,
+    pub outcome: String,
+    pub approach_summary: String,
+    pub key_insight: Option<String>,
+    pub pitfalls: String,
+    pub effective_patterns: String,
+    pub relevant_files: String,
+    pub tags: String,
+    pub created_at: String,
+}
+
+impl Serialize for TaskLearning {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("TaskLearning", 11)?;
+        s.serialize_field("id", &self.id)?;
+        s.serialize_field("task_identifier", &self.task_identifier)?;
+        s.serialize_field("agent_id", &self.agent_id)?;
+        s.serialize_field("outcome", &self.outcome)?;
+        s.serialize_field("approach_summary", &self.approach_summary)?;
+        s.serialize_field("key_insight", &self.key_insight)?;
+        s.serialize_field("pitfalls", &parse_json(&self.pitfalls))?;
+        s.serialize_field("effective_patterns", &parse_json(&self.effective_patterns))?;
+        s.serialize_field("relevant_files", &parse_json(&self.relevant_files))?;
+        s.serialize_field("tags", &parse_json(&self.tags))?;
+        s.serialize_field("created_at", &self.created_at)?;
+        s.end()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ProjectAgentConfig {
     pub project_id: i64,

@@ -52,6 +52,9 @@ import type {
   AgentRegistryEntry,
   AgentCapability,
   AgentMatch,
+  HandoffNote,
+  TaskLearning,
+  SimilarTaskResult,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -517,3 +520,35 @@ export const marketplaceGet = (agentId: string) => invoke<AgentRegistryEntry>("m
 export const updateAgentProficiency = (agentId: string, capability: string, success: boolean) => invoke<void>("update_agent_proficiency", { agentId, capability, success });
 export const getAgentCapabilities = (agentId: string) => invoke<AgentCapability[]>("get_agent_capabilities", { agentId });
 export const findBestAgent = (taskSkills: string[], complexity: string) => invoke<AgentMatch[]>("find_best_agent", { taskSkills, complexity });
+
+// Handoff Notes
+export const createHandoffNote = (input: {
+  task_identifier: string;
+  from_agent_id: string;
+  to_agent_id?: string;
+  note_type: string;
+  summary: string;
+  details?: string;
+  files_changed?: string[];
+  risks?: string[];
+  test_results?: { passed?: number; failed?: number; skipped?: number };
+  metadata?: Record<string, unknown>;
+}) => invoke<HandoffNote>("create_handoff_note", { input });
+export const listHandoffNotes = (taskIdentifier: string) => invoke<HandoffNote[]>("list_handoff_notes", { taskIdentifier });
+export const getHandoffForAgent = (agentId: string, taskIdentifier: string) => invoke<HandoffNote[]>("get_handoff_for_agent", { agentId, taskIdentifier });
+
+// Learnings
+export const recordLearning = (input: {
+  task_identifier: string;
+  agent_id: string;
+  outcome: string;
+  approach_summary: string;
+  key_insight?: string;
+  pitfalls?: string[];
+  effective_patterns?: string[];
+  relevant_files?: string[];
+  tags?: string[];
+}) => invoke<TaskLearning>("record_learning", { input });
+export const findSimilarLearnings = (projectId: number, title: string, description?: string, tags?: string[], limit?: number) => invoke<SimilarTaskResult[]>("find_similar_learnings", { projectId, title, description, tags: tags ?? [], limit });
+export const listLearnings = (projectId: number, outcome?: string, limit?: number) => invoke<TaskLearning[]>("list_learnings", { projectId, outcome, limit });
+export const getLearningsForTask = (taskIdentifier: string) => invoke<TaskLearning[]>("get_learnings_for_task", { taskIdentifier });

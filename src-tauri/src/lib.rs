@@ -300,6 +300,15 @@ pub fn run_gui(database_url: Option<String>) {
             commands::marketplace::update_agent_proficiency,
             commands::marketplace::get_agent_capabilities,
             commands::marketplace::find_best_agent,
+            // Handoff Notes
+            commands::handoff::create_handoff_note,
+            commands::handoff::list_handoff_notes,
+            commands::handoff::get_handoff_for_agent,
+            // Learnings
+            commands::learnings::record_learning,
+            commands::learnings::find_similar_learnings,
+            commands::learnings::list_learnings,
+            commands::learnings::get_learnings_for_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
