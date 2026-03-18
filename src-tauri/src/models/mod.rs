@@ -362,6 +362,8 @@ pub struct IssueFileLink {
     pub link_type: String,
     pub created_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct RecurringIssue {
     pub id: i64,
     pub project_id: i64,

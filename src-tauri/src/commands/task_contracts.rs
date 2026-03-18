@@ -255,12 +255,18 @@ pub fn next_task(
             .await?;
 
             if let Some(ref contract) = result {
+                // Get project_id from the issue for permission check
+                let project_id: i64 = sqlx::query_scalar("SELECT project_id FROM issues WHERE id = $1")
+                    .bind(contract.issue_id)
+                    .fetch_one(&state.pool)
+                    .await
+                    .unwrap_or(0);
                 // Check permissions before allowing claim
                 let claim_check = crate::commands::permissions::check_permission_async(
                     &state.pool,
                     &agent_id,
                     "project_access",
-                    &contract.project_id.to_string(),
+                    &project_id.to_string(),
                 )
                 .await?;
 
@@ -288,7 +294,7 @@ pub fn next_task(
                     &state.pool,
                     &agent_id,
                     "task_type",
-                    &contract.r#type.as_deref().unwrap_or("implementation"),
+                    &contract.r#type,
                 )
                 .await?;
 

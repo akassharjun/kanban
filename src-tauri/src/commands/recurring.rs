@@ -1,5 +1,6 @@
 use crate::models::{Issue, RecurringIssue};
 use crate::state::AppState;
+use chrono::{NaiveDate, NaiveDateTime, Duration, Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -46,8 +47,6 @@ fn render_template(template: &str, count: i64, date: &str, day: &str) -> String 
 }
 
 fn calculate_next_run(recurrence_type: &str, config: &str, from: &str) -> Result<String, String> {
-    use chrono::{NaiveDateTime, NaiveDate, Datelike, Duration};
-
     let from_dt = NaiveDateTime::parse_from_str(from, "%Y-%m-%d %H:%M:%SZ")
         .or_else(|_| NaiveDateTime::parse_from_str(from, "%Y-%m-%dT%H:%M:%SZ"))
         .or_else(|_| {
@@ -83,8 +82,6 @@ fn calculate_next_run(recurrence_type: &str, config: &str, from: &str) -> Result
 
     Ok(next.format("%Y-%m-%d %H:%M:%SZ").to_string())
 }
-
-use chrono::Datelike;
 
 #[tauri::command]
 pub fn list_recurring(state: State<AppState>, project_id: i64) -> Result<Vec<RecurringIssue>, String> {
