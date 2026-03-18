@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown } from "lucide-react";
+import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, ArrowRightLeft, Lightbulb } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment } from "@/types";
+import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, HandoffNote, TaskLearning } from "@/types";
 import * as api from "@/tauri/commands";
 import { TaskContractDialog } from "./TaskContractDialog";
 
@@ -81,6 +81,8 @@ export function IssueDetailPanel({
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
   const [showTaskContractDialog, setShowTaskContractDialog] = useState(false);
+  const [handoffNotes, setHandoffNotes] = useState<HandoffNote[]>([]);
+  const [taskLearnings, setTaskLearnings] = useState<TaskLearning[]>([]);
 
   const loadIssue = useCallback(async () => {
     try {
@@ -96,6 +98,17 @@ export function IssueDetailPanel({
       setActivity(acts);
       setSubIssues(subs);
       setComments(comms);
+      // Load handoff notes and learnings for this issue's identifier
+      try {
+        const [notes, learnings] = await Promise.all([
+          api.listHandoffNotes(data.identifier),
+          api.getLearningsForTask(data.identifier),
+        ]);
+        setHandoffNotes(notes);
+        setTaskLearnings(learnings);
+      } catch {
+        // Non-critical - don't block issue load
+      }
     } catch (e) {
       console.error("Failed to load issue", e);
     }
@@ -539,6 +552,140 @@ export function IssueDetailPanel({
             </div>
           </div>
         </div>
+
+        {/* Handoff Notes */}
+        {handoffNotes.length > 0 && (
+          <div className="border-t border-border/50 px-5 pt-4 pb-4">
+            <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Handoff Notes
+            </h3>
+            <div className="space-y-3">
+              {handoffNotes.map(note => {
+                const typeColors: Record<string, string> = {
+                  completion: "bg-green-500/10 text-green-600 dark:text-green-400",
+                  review_request: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+                  escalation: "bg-red-500/10 text-red-600 dark:text-red-400",
+                  context: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+                  warning: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                  suggestion: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
+                };
+                return (
+                  <div key={note.id} className="rounded-lg border border-border/50 bg-muted/20 p-3">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", typeColors[note.note_type] || "bg-muted text-muted-foreground")}>
+                        {note.note_type.replace("_", " ")}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground/60">
+                        {note.from_agent_id} {note.to_agent_id ? `\u2192 ${note.to_agent_id}` : "\u2192 any"}
+                      </span>
+                      <span className="ml-auto text-[10px] text-muted-foreground/40">
+                        {note.created_at.slice(0, 16).replace("T", " ")}
+                      </span>
+                    </div>
+                    <p className="text-sm text-foreground/90">{note.summary}</p>
+                    {note.details && (
+                      <p className="mt-1 text-xs text-muted-foreground/70">{note.details}</p>
+                    )}
+                    {note.files_changed.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {note.files_changed.map((f, i) => (
+                          <span key={i} className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                            <FileText className="h-2.5 w-2.5" />{f}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {note.risks.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {note.risks.map((r, i) => (
+                          <span key={i} className="inline-flex items-center gap-0.5 rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-600 dark:text-red-400">
+                            <AlertCircle className="h-2.5 w-2.5" />{r}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {note.test_results && (
+                      <div className="mt-2 flex gap-3 text-[10px]">
+                        {note.test_results.passed != null && <span className="text-green-600 dark:text-green-400">{note.test_results.passed} passed</span>}
+                        {note.test_results.failed != null && <span className="text-red-600 dark:text-red-400">{note.test_results.failed} failed</span>}
+                        {note.test_results.skipped != null && <span className="text-muted-foreground/60">{note.test_results.skipped} skipped</span>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Learnings */}
+        {taskLearnings.length > 0 && (
+          <div className="border-t border-border/50 px-5 pt-4 pb-4">
+            <h3 className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+              <Lightbulb className="h-3.5 w-3.5" />
+              Learnings
+            </h3>
+            <div className="space-y-3">
+              {taskLearnings.map(learning => {
+                const outcomeColors: Record<string, string> = {
+                  success: "bg-green-500/10 text-green-600 dark:text-green-400",
+                  failure: "bg-red-500/10 text-red-600 dark:text-red-400",
+                  partial: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                };
+                return (
+                  <div key={learning.id} className="rounded-lg border border-border/50 bg-muted/20 p-3">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", outcomeColors[learning.outcome] || "bg-muted text-muted-foreground")}>
+                        {learning.outcome}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground/60">by {learning.agent_id}</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground/40">
+                        {learning.created_at.slice(0, 16).replace("T", " ")}
+                      </span>
+                    </div>
+                    <p className="text-sm text-foreground/90">{learning.approach_summary}</p>
+                    {learning.key_insight && (
+                      <p className="mt-1.5 flex items-start gap-1 text-xs text-primary/80">
+                        <Lightbulb className="h-3 w-3 mt-0.5 shrink-0" />
+                        {learning.key_insight}
+                      </p>
+                    )}
+                    {learning.pitfalls.length > 0 && (
+                      <div className="mt-2">
+                        <span className="text-[10px] font-medium text-red-500/80">Pitfalls:</span>
+                        <ul className="mt-0.5 space-y-0.5">
+                          {learning.pitfalls.map((p, i) => (
+                            <li key={i} className="text-[11px] text-muted-foreground/70 pl-2">&bull; {p}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {learning.effective_patterns.length > 0 && (
+                      <div className="mt-2">
+                        <span className="text-[10px] font-medium text-green-500/80">What worked:</span>
+                        <ul className="mt-0.5 space-y-0.5">
+                          {learning.effective_patterns.map((p, i) => (
+                            <li key={i} className="text-[11px] text-muted-foreground/70 pl-2">&bull; {p}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {learning.tags.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {learning.tags.map((tag, i) => (
+                          <span key={i} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Activity log */}
         {activity.length > 0 && (

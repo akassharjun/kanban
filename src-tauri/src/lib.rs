@@ -197,6 +197,15 @@ pub fn run_gui(database_url: Option<String>) {
             commands::execution_logs::task_replay,
             commands::execution_logs::task_attempts,
             commands::execution_logs::recent_activity,
+            // Handoff Notes
+            commands::handoff::create_handoff_note,
+            commands::handoff::list_handoff_notes,
+            commands::handoff::get_handoff_for_agent,
+            // Learnings
+            commands::learnings::record_learning,
+            commands::learnings::find_similar_learnings,
+            commands::learnings::list_learnings,
+            commands::learnings::get_learnings_for_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

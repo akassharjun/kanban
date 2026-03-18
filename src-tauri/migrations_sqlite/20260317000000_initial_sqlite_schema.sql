@@ -245,3 +245,40 @@ CREATE TABLE IF NOT EXISTS project_agent_config (
     heartbeat_interval_seconds INTEGER NOT NULL DEFAULT 60,
     missed_heartbeats_before_offline INTEGER NOT NULL DEFAULT 3
 );
+
+-- Handoff notes (agent-to-agent context passing)
+CREATE TABLE IF NOT EXISTS handoff_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_identifier TEXT NOT NULL,
+    from_agent_id TEXT NOT NULL,
+    to_agent_id TEXT,
+    note_type TEXT NOT NULL CHECK(note_type IN ('completion', 'review_request', 'escalation', 'context', 'warning', 'suggestion')),
+    summary TEXT NOT NULL,
+    details TEXT,
+    files_changed TEXT DEFAULT '[]',
+    risks TEXT DEFAULT '[]',
+    test_results TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_handoff_notes_task ON handoff_notes(task_identifier);
+CREATE INDEX IF NOT EXISTS idx_handoff_notes_to ON handoff_notes(to_agent_id);
+
+-- Task learnings (learning from past tasks)
+CREATE TABLE IF NOT EXISTS task_learnings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_identifier TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK(outcome IN ('success', 'failure', 'partial')),
+    approach_summary TEXT NOT NULL,
+    key_insight TEXT,
+    pitfalls TEXT DEFAULT '[]',
+    effective_patterns TEXT DEFAULT '[]',
+    relevant_files TEXT DEFAULT '[]',
+    tags TEXT DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_learnings_tags ON task_learnings(tags);
+CREATE INDEX IF NOT EXISTS idx_task_learnings_task ON task_learnings(task_identifier);

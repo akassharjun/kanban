@@ -460,6 +460,55 @@ pub enum TaskAction {
     Decompose {
         identifier: String,
     },
+    /// Create a handoff note for a task
+    Handoff {
+        identifier: String,
+        #[arg(long)]
+        from: String,
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long, name = "type", default_value = "completion")]
+        note_type: String,
+        #[arg(long)]
+        summary: String,
+        #[arg(long)]
+        details: Option<String>,
+        /// Comma-delimited file paths
+        #[arg(long)]
+        files: Option<String>,
+        /// Comma-delimited risks
+        #[arg(long)]
+        risks: Option<String>,
+    },
+    /// Record a learning from a task
+    Learn {
+        identifier: String,
+        #[arg(long)]
+        agent: String,
+        #[arg(long)]
+        outcome: String,
+        #[arg(long)]
+        approach: String,
+        #[arg(long)]
+        insight: Option<String>,
+        /// Comma-delimited pitfalls
+        #[arg(long)]
+        pitfalls: Option<String>,
+        /// Comma-delimited effective patterns
+        #[arg(long)]
+        patterns: Option<String>,
+        /// Comma-delimited tags
+        #[arg(long)]
+        tags: Option<String>,
+    },
+    /// List handoff notes for a task
+    Handoffs {
+        identifier: String,
+    },
+    /// List learnings for a task
+    Learnings {
+        identifier: String,
+    },
 }
 
 #[derive(sqlx::FromRow, serde::Serialize, serde::Deserialize)]
@@ -2180,6 +2229,146 @@ async fn handle_task(
                 }
             }
             notify_change();
+        }
+        TaskAction::Handoff {
+            identifier,
+            from,
+            to,
+            note_type,
+            summary,
+            details,
+            files,
+            risks,
+        } => {
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            let files_json = files
+                .map(|f| serde_json::to_string(&f.split(',').map(|s| s.trim()).collect::<Vec<_>>()).unwrap_or_else(|_| "[]".to_string()))
+                .unwrap_or_else(|| "[]".to_string());
+            let risks_json = risks
+                .map(|r| serde_json::to_string(&r.split(',').map(|s| s.trim()).collect::<Vec<_>>()).unwrap_or_else(|_| "[]".to_string()))
+                .unwrap_or_else(|| "[]".to_string());
+
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO handoff_notes (task_identifier, from_agent_id, to_agent_id, note_type, summary, details, files_changed, risks, metadata, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '{}', $9) RETURNING id"
+            )
+            .bind(&identifier)
+            .bind(&from)
+            .bind(&to)
+            .bind(&note_type)
+            .bind(&summary)
+            .bind(&details)
+            .bind(&files_json)
+            .bind(&risks_json)
+            .bind(&now)
+            .fetch_one(pool)
+            .await?;
+
+            let note = sqlx::query_as::<_, agent::HandoffNote>("SELECT * FROM handoff_notes WHERE id = $1")
+                .bind(id)
+                .fetch_one(pool)
+                .await?;
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&note).unwrap_or_default());
+            } else {
+                println!("Created handoff note #{} for {} (type: {})", note.id, identifier, note.note_type);
+            }
+            notify_change();
+        }
+        TaskAction::Learn {
+            identifier,
+            agent,
+            outcome,
+            approach,
+            insight,
+            pitfalls,
+            patterns,
+            tags,
+        } => {
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            let pitfalls_json = pitfalls
+                .map(|p| serde_json::to_string(&p.split(',').map(|s| s.trim()).collect::<Vec<_>>()).unwrap_or_else(|_| "[]".to_string()))
+                .unwrap_or_else(|| "[]".to_string());
+            let patterns_json = patterns
+                .map(|p| serde_json::to_string(&p.split(',').map(|s| s.trim()).collect::<Vec<_>>()).unwrap_or_else(|_| "[]".to_string()))
+                .unwrap_or_else(|| "[]".to_string());
+            let tags_json = tags
+                .map(|t| serde_json::to_string(&t.split(',').map(|s| s.trim()).collect::<Vec<_>>()).unwrap_or_else(|_| "[]".to_string()))
+                .unwrap_or_else(|| "[]".to_string());
+
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO task_learnings (task_identifier, agent_id, outcome, approach_summary, key_insight, pitfalls, effective_patterns, relevant_files, tags, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, '[]', $8, $9) RETURNING id"
+            )
+            .bind(&identifier)
+            .bind(&agent)
+            .bind(&outcome)
+            .bind(&approach)
+            .bind(&insight)
+            .bind(&pitfalls_json)
+            .bind(&patterns_json)
+            .bind(&tags_json)
+            .bind(&now)
+            .fetch_one(pool)
+            .await?;
+
+            let learning = sqlx::query_as::<_, agent::TaskLearning>("SELECT * FROM task_learnings WHERE id = $1")
+                .bind(id)
+                .fetch_one(pool)
+                .await?;
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&learning).unwrap_or_default());
+            } else {
+                println!("Recorded learning #{} for {} (outcome: {})", learning.id, identifier, learning.outcome);
+            }
+            notify_change();
+        }
+        TaskAction::Handoffs { identifier } => {
+            let notes = sqlx::query_as::<_, agent::HandoffNote>(
+                "SELECT * FROM handoff_notes WHERE task_identifier = $1 ORDER BY created_at ASC"
+            )
+            .bind(&identifier)
+            .fetch_all(pool)
+            .await?;
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&notes).unwrap_or_default());
+            } else if notes.is_empty() {
+                println!("No handoff notes for {}", identifier);
+            } else {
+                for note in &notes {
+                    println!("[{}] {} -> {}: {} - {}",
+                        note.note_type,
+                        note.from_agent_id,
+                        note.to_agent_id.as_deref().unwrap_or("any"),
+                        note.summary,
+                        note.created_at,
+                    );
+                }
+            }
+        }
+        TaskAction::Learnings { identifier } => {
+            let learnings = sqlx::query_as::<_, agent::TaskLearning>(
+                "SELECT * FROM task_learnings WHERE task_identifier = $1 ORDER BY created_at DESC"
+            )
+            .bind(&identifier)
+            .fetch_all(pool)
+            .await?;
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&learnings).unwrap_or_default());
+            } else if learnings.is_empty() {
+                println!("No learnings for {}", identifier);
+            } else {
+                for l in &learnings {
+                    println!("[{}] {} by {}: {}",
+                        l.outcome, l.task_identifier, l.agent_id, l.approach_summary,
+                    );
+                    if let Some(ref insight) = l.key_insight {
+                        println!("  Insight: {}", insight);
+                    }
+                }
+            }
         }
     }
     Ok(())

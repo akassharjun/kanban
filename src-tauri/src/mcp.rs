@@ -432,6 +432,67 @@ fn tools_list() -> Vec<Value> {
             }),
             vec!["identifier"],
         ),
+        tool_def(
+            "create_handoff",
+            "Create a handoff note from one agent to another for a task",
+            json!({
+                "task_identifier": prop("string", "Task identifier (e.g. KAN-42)"),
+                "from_agent_id": prop("string", "Agent ID leaving the note"),
+                "to_agent_id": prop("string", "Target agent ID (omit for any agent)"),
+                "note_type": prop("string", "Type: completion, review_request, escalation, context, warning, suggestion"),
+                "summary": prop("string", "Brief summary of the handoff"),
+                "details": prop("string", "Longer explanation"),
+                "files_changed": prop("array", "JSON array of file paths changed"),
+                "risks": prop("array", "JSON array of known risks"),
+                "test_results": prop("object", "Test results: {passed, failed, skipped}"),
+            }),
+            vec!["task_identifier", "from_agent_id", "note_type", "summary"],
+        ),
+        tool_def(
+            "get_handoff_notes",
+            "Get handoff notes for a task, optionally filtered for a specific agent",
+            json!({
+                "task_identifier": prop("string", "Task identifier"),
+                "agent_id": prop("string", "Filter notes relevant to this agent"),
+            }),
+            vec!["task_identifier"],
+        ),
+        tool_def(
+            "record_learning",
+            "Record a learning from completing or failing a task",
+            json!({
+                "task_identifier": prop("string", "Task identifier (e.g. KAN-42)"),
+                "agent_id": prop("string", "Agent ID recording the learning"),
+                "outcome": prop("string", "Outcome: success, failure, partial"),
+                "approach_summary": prop("string", "What the agent did"),
+                "key_insight": prop("string", "Most important learning"),
+                "pitfalls": prop("array", "JSON array of things that went wrong"),
+                "effective_patterns": prop("array", "JSON array of things that worked well"),
+                "relevant_files": prop("array", "JSON array of files involved"),
+                "tags": prop("array", "JSON array of keyword tags for matching"),
+            }),
+            vec!["task_identifier", "agent_id", "outcome", "approach_summary"],
+        ),
+        tool_def(
+            "find_similar_learnings",
+            "Find learnings from similar past tasks",
+            json!({
+                "project_id": prop("number", "Project ID"),
+                "title": prop("string", "Task title to match against"),
+                "description": prop("string", "Task description for matching"),
+                "tags": prop("array", "Tags to match against"),
+                "limit": prop("number", "Max results (default 5)"),
+            }),
+            vec!["project_id", "title"],
+        ),
+        tool_def(
+            "get_task_learnings",
+            "Get learnings recorded for a specific task",
+            json!({
+                "task_identifier": prop("string", "Task identifier"),
+            }),
+            vec!["task_identifier"],
+        ),
     ]
 }
 
@@ -2063,8 +2124,210 @@ async fn handle_tool_call(
 
             Ok(json!({"nodes": nodes, "edges": edges}))
         }
+        "create_handoff" => {
+            let task_identifier = args["task_identifier"].as_str().ok_or("task_identifier required")?;
+            let from_agent_id = args["from_agent_id"].as_str().ok_or("from_agent_id required")?;
+            let to_agent_id = args.get("to_agent_id").and_then(|v| v.as_str());
+            let note_type = args["note_type"].as_str().ok_or("note_type required")?;
+            let summary = args["summary"].as_str().ok_or("summary required")?;
+            let details = args.get("details").and_then(|v| v.as_str());
+            let files_changed = args.get("files_changed").cloned().unwrap_or(json!([]));
+            let risks = args.get("risks").cloned().unwrap_or(json!([]));
+            let test_results = args.get("test_results").cloned();
+
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            let files_str = serde_json::to_string(&files_changed).unwrap_or_else(|_| "[]".to_string());
+            let risks_str = serde_json::to_string(&risks).unwrap_or_else(|_| "[]".to_string());
+            let test_str = test_results.as_ref().map(|v| serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()));
+
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO handoff_notes (task_identifier, from_agent_id, to_agent_id, note_type, summary, details, files_changed, risks, test_results, metadata, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '{}', $10) RETURNING id"
+            )
+            .bind(task_identifier)
+            .bind(from_agent_id)
+            .bind(to_agent_id)
+            .bind(note_type)
+            .bind(summary)
+            .bind(details)
+            .bind(&files_str)
+            .bind(&risks_str)
+            .bind(&test_str)
+            .bind(&now)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let note = sqlx::query_as::<_, agent::HandoffNote>("SELECT * FROM handoff_notes WHERE id = $1")
+                .bind(id)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            notify_change();
+            Ok(json!(note))
+        }
+        "get_handoff_notes" => {
+            let task_identifier = args["task_identifier"].as_str().ok_or("task_identifier required")?;
+            let agent_id = args.get("agent_id").and_then(|v| v.as_str());
+
+            let notes = if let Some(aid) = agent_id {
+                sqlx::query_as::<_, agent::HandoffNote>(
+                    "SELECT * FROM handoff_notes WHERE task_identifier = $1 AND (to_agent_id IS NULL OR to_agent_id = $2) ORDER BY created_at ASC"
+                )
+                .bind(task_identifier)
+                .bind(aid)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?
+            } else {
+                sqlx::query_as::<_, agent::HandoffNote>(
+                    "SELECT * FROM handoff_notes WHERE task_identifier = $1 ORDER BY created_at ASC"
+                )
+                .bind(task_identifier)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| e.to_string())?
+            };
+            Ok(json!(notes))
+        }
+        "record_learning" => {
+            let task_identifier = args["task_identifier"].as_str().ok_or("task_identifier required")?;
+            let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
+            let outcome = args["outcome"].as_str().ok_or("outcome required")?;
+            let approach_summary = args["approach_summary"].as_str().ok_or("approach_summary required")?;
+            let key_insight = args.get("key_insight").and_then(|v| v.as_str());
+            let pitfalls = args.get("pitfalls").cloned().unwrap_or(json!([]));
+            let effective_patterns = args.get("effective_patterns").cloned().unwrap_or(json!([]));
+            let relevant_files = args.get("relevant_files").cloned().unwrap_or(json!([]));
+            let tags = args.get("tags").cloned().unwrap_or(json!([]));
+
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            let pitfalls_str = serde_json::to_string(&pitfalls).unwrap_or_else(|_| "[]".to_string());
+            let patterns_str = serde_json::to_string(&effective_patterns).unwrap_or_else(|_| "[]".to_string());
+            let files_str = serde_json::to_string(&relevant_files).unwrap_or_else(|_| "[]".to_string());
+            let tags_str = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
+
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO task_learnings (task_identifier, agent_id, outcome, approach_summary, key_insight, pitfalls, effective_patterns, relevant_files, tags, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id"
+            )
+            .bind(task_identifier)
+            .bind(agent_id)
+            .bind(outcome)
+            .bind(approach_summary)
+            .bind(key_insight)
+            .bind(&pitfalls_str)
+            .bind(&patterns_str)
+            .bind(&files_str)
+            .bind(&tags_str)
+            .bind(&now)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let learning = sqlx::query_as::<_, agent::TaskLearning>("SELECT * FROM task_learnings WHERE id = $1")
+                .bind(id)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            notify_change();
+            Ok(json!(learning))
+        }
+        "find_similar_learnings" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let title = args["title"].as_str().ok_or("title required")?;
+            let description = args.get("description").and_then(|v| v.as_str());
+            let tags: Vec<String> = args.get("tags")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(5);
+
+            // Fetch all learnings for the project
+            let learnings = sqlx::query_as::<_, agent::TaskLearning>(
+                "SELECT tl.* FROM task_learnings tl JOIN issues i ON tl.task_identifier = i.identifier WHERE i.project_id = $1 ORDER BY tl.created_at DESC"
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let search_tags: Vec<String> = tags.iter().map(|t| t.to_lowercase()).collect();
+            let title_words: Vec<String> = title.to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|w| w.len() > 2)
+                .map(|w| w.to_string())
+                .collect();
+            let desc_words: Vec<String> = description.unwrap_or("")
+                .to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|w| w.len() > 2)
+                .map(|w| w.to_string())
+                .collect();
+            let all_words: Vec<String> = title_words.into_iter().chain(desc_words).collect();
+
+            let mut results: Vec<Value> = Vec::new();
+            for learning in learnings {
+                let ltags: Vec<String> = serde_json::from_str(&learning.tags)
+                    .unwrap_or_else(|_| Vec::<String>::new())
+                    .iter().map(|t: &String| t.to_lowercase()).collect();
+                let lwords: Vec<String> = learning.approach_summary.to_lowercase()
+                    .split(|c: char| !c.is_alphanumeric())
+                    .filter(|w| w.len() > 2)
+                    .map(|w| w.to_string())
+                    .collect();
+
+                let tag_sim = jaccard_sim(&search_tags, &ltags);
+                let word_sim = jaccard_sim(&all_words, &lwords);
+                let score = tag_sim * 0.6 + word_sim * 0.4;
+
+                if score > 0.0 {
+                    let info: Option<(String, String)> = sqlx::query_as(
+                        "SELECT title, identifier FROM issues WHERE identifier = $1"
+                    )
+                    .bind(&learning.task_identifier)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                    let (issue_title, issue_identifier) = info
+                        .unwrap_or_else(|| (String::new(), learning.task_identifier.clone()));
+                    results.push(json!({
+                        "learning": learning,
+                        "similarity_score": score,
+                        "issue_title": issue_title,
+                        "issue_identifier": issue_identifier,
+                    }));
+                }
+            }
+            results.sort_by(|a, b| {
+                let sa = a["similarity_score"].as_f64().unwrap_or(0.0);
+                let sb = b["similarity_score"].as_f64().unwrap_or(0.0);
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            results.truncate(limit as usize);
+            Ok(json!(results))
+        }
+        "get_task_learnings" => {
+            let task_identifier = args["task_identifier"].as_str().ok_or("task_identifier required")?;
+            let learnings = sqlx::query_as::<_, agent::TaskLearning>(
+                "SELECT * FROM task_learnings WHERE task_identifier = $1 ORDER BY created_at DESC"
+            )
+            .bind(task_identifier)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            Ok(json!(learnings))
+        }
         _ => Err(format!("Unknown tool: {}", name)),
     }
+}
+
+/// Jaccard similarity helper for MCP
+fn jaccard_sim(a: &[String], b: &[String]) -> f64 {
+    if a.is_empty() && b.is_empty() { return 0.0; }
+    let sa: std::collections::HashSet<&str> = a.iter().map(|s| s.as_str()).collect();
+    let sb: std::collections::HashSet<&str> = b.iter().map(|s| s.as_str()).collect();
+    let inter = sa.intersection(&sb).count() as f64;
+    let union = sa.union(&sb).count() as f64;
+    if union == 0.0 { 0.0 } else { inter / union }
 }
 
 async fn handle_resource_read(pool: &AnyPool, uri: &str) -> Result<Value, String> {

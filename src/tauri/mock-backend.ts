@@ -7,7 +7,7 @@ import type {
   ActivityLogEntry, Notification, Agent, AgentMetrics,
   ProjectMetrics, CustomField, IssueTemplate, Hook,
   ProjectAgentConfig, FullTaskContract, ExecutionLog, TaskGraph,
-  IssueWithLabels, UndoLogEntry,
+  IssueWithLabels, UndoLogEntry, HandoffNote, TaskLearning, SimilarTaskResult,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -356,6 +356,35 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "reject_task": return;
     case "unclaim_task": return;
     case "log_task_activity": return;
+
+    // Handoff Notes
+    case "create_handoff_note": {
+      const input = args!.input;
+      return {
+        id: id(), task_identifier: input.task_identifier, from_agent_id: input.from_agent_id,
+        to_agent_id: input.to_agent_id ?? null, note_type: input.note_type, summary: input.summary,
+        details: input.details ?? null, files_changed: input.files_changed ?? [],
+        risks: input.risks ?? [], test_results: input.test_results ?? null,
+        metadata: input.metadata ?? {}, created_at: now,
+      } as HandoffNote;
+    }
+    case "list_handoff_notes": return [] as HandoffNote[];
+    case "get_handoff_for_agent": return [] as HandoffNote[];
+
+    // Learnings
+    case "record_learning": {
+      const input = args!.input;
+      return {
+        id: id(), task_identifier: input.task_identifier, agent_id: input.agent_id,
+        outcome: input.outcome, approach_summary: input.approach_summary,
+        key_insight: input.key_insight ?? null, pitfalls: input.pitfalls ?? [],
+        effective_patterns: input.effective_patterns ?? [], relevant_files: input.relevant_files ?? [],
+        tags: input.tags ?? [], created_at: now,
+      } as TaskLearning;
+    }
+    case "find_similar_learnings": return [] as SimilarTaskResult[];
+    case "list_learnings": return [] as TaskLearning[];
+    case "get_learnings_for_task": return [] as TaskLearning[];
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);
