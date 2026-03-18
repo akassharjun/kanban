@@ -186,6 +186,12 @@ export function IssueDetailPanel({
     }
   }, [issueId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reset delete confirmation when issue changes or panel reopens
+  // NOTE: must be declared before the early return to follow Rules of Hooks
+  useEffect(() => {
+    setShowDeleteConfirm(false);
+  }, [issueId]);
+
   if (!issue) return null;
 
   const handleTitleSave = async () => {
@@ -227,11 +233,6 @@ export function IssueDetailPanel({
       setCommentError("Failed to add comment. Please try again.");
     }
   };
-
-  // Reset delete confirmation when issue changes or panel reopens
-  useEffect(() => {
-    setShowDeleteConfirm(false);
-  }, [issueId]);
 
   const handleUpdateComment = async (commentId: number) => {
     if (!editingCommentContent.trim()) return;
