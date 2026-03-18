@@ -4,9 +4,12 @@ import { cn } from "@/lib/utils";
 import type { Project, Status, Label, Member, IssueTemplate, Hook, ProjectAgentConfig, Epic, MilestoneWithProgress, AutomationRule, AutomationLogEntry, AutomationTriggerType, AutomationActionType, GithubConfig, ConnectionTestResult } from "@/types";
 import * as api from "@/tauri/commands";
 import { AuditLogView } from "./AuditLogView";
+import { RecurringIssuesTab } from "./RecurringIssuesTab";
 
 export interface ProjectSettingsViewProps {
   project: Project;
+  statuses?: Status[];
+  members?: Member[];
   onUpdateProject: (id: number, input: { name?: string; description?: string; icon?: string; status?: string; path?: string }) => Promise<unknown>;
   onRefreshStatuses: () => void;
   onRefreshLabels: () => void;
@@ -15,7 +18,7 @@ export interface ProjectSettingsViewProps {
   onDeleteProject?: (id: number) => Promise<unknown>;
 }
 
-type Tab = "general" | "statuses" | "labels" | "epics" | "milestones" | "templates" | "hooks" | "agents" | "audit" | "stale" | "automations" | "github";
+type Tab = "general" | "statuses" | "labels" | "epics" | "milestones" | "templates" | "hooks" | "agents" | "audit" | "stale" | "automations" | "github" | "recurring";
 
 const statusCategories = [
   { value: "unstarted", label: "Unstarted" },
@@ -31,7 +34,7 @@ const labelColors = [
   "#a855f7", "#d946ef", "#ec4899", "#f43f5e",
 ];
 
-export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels, onRefreshEpics, onRefreshMilestones, onDeleteProject: _onDeleteProject }: ProjectSettingsViewProps) {
+export function ProjectSettingsView({ project, statuses: propStatuses, members: propMembers, onUpdateProject, onRefreshStatuses, onRefreshLabels, onRefreshEpics, onRefreshMilestones, onDeleteProject: _onDeleteProject }: ProjectSettingsViewProps) {
   const [tab, setTab] = useState<Tab>("general");
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
@@ -432,6 +435,7 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     { value: "hooks", label: "Hooks" },
     { value: "stale", label: "Stale Issues" },
     { value: "automations", label: "Automations" },
+    { value: "recurring", label: "Recurring" },
     { value: "agents", label: "Agent Config" },
     { value: "audit", label: "Audit Log" },
     { value: "github", label: "GitHub" },
@@ -1407,6 +1411,15 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
               </div>
             )}
           </div>
+        )}
+
+        {/* Recurring Tab */}
+        {tab === "recurring" && (
+          <RecurringIssuesTab
+            projectId={project.id}
+            statuses={propStatuses ?? statuses}
+            members={propMembers ?? []}
+          />
         )}
 
         {/* Agent Config Tab */}

@@ -30,4 +30,5 @@ pub mod statuses;
 pub mod task_contracts;
 pub mod templates;
 pub mod triage;
+pub mod recurring;
 pub mod undo;

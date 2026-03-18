@@ -25,6 +25,7 @@ interface IssueDetailPanelProps {
   isStarred?: boolean;
   onToggleStar?: (issueId: number) => void;
   onRecordView?: (issueId: number) => void;
+  onShowDependencies?: (issueId: number) => void;
 }
 
 const priorities = [
@@ -81,6 +82,7 @@ export function IssueDetailPanel({
   isStarred,
   onToggleStar,
   onRecordView,
+  onShowDependencies,
 }: IssueDetailPanelProps) {
   const [issue, setIssue] = useState<IssueWithLabels | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -659,7 +661,7 @@ export function IssueDetailPanel({
           )}
         </div>
 
-        {/* Task Contract & Decompose */}
+        {/* Task Contract, Decompose & Dependencies */}
         <div className="mt-4 px-5 flex gap-2">
           <button
             onClick={() => setShowTaskContractDialog(true)}
@@ -686,6 +688,15 @@ export function IssueDetailPanel({
             <GitBranch className="h-3.5 w-3.5" />
             {decomposing ? "Analyzing..." : "Decompose"}
           </button>
+          {onShowDependencies && (
+            <button
+              onClick={() => onShowDependencies(issueId)}
+              className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              Show Dependencies
+            </button>
+          )}
         </div>
 
         {/* Git Links */}

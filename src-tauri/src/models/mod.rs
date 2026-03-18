@@ -357,3 +357,21 @@ pub struct IssueFileLink {
     pub link_type: String,
     pub created_at: String,
 }
+pub struct RecurringIssue {
+    pub id: i64,
+    pub project_id: i64,
+    pub title_template: String,
+    pub description_template: Option<String>,
+    pub status_id: i64,
+    pub priority: String,
+    pub assignee_id: Option<i64>,
+    pub label_ids: String,
+    pub recurrence_type: String,
+    pub recurrence_config: String,
+    pub next_run_at: String,
+    pub last_run_at: Option<String>,
+    pub enabled: bool,
+    pub total_created: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}

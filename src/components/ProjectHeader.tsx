@@ -1,4 +1,4 @@
-import { LayoutGrid, List, TreePine, Calendar, GanttChart, Map, Search, Plus, Bell, Sun, Moon } from "lucide-react";
+import { LayoutGrid, List, TreePine, Calendar, GanttChart, Map, Search, Plus, Bell, Sun, Moon, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -16,6 +16,7 @@ interface ProjectHeaderProps {
   onOpenNotifications: () => void;
   theme: "dark" | "light";
   onToggleTheme: () => void;
+  onOpenDependencyGraph?: () => void;
 }
 
 export function ProjectHeader({
@@ -28,6 +29,7 @@ export function ProjectHeader({
   onOpenNotifications,
   theme,
   onToggleTheme,
+  onOpenDependencyGraph,
 }: ProjectHeaderProps) {
   return (
     <div className="flex items-center justify-between px-4 py-3">
@@ -81,6 +83,14 @@ export function ProjectHeader({
             )}
           </Button>
         </Tooltip>
+
+        {onOpenDependencyGraph && (
+          <Tooltip content="Dependency Graph">
+            <Button variant="ghost" size="icon-sm" onClick={onOpenDependencyGraph}>
+              <GitBranch className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          </Tooltip>
+        )}
 
         <Tooltip content="Search (Cmd+K)">
           <Button variant="ghost" size="icon-sm" onClick={onSearch}>

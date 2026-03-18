@@ -399,6 +399,27 @@ export interface AutomationRule {
   updated_at: string;
 }
 
+export type RecurrenceType = "daily" | "weekly" | "biweekly" | "monthly" | "custom";
+
+export interface RecurringIssue {
+  id: number;
+  project_id: number;
+  title_template: string;
+  description_template: string | null;
+  status_id: number;
+  priority: Priority;
+  assignee_id: number | null;
+  label_ids: string;
+  recurrence_type: RecurrenceType;
+  recurrence_config: string;
+  next_run_at: string;
+  last_run_at: string | null;
+  enabled: boolean;
+  total_created: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export type GitLinkType = "branch" | "pr" | "commit";
 
 export interface GitLink {
@@ -465,6 +486,32 @@ export interface ParsedIssue {
   suggested_priority: string | null;
   suggested_label_ids: number[];
   suggested_assignee_id: number | null;
+}
+
+export interface RecurringPreview {
+  title: string;
+  description: string | null;
+  next_dates: string[];
+}
+
+export interface DependencyNode {
+  id: number;
+  identifier: string;
+  title: string;
+  status_category: string;
+  priority: string;
+  assignee_name: string | null;
+}
+
+export interface DependencyEdge {
+  source_id: number;
+  target_id: number;
+  relation_type: string;
+}
+
+export interface DependencyGraph {
+  nodes: DependencyNode[];
+  edges: DependencyEdge[];
 }
 
 export interface ProjectAgentConfig {

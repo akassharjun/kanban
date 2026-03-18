@@ -273,6 +273,22 @@ CREATE TABLE IF NOT EXISTS saved_views (
     sort_by TEXT,
     sort_direction TEXT DEFAULT 'asc',
     view_mode TEXT DEFAULT 'board',
+-- Recurring Issues
+CREATE TABLE IF NOT EXISTS recurring_issues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title_template TEXT NOT NULL,
+    description_template TEXT,
+    status_id INTEGER NOT NULL REFERENCES statuses(id),
+    priority TEXT NOT NULL DEFAULT 'medium',
+    assignee_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+    label_ids TEXT NOT NULL DEFAULT '[]',
+    recurrence_type TEXT NOT NULL CHECK(recurrence_type IN ('daily', 'weekly', 'biweekly', 'monthly', 'custom')),
+    recurrence_config TEXT NOT NULL DEFAULT '{}',
+    next_run_at TEXT NOT NULL,
+    last_run_at TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    total_created INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -329,6 +345,8 @@ CREATE TABLE IF NOT EXISTS github_events (
 
 CREATE INDEX IF NOT EXISTS idx_github_events_project ON github_events(project_id);
 CREATE INDEX IF NOT EXISTS idx_github_events_issue ON github_events(issue_id);
+CREATE INDEX IF NOT EXISTS idx_recurring_project ON recurring_issues(project_id);
+CREATE INDEX IF NOT EXISTS idx_recurring_next_run ON recurring_issues(next_run_at);
 
 -- Project agent configuration
 CREATE TABLE IF NOT EXISTS project_agent_config (

@@ -43,6 +43,9 @@ import type {
   FileHeatEntry,
   DirectoryHeatEntry,
   TaskContext,
+  RecurringIssue,
+  RecurringPreview,
+  DependencyGraph,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -447,3 +450,36 @@ export const createIssueFromDiff = (input: {
   status_id?: number;
   assignee_id?: number;
 }) => invoke<Issue>("create_issue_from_diff", { input });
+// Recurring Issues
+export const listRecurring = (projectId: number) => invoke<RecurringIssue[]>("list_recurring", { projectId });
+export const createRecurring = (input: {
+  project_id: number;
+  title_template: string;
+  description_template?: string;
+  status_id: number;
+  priority?: string;
+  assignee_id?: number;
+  label_ids?: number[];
+  recurrence_type: string;
+  recurrence_config?: string;
+  next_run_at: string;
+}) => invoke<RecurringIssue>("create_recurring", { input });
+export const updateRecurring = (id: number, input: {
+  title_template?: string;
+  description_template?: string;
+  status_id?: number;
+  priority?: string;
+  assignee_id?: number;
+  label_ids?: number[];
+  recurrence_type?: string;
+  recurrence_config?: string;
+  next_run_at?: string;
+  enabled?: boolean;
+}) => invoke<RecurringIssue>("update_recurring", { id, input });
+export const deleteRecurring = (id: number) => invoke<void>("delete_recurring", { id });
+export const toggleRecurring = (id: number, enabled: boolean) => invoke<RecurringIssue>("toggle_recurring", { id, enabled });
+export const checkRecurring = (projectId: number) => invoke<Issue[]>("check_recurring", { projectId });
+export const previewRecurring = (id: number) => invoke<RecurringPreview>("preview_recurring", { id });
+
+// Dependency Graph
+export const dependencyGraph = (projectId: number) => invoke<DependencyGraph>("dependency_graph", { projectId });
