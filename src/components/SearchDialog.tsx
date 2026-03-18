@@ -26,10 +26,13 @@ export function SearchDialog({ projects, currentProjectId: _currentProjectId, on
     if (!query.trim()) { setResults([]); return; }
     const timeout = setTimeout(async () => {
       try {
-        const allResults = await Promise.all(
+        const settled = await Promise.allSettled(
           projects.map(p => api.searchIssues(p.id, query))
         );
-        setResults(allResults.flat());
+        const successfulResults = settled
+          .filter((r): r is PromiseFulfilledResult<Issue[]> => r.status === "fulfilled")
+          .flatMap(r => r.value);
+        setResults(successfulResults);
         setSelectedIndex(0);
       } catch (e) {
         console.error("Search failed", e);

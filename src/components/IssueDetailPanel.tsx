@@ -81,8 +81,13 @@ export function IssueDetailPanel({
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
   const [showTaskContractDialog, setShowTaskContractDialog] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [activityLimit, setActivityLimit] = useState(50);
+  const isSavingRef = useRef(false);
 
   const loadIssue = useCallback(async () => {
+    // Skip refresh while a save is in-flight to prevent overwriting user edits
+    if (isSavingRef.current) return;
     try {
       const data = await api.getIssue(issueId);
       setIssue(data);
@@ -107,7 +112,12 @@ export function IssueDetailPanel({
 
   const handleTitleSave = async () => {
     if (title !== issue.title) {
-      await onUpdate(issueId, { title });
+      isSavingRef.current = true;
+      try {
+        await onUpdate(issueId, { title });
+      } finally {
+        isSavingRef.current = false;
+      }
       await loadIssue();
     }
     setEditingTitle(false);
@@ -115,7 +125,12 @@ export function IssueDetailPanel({
 
   const handleDescSave = async () => {
     if (desc !== (issue.description || "")) {
-      await onUpdate(issueId, { description: desc });
+      isSavingRef.current = true;
+      try {
+        await onUpdate(issueId, { description: desc });
+      } finally {
+        isSavingRef.current = false;
+      }
       await loadIssue();
     }
     setEditingDesc(false);
@@ -123,17 +138,20 @@ export function IssueDetailPanel({
 
   const handleAddComment = async () => {
     if (!newComment.trim()) return;
+    setCommentError(null);
     try {
       await api.createComment({ issue_id: issueId, content: newComment.trim() });
       setNewComment("");
       await loadIssue();
     } catch (e) {
       console.error("Failed to add comment", e);
+      setCommentError("Failed to add comment. Please try again.");
     }
   };
 
   const handleUpdateComment = async (commentId: number) => {
     if (!editingCommentContent.trim()) return;
+    setCommentError(null);
     try {
       await api.updateComment(commentId, { content: editingCommentContent.trim() });
       setEditingCommentId(null);
@@ -141,15 +159,18 @@ export function IssueDetailPanel({
       await loadIssue();
     } catch (e) {
       console.error("Failed to update comment", e);
+      setCommentError("Failed to update comment. Please try again.");
     }
   };
 
   const handleDeleteComment = async (commentId: number) => {
+    setCommentError(null);
     try {
       await api.deleteComment(commentId);
       await loadIssue();
     } catch (e) {
       console.error("Failed to delete comment", e);
+      setCommentError("Failed to delete comment. Please try again.");
     }
   };
 
@@ -513,6 +534,12 @@ export function IssueDetailPanel({
             })}
           </div>
 
+          {commentError && (
+            <div className="mt-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-500">
+              {commentError}
+            </div>
+          )}
+
           {/* Add comment */}
           <div className="mt-4 pb-4">
             <textarea
@@ -545,7 +572,7 @@ export function IssueDetailPanel({
           <div className="border-t border-border/50 px-5 pt-4 pb-4">
             <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">Activity</h3>
             <div className="space-y-2">
-              {activity.slice(0, 20).map(entry => (
+              {activity.slice(0, activityLimit).map(entry => (
                 <div key={entry.id} className="flex items-start gap-2 text-xs text-muted-foreground/60">
                   <span className="shrink-0 font-mono">{entry.timestamp.slice(0, 16)}</span>
                   <span>
@@ -556,6 +583,14 @@ export function IssueDetailPanel({
                 </div>
               ))}
             </div>
+            {activity.length > activityLimit && (
+              <button
+                onClick={() => setActivityLimit(prev => prev + 50)}
+                className="mt-2 text-xs text-primary hover:text-primary/80 transition-colors"
+              >
+                Load more activity ({activity.length - activityLimit} remaining)
+              </button>
+            )}
           </div>
         )}
       </div>

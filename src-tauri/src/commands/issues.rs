@@ -267,6 +267,26 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
         if let Some(parent_id) = input.parent_id {
             let val = if parent_id <= 0 { None } else { Some(parent_id) };
             if let Some(v) = val {
+                // Validate: cannot be own parent
+                if v == id {
+                    return Err(sqlx::Error::Protocol("An issue cannot be its own parent".to_string()));
+                }
+                // Validate: walk parent chain to detect cycles
+                let mut current = v;
+                let mut visited = std::collections::HashSet::new();
+                visited.insert(id); // the issue being updated
+                loop {
+                    if !visited.insert(current) {
+                        // current was already in visited -- cycle detected
+                        return Err(sqlx::Error::Protocol("Circular parent-child reference detected".to_string()));
+                    }
+                    let next: Option<Option<i64>> = sqlx::query_scalar("SELECT parent_id FROM issues WHERE id = $1")
+                        .bind(current).fetch_optional(&state.pool).await?;
+                    match next.flatten() {
+                        Some(pid) => current = pid,
+                        None => break, // reached root, no cycle
+                    }
+                }
                 sqlx::query("UPDATE issues SET parent_id = $1, updated_at = $2 WHERE id = $3")
                     .bind(v).bind(&now).bind(id).execute(&state.pool).await?;
             } else {
@@ -279,8 +299,12 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
                 .bind(position).bind(&now).bind(id).execute(&state.pool).await?;
         }
         if let Some(estimate) = input.estimate {
+            // Use negative value as sentinel to clear estimate; otherwise validate >= 0
             let val = if estimate < 0.0 { None } else { Some(estimate) };
             if let Some(v) = val {
+                if v < 0.0 {
+                    return Err(sqlx::Error::Protocol("Estimate must be >= 0".to_string()));
+                }
                 sqlx::query("UPDATE issues SET estimate = $1, updated_at = $2 WHERE id = $3")
                     .bind(v).bind(&now).bind(id).execute(&state.pool).await?;
             } else {
@@ -540,10 +564,14 @@ pub fn set_issue_labels(state: State<AppState>, issue_id: i64, label_ids: Vec<i6
 }
 
 #[tauri::command]
-pub fn get_activity_log(state: State<AppState>, issue_id: i64) -> Result<Vec<ActivityLogEntry>, String> {
+pub fn get_activity_log(state: State<AppState>, issue_id: i64, limit: Option<i64>, offset: Option<i64>) -> Result<Vec<ActivityLogEntry>, String> {
     state.rt.block_on(async {
-        sqlx::query_as::<_, ActivityLogEntry>("SELECT * FROM activity_log WHERE issue_id = $1 ORDER BY timestamp DESC")
+        let lim = limit.unwrap_or(50);
+        let off = offset.unwrap_or(0);
+        sqlx::query_as::<_, ActivityLogEntry>("SELECT * FROM activity_log WHERE issue_id = $1 ORDER BY timestamp DESC LIMIT $2 OFFSET $3")
             .bind(issue_id)
+            .bind(lim)
+            .bind(off)
             .fetch_all(&state.pool)
             .await
     }).map_err(|e| e.to_string())

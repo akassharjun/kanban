@@ -118,7 +118,7 @@ export const searchIssues = (projectId: number, query: string) => invoke<Issue[]
 export const getSubIssues = (parentId: number) => invoke<Issue[]>("get_sub_issues", { parentId });
 export const setIssueLabels = (issueId: number, labelIds: number[]) => invoke<void>("set_issue_labels", { issueId, labelIds });
 export const listIssueLabelMappings = (projectId: number) => invoke<{ issue_id: number; label_id: number }[]>("list_issue_label_mappings", { projectId });
-export const getActivityLog = (issueId: number) => invoke<ActivityLogEntry[]>("get_activity_log", { issueId });
+export const getActivityLog = (issueId: number, limit?: number, offset?: number) => invoke<ActivityLogEntry[]>("get_activity_log", { issueId, limit, offset });
 
 // Members
 export const listMembers = () => invoke<Member[]>("list_members");

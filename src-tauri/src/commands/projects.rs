@@ -162,6 +162,21 @@ pub fn delete_project(state: State<AppState>, id: i64) -> Result<(), String> {
         sqlx::query("UPDATE projects SET deleted_at = $1 WHERE id = $2")
             .bind(&now).bind(id).execute(&state.pool).await?;
 
+        // Cascade: soft-delete related data for the deleted project
+        // Remove issues belonging to this project (and their label associations)
+        sqlx::query("DELETE FROM issue_labels WHERE issue_id IN (SELECT id FROM issues WHERE project_id = $1)")
+            .bind(id).execute(&state.pool).await?;
+        sqlx::query("DELETE FROM comments WHERE issue_id IN (SELECT id FROM issues WHERE project_id = $1)")
+            .bind(id).execute(&state.pool).await?;
+        sqlx::query("DELETE FROM activity_log WHERE issue_id IN (SELECT id FROM issues WHERE project_id = $1)")
+            .bind(id).execute(&state.pool).await?;
+        sqlx::query("DELETE FROM issues WHERE project_id = $1")
+            .bind(id).execute(&state.pool).await?;
+        sqlx::query("DELETE FROM statuses WHERE project_id = $1")
+            .bind(id).execute(&state.pool).await?;
+        sqlx::query("DELETE FROM labels WHERE project_id = $1")
+            .bind(id).execute(&state.pool).await?;
+
         sqlx::query("INSERT INTO undo_log (operation_type, entity_type, entity_id, snapshot_before, snapshot_after, timestamp) VALUES ('delete', 'project', $1, $2, NULL, $3)")
             .bind(id).bind(&old_snapshot).bind(&now)
             .execute(&state.pool).await?;

@@ -93,6 +93,9 @@ pub fn create_task_contract(
                 .unwrap_or_else(|| serde_json::Value::Array(vec![]));
             let context_files = input.context_files.unwrap_or_default();
             let timeout_minutes = input.timeout_minutes.unwrap_or(30);
+            if timeout_minutes <= 0 {
+                return Err(sqlx::Error::Protocol("timeout_minutes must be greater than 0".to_string()));
+            }
             let depends_on = input.depends_on.unwrap_or_default();
 
             let mut tx = state.pool.begin().await?;
