@@ -9,6 +9,7 @@ interface PredictiveStatusProps {
 }
 
 export function PredictiveStatus({
+  issueId: _issueId,
   dueDate,
   agentId,
 }: PredictiveStatusProps) {
