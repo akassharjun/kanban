@@ -260,6 +260,68 @@ export interface Hook {
   command: string;
 }
 
+export type AutomationTriggerType =
+  | "status_change"
+  | "issue_created"
+  | "issue_updated"
+  | "pr_merged"
+  | "pr_opened"
+  | "task_completed"
+  | "task_failed"
+  | "agent_assigned"
+  | "label_added"
+  | "priority_changed"
+  | "comment_added"
+  | "schedule";
+
+export type AutomationActionType =
+  | "change_status"
+  | "set_priority"
+  | "assign_to"
+  | "add_label"
+  | "create_issue"
+  | "create_task_contract"
+  | "add_comment"
+  | "send_notification"
+  | "trigger_webhook";
+
+export interface AutomationCondition {
+  field: string;
+  operator: string;
+  value: string;
+}
+
+export interface AutomationAction {
+  type: AutomationActionType;
+  config: Record<string, unknown>;
+}
+
+export interface AutomationRule {
+  id: number;
+  project_id: number;
+  name: string;
+  enabled: boolean;
+  trigger_type: AutomationTriggerType;
+  trigger_config: string;
+  conditions: string;
+  actions: string;
+  execution_count: number;
+  last_executed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutomationLogEntry {
+  id: number;
+  rule_id: number;
+  issue_id: number | null;
+  trigger_type: string;
+  actions_executed: string;
+  success: boolean;
+  error_message: string | null;
+  executed_at: string;
+}
+
 export interface ProjectAgentConfig {
   project_id: number;
   auto_accept_threshold: number;

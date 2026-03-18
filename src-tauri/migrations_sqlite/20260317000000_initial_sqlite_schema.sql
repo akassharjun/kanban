@@ -245,3 +245,42 @@ CREATE TABLE IF NOT EXISTS project_agent_config (
     heartbeat_interval_seconds INTEGER NOT NULL DEFAULT 60,
     missed_heartbeats_before_offline INTEGER NOT NULL DEFAULT 3
 );
+
+-- Automation rules
+CREATE TABLE IF NOT EXISTS automation_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    trigger_type TEXT NOT NULL CHECK(trigger_type IN (
+        'status_change', 'issue_created', 'issue_updated',
+        'pr_merged', 'pr_opened', 'task_completed', 'task_failed',
+        'agent_assigned', 'label_added', 'priority_changed',
+        'comment_added', 'schedule'
+    )),
+    trigger_config TEXT NOT NULL DEFAULT '{}',
+    conditions TEXT NOT NULL DEFAULT '[]',
+    actions TEXT NOT NULL DEFAULT '[]',
+    execution_count INTEGER NOT NULL DEFAULT 0,
+    last_executed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_rules_project ON automation_rules(project_id);
+CREATE INDEX IF NOT EXISTS idx_automation_rules_trigger ON automation_rules(trigger_type);
+
+-- Automation execution log
+CREATE TABLE IF NOT EXISTS automation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id INTEGER NOT NULL REFERENCES automation_rules(id) ON DELETE CASCADE,
+    issue_id INTEGER REFERENCES issues(id) ON DELETE SET NULL,
+    trigger_type TEXT NOT NULL,
+    actions_executed TEXT NOT NULL DEFAULT '[]',
+    success INTEGER NOT NULL DEFAULT 1,
+    error_message TEXT,
+    executed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_log_rule ON automation_log(rule_id);
+CREATE INDEX IF NOT EXISTS idx_automation_log_executed ON automation_log(executed_at);

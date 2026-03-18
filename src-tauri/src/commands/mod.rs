@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod automations;
 pub mod comments;
 pub mod custom_fields;
 pub mod execution_logs;

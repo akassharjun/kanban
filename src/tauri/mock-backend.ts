@@ -7,7 +7,7 @@ import type {
   ActivityLogEntry, Notification, Agent, AgentMetrics,
   ProjectMetrics, CustomField, IssueTemplate, Hook,
   ProjectAgentConfig, FullTaskContract, ExecutionLog, TaskGraph,
-  IssueWithLabels, UndoLogEntry,
+  IssueWithLabels, UndoLogEntry, AutomationRule, AutomationLogEntry,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -120,6 +120,39 @@ const notifications: Notification[] = [
   { id: 1, type: "mention", issue_id: 6, message: "Claude mentioned you in KAN-6", read: false, created_at: ago(80) },
   { id: 2, type: "status_change", issue_id: 9, message: "KAN-9 moved to In Review", read: false, created_at: ago(60) },
   { id: 3, type: "comment", issue_id: 7, message: "New comment on KAN-7", read: true, created_at: ago(400) },
+];
+
+const automationRules: AutomationRule[] = [
+  {
+    id: 1, project_id: 1, name: "Auto-assign urgent bugs", enabled: true,
+    trigger_type: "issue_created",
+    trigger_config: "{}",
+    conditions: JSON.stringify([{ field: "priority", operator: "equals", value: "urgent" }]),
+    actions: JSON.stringify([{ type: "assign_to", config: { member_id: 2 } }, { type: "add_comment", config: { content_template: "Auto-assigned {{issue.identifier}} to Claude due to urgent priority" } }]),
+    execution_count: 12, last_executed_at: ago(30), created_at: ago(5000), updated_at: ago(30),
+  },
+  {
+    id: 2, project_id: 1, name: "Notify on completion", enabled: true,
+    trigger_type: "status_change",
+    trigger_config: JSON.stringify({ to_status_id: 5 }),
+    conditions: "[]",
+    actions: JSON.stringify([{ type: "send_notification", config: { message_template: "{{issue.identifier}} has been completed" } }]),
+    execution_count: 5, last_executed_at: ago(120), created_at: ago(4000), updated_at: ago(120),
+  },
+  {
+    id: 3, project_id: 1, name: "Create QA task on review", enabled: false,
+    trigger_type: "status_change",
+    trigger_config: JSON.stringify({ to_status_id: 4 }),
+    conditions: "[]",
+    actions: JSON.stringify([{ type: "create_task_contract", config: { type: "review", complexity: "medium", skills: ["code-review"] } }]),
+    execution_count: 0, last_executed_at: null, created_at: ago(2000), updated_at: ago(2000),
+  },
+];
+
+const automationLog: AutomationLogEntry[] = [
+  { id: 1, rule_id: 1, issue_id: 6, trigger_type: "issue_created", actions_executed: JSON.stringify([{ type: "assign_to", success: true }, { type: "add_comment", success: true }]), success: true, error_message: null, executed_at: ago(30) },
+  { id: 2, rule_id: 2, issue_id: 10, trigger_type: "status_change", actions_executed: JSON.stringify([{ type: "send_notification", success: true }]), success: true, error_message: null, executed_at: ago(120) },
+  { id: 3, rule_id: 1, issue_id: 14, trigger_type: "issue_created", actions_executed: JSON.stringify([{ type: "assign_to", success: false, error: "Member not found" }]), success: false, error_message: "Member not found", executed_at: ago(200) },
 ];
 
 // ---- Mock command handler ----
@@ -356,6 +389,40 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "reject_task": return;
     case "unclaim_task": return;
     case "log_task_activity": return;
+
+    // Automations
+    case "list_automation_rules": return automationRules.filter(r => r.project_id === args?.projectId);
+    case "create_automation_rule": {
+      const r: AutomationRule = {
+        id: id(), ...args!.input,
+        enabled: true, execution_count: 0, last_executed_at: null,
+        trigger_config: args!.input.trigger_config ?? "{}",
+        conditions: args!.input.conditions ?? "[]",
+        actions: args!.input.actions ?? "[]",
+        created_at: now, updated_at: now,
+      };
+      automationRules.push(r);
+      return r;
+    }
+    case "update_automation_rule": {
+      const r = automationRules.find(x => x.id === args?.id);
+      if (r) Object.assign(r, args!.input, { updated_at: now });
+      return r;
+    }
+    case "delete_automation_rule": {
+      const idx = automationRules.findIndex(x => x.id === args?.id);
+      if (idx >= 0) automationRules.splice(idx, 1);
+      return;
+    }
+    case "toggle_automation_rule": {
+      const r = automationRules.find(x => x.id === args?.id);
+      if (r) { r.enabled = args?.enabled; r.updated_at = now; }
+      return r;
+    }
+    case "list_automation_log": return automationLog.filter(l => {
+      const rule = automationRules.find(r => r.id === l.rule_id);
+      return rule && rule.project_id === args?.projectId;
+    }).slice(0, args?.limit ?? 50);
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);

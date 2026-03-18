@@ -1,5 +1,6 @@
 use crate::state::AppState;
 use crate::models::{Issue, ActivityLogEntry};
+use crate::commands::automations::{evaluate_rules, AutomationContext};
 use tauri::State;
 use serde::{Deserialize, Serialize};
 
@@ -140,6 +141,23 @@ pub fn create_issue(state: State<AppState>, input: CreateIssueInput) -> Result<I
             .execute(&mut *tx).await?;
 
         tx.commit().await?;
+
+        // Trigger automation rules for issue creation
+        let ctx = AutomationContext {
+            issue_id: Some(issue.id),
+            project_id: issue.project_id,
+            old_value: None,
+            new_value: None,
+            actor_name: None,
+            agent_name: None,
+            task_confidence: None,
+            issue_title: Some(issue.title.clone()),
+            issue_identifier: Some(issue.identifier.clone()),
+            issue_priority: Some(issue.priority.clone()),
+            issue_status_id: Some(issue.status_id),
+            issue_assignee_id: issue.assignee_id,
+        };
+        let _ = evaluate_rules(&state.pool, issue.project_id, "issue_created", &ctx).await;
 
         Ok(issue)
     }).map_err(|e: sqlx::Error| e.to_string())
@@ -304,6 +322,47 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
         let new_snapshot = serde_json::to_string(&updated).unwrap_or_default();
 
         log_undo(&state.pool, "update", "issue", id, Some(old_snapshot), Some(new_snapshot)).await?;
+
+        // Trigger automation rules
+        {
+            let ctx = AutomationContext {
+                issue_id: Some(updated.id),
+                project_id: updated.project_id,
+                old_value: None,
+                new_value: None,
+                actor_name: None,
+                agent_name: None,
+                task_confidence: None,
+                issue_title: Some(updated.title.clone()),
+                issue_identifier: Some(updated.identifier.clone()),
+                issue_priority: Some(updated.priority.clone()),
+                issue_status_id: Some(updated.status_id),
+                issue_assignee_id: updated.assignee_id,
+            };
+
+            // Status change
+            if let Some(status_id) = input.status_id {
+                if status_id != old_issue.status_id {
+                    let mut sctx = ctx.clone();
+                    sctx.old_value = Some(old_issue.status_id.to_string());
+                    sctx.new_value = Some(status_id.to_string());
+                    let _ = evaluate_rules(&state.pool, updated.project_id, "status_change", &sctx).await;
+                }
+            }
+
+            // Priority change
+            if let Some(ref priority) = input.priority {
+                if priority != &old_issue.priority {
+                    let mut pctx = ctx.clone();
+                    pctx.old_value = Some(old_issue.priority.clone());
+                    pctx.new_value = Some(priority.clone());
+                    let _ = evaluate_rules(&state.pool, updated.project_id, "priority_changed", &pctx).await;
+                }
+            }
+
+            // General issue_updated
+            let _ = evaluate_rules(&state.pool, updated.project_id, "issue_updated", &ctx).await;
+        }
 
         // Check if parent should auto-complete (all children done/discarded)
         if input.status_id.is_some() {

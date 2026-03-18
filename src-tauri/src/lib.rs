@@ -197,6 +197,13 @@ pub fn run_gui(database_url: Option<String>) {
             commands::execution_logs::task_replay,
             commands::execution_logs::task_attempts,
             commands::execution_logs::recent_activity,
+            // Automations
+            commands::automations::list_automation_rules,
+            commands::automations::create_automation_rule,
+            commands::automations::update_automation_rule,
+            commands::automations::delete_automation_rule,
+            commands::automations::toggle_automation_rule,
+            commands::automations::list_automation_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
