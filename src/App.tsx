@@ -19,6 +19,7 @@ import { NotificationsPanel } from "./components/NotificationsPanel";
 import { ProjectSettingsView } from "./components/ProjectSettingsView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AgentDashboard } from "@/components/AgentDashboard";
+import { ActivityTicker } from "./components/ActivityTicker";
 import { CodeHeatMap } from "@/components/CodeHeatMap";
 import { ReplayViewer } from "@/components/ReplayViewer";
 import { DependencyGraph } from "@/components/DependencyGraph";
@@ -526,6 +527,15 @@ function App() {
           </div>
         </div>
       )}
+      <ActivityTicker
+        projectId={selectedProjectId}
+        onClickEntry={(issueId) => {
+          const issue = issues.find((i) => i.id === issueId);
+          if (issue) {
+            setSelectedIssueId(issue.id);
+          }
+        }}
+      />
     </div>
     </ErrorBoundary>
   );
