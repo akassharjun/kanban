@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { DialogOverlay, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Check } from "lucide-react";
 import type { Status, Member, Label, IssueTemplate } from "@/types";
 
 interface CreateIssueDialogProps {
@@ -83,8 +83,8 @@ export function CreateIssueDialog({
 
         {templates.length > 0 && (
           <div className="mb-4">
-            <label className="block text-sm text-muted-foreground mb-1">Template</label>
-            <div className="flex flex-wrap gap-1">
+            <label className="block text-[13px] text-muted-foreground mb-1.5">Template</label>
+            <div className="flex flex-wrap gap-1.5">
               {templates.map(t => (
                 <Button key={t.id} variant="outline" size="sm" onClick={() => applyTemplate(t)}>
                   {t.name}
@@ -96,7 +96,7 @@ export function CreateIssueDialog({
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-muted-foreground mb-1">Title</label>
+            <label className="block text-[13px] text-muted-foreground mb-1.5">Title</label>
             <Input
               autoFocus
               value={title}
@@ -107,19 +107,18 @@ export function CreateIssueDialog({
           </div>
 
           <div>
-            <label className="block text-sm text-muted-foreground mb-1">Description (Markdown)</label>
+            <label className="block text-[13px] text-muted-foreground mb-1.5">Description (Markdown)</label>
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
-              className="font-mono"
               placeholder="Describe the issue..."
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-muted-foreground mb-1">Status</label>
+              <label className="block text-[13px] text-muted-foreground mb-1.5">Status</label>
               <Select
                 value={statusId}
                 onChange={(e) => setStatusId(Number(e.target.value))}
@@ -128,7 +127,7 @@ export function CreateIssueDialog({
               </Select>
             </div>
             <div>
-              <label className="block text-sm text-muted-foreground mb-1">Priority</label>
+              <label className="block text-[13px] text-muted-foreground mb-1.5">Priority</label>
               <Select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value)}
@@ -143,7 +142,7 @@ export function CreateIssueDialog({
           </div>
 
           <div>
-            <label className="block text-sm text-muted-foreground mb-1">Assignee</label>
+            <label className="block text-[13px] text-muted-foreground mb-1.5">Assignee</label>
             <Select
               value={assigneeId ?? ""}
               onChange={(e) => setAssigneeId(e.target.value ? Number(e.target.value) : undefined)}
@@ -155,32 +154,34 @@ export function CreateIssueDialog({
 
           {labels.length > 0 && (
             <div>
-              <label className="block text-sm text-muted-foreground mb-1">Labels</label>
-              <div className="flex flex-wrap gap-1">
-                {labels.map(l => (
-                  <button
-                    key={l.id}
-                    onClick={() => setSelectedLabels(prev =>
-                      prev.includes(l.id) ? prev.filter(id => id !== l.id) : [...prev, l.id]
-                    )}
-                  >
-                    <Badge
-                      variant="outline"
+              <label className="block text-[13px] text-muted-foreground mb-1.5">Labels</label>
+              <div className="flex flex-wrap gap-1.5">
+                {labels.map(l => {
+                  const selected = selectedLabels.includes(l.id);
+                  return (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => setSelectedLabels(prev =>
+                        prev.includes(l.id) ? prev.filter(id => id !== l.id) : [...prev, l.id]
+                      )}
                       className={cn(
-                        "cursor-pointer transition-colors",
-                        selectedLabels.includes(l.id)
-                          ? "border-transparent"
-                          : "opacity-50"
+                        "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-all",
+                        selected
+                          ? "ring-1 ring-offset-1 ring-offset-card"
+                          : "opacity-50 hover:opacity-80"
                       )}
                       style={{
-                        backgroundColor: selectedLabels.includes(l.id) ? l.color + "30" : "transparent",
+                        backgroundColor: l.color + (selected ? "25" : "12"),
                         color: l.color,
+                        ...(selected ? { ringColor: l.color + "50" } : {}),
                       }}
                     >
+                      {selected && <Check className="h-3 w-3" />}
                       {l.name}
-                    </Badge>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
