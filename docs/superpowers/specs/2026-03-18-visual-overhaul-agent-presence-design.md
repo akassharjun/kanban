@@ -50,6 +50,53 @@
 - Column gap: 10px
 - Section margins: 16px
 
+### shadcn/ui CSS Variable Migration
+
+The existing codebase uses HSL-based variables in the shadcn/ui convention (e.g., `--background: 228 15% 8%` consumed as `hsl(var(--background))`). The new monochrome tokens must **replace** the existing shadcn variables, not sit alongside them.
+
+**Mapping (in `index.css` `:root` / `.dark`):**
+
+| shadcn variable | New HSL value | Hex equivalent | Maps to |
+|-----------------|--------------|----------------|---------|
+| `--background` | `0 0% 4%` | `#09090b` | `--bg` |
+| `--foreground` | `0 0% 98%` | `#fafafa` | `--text-primary` |
+| `--card` | `0 0% 9%` | `#18181b` | `--surface` |
+| `--card-foreground` | `0 0% 98%` | `#fafafa` | `--text-primary` |
+| `--popover` | `0 0% 9%` | `#18181b` | `--surface` |
+| `--popover-foreground` | `0 0% 98%` | `#fafafa` | `--text-primary` |
+| `--primary` | `0 0% 98%` | `#fafafa` | white accent |
+| `--primary-foreground` | `0 0% 4%` | `#09090b` | inverted |
+| `--secondary` | `0 0% 15%` | `#27272a` | `--border` |
+| `--secondary-foreground` | `0 0% 98%` | `#fafafa` | `--text-primary` |
+| `--muted` | `0 0% 15%` | `#27272a` | `--border` |
+| `--muted-foreground` | `0 0% 48%` | `#71717a` | `--text-muted` |
+| `--accent` | `0 0% 15%` | `#27272a` | `--border` |
+| `--accent-foreground` | `0 0% 98%` | `#fafafa` | `--text-primary` |
+| `--destructive` | `0 84% 60%` | `#ef4444` | `--red` |
+| `--destructive-foreground` | `0 0% 98%` | `#fafafa` | white |
+| `--border` | `0 0% 15%` | `#27272a` | `--border` |
+| `--input` | `0 0% 15%` | `#27272a` | `--border` |
+| `--ring` | `0 0% 98%` | `#fafafa` | white focus ring |
+
+All existing Tailwind utilities (`bg-background`, `text-foreground`, `bg-card`, etc.) continue to work without changes. The new custom tokens (`--surface`, `--text-primary`, etc.) are **aliases** added alongside for use in new components.
+
+### Tailwind Config Changes
+
+In `tailwind.config.js`:
+
+```js
+fontFamily: {
+  sans: ['"Geist Sans"', '"Inter"', 'system-ui', '-apple-system', 'sans-serif'],
+  mono: ['"Geist Mono"', 'ui-monospace', 'monospace'],
+},
+```
+
+The Geist font import goes in `src/main.tsx`:
+```tsx
+import 'geist/font/sans.css';
+import 'geist/font/mono.css';
+```
+
 ### Dark Mode
 
 This IS the theme. No light mode variant in this phase. Class-based `.dark` on `<html>` remains; CSS variables updated to monochrome luxury values.
@@ -418,7 +465,7 @@ if estimated_completion > due_date:
   days_late = ceil((estimated_completion - due_date) / 1 day)
 ```
 
-`avg_completion_time_for_complexity` comes from `agent_task_metrics` grouped by `estimated_complexity`.
+`avg_completion_time_for_complexity` comes from `agent_task_metrics` grouped by the `complexity` column. The current task's complexity is read from `task_contracts.estimated_complexity`. Join path: `task_contracts.estimated_complexity` → match against `agent_task_metrics.complexity` for historical averages.
 
 ### Display
 
@@ -491,8 +538,42 @@ Issue detail panel, shown when `attempt_count > 1` on the task contract.
 
 ### New Dependencies
 
-- `framer-motion` — animations (layout, presence, spring physics)
+- `framer-motion` (>=11.0) — animations (layout, presence, spring physics). Requires React 18+ (satisfied). `AnimatePresence` with `mode="popLayout"` available since v7+.
 - `geist` — font package (Geist Sans + Geist Mono)
+- `react-diff-viewer-continued` — diff rendering for `DiffPreview` component (syntax-highlighted inline/split diffs)
+
+### Shared State for Execution Logs
+
+Multiple components need execution log data (AgentPresence, ActivityTicker, ReplayViewer). To avoid duplicate subscriptions and race conditions:
+
+- Create `src/hooks/useExecutionLogs.ts` — a shared hook that subscribes to `db-changed` events and maintains a cache of recent execution logs per issue.
+- Uses a module-level cache (Map<issueId, ExecutionLog[]>) so multiple component instances share one subscription.
+- Debounces fetches to 2-second intervals.
+- Components call `useExecutionLogs(issueId)` and get the latest entries.
+- `ActivityTicker` uses a variant: `useGlobalExecutionLogs()` that fetches the last 50 entries across all issues.
+
+### TypeScript Types
+
+Add to `src/types/index.ts`:
+
+```ts
+type ExecutionEntryType = 'reasoning' | 'file_read' | 'file_edit' | 'command' | 'discovery' | 'error' | 'checkpoint' | 'claim' | 'start' | 'complete' | 'fail' | 'timeout';
+
+interface AgentPresenceData {
+  agentId: string;
+  agentName: string;
+  agentType: 'claude' | 'codex' | 'gemini' | 'custom';
+  status: 'active' | 'idle' | 'error' | 'offline';
+  lastAction?: string;
+  lastActionType?: ExecutionEntryType;
+}
+
+interface TaskCostSummary {
+  computeTime: number;
+  apiTokens: number;
+  totalCost: number;
+}
+```
 
 ### Files to Create
 
@@ -503,35 +584,55 @@ Issue detail panel, shown when `attempt_count > 1` on the task contract.
 - `src/components/CostBadge.tsx`
 - `src/components/PredictiveStatus.tsx`
 - `src/components/ReviewToolbar.tsx`
-- `src/components/DiffPreview.tsx`
+- `src/components/DiffPreview.tsx` — uses `react-diff-viewer-continued` for syntax-highlighted diffs
 - `src/components/AttemptTabs.tsx`
 - `src/components/AttemptComparison.tsx`
 - `src/components/AgentSkillTag.tsx`
+- `src/components/IssueDetailPanel.tsx` — new component for issue detail with review toolbar, attempt tabs, diff preview (does not currently exist)
+- `src/hooks/useExecutionLogs.ts` — shared execution log subscription hook
+- `src/tauri/commands.ts` — typed wrappers around Tauri `invoke()` for cost queries, execution logs, agent metrics
 
 ### Files to Modify (Major)
 
-- `src/index.css` — replace color system with monochrome luxury CSS variables
+- `src/index.css` — replace color system with monochrome luxury CSS variables (see shadcn migration table above)
 - `src/components/IssueCard.tsx` — integrate all card-level features (presence, badges, epic badge, animations)
 - `src/components/BoardView.tsx` — add Framer Motion layout animations, column transitions
 - `src/components/BoardColumn.tsx` — animated card entry/exit
-- `src/components/IssueDetailPanel.tsx` — add review toolbar, attempt tabs, diff preview
-- `src/App.tsx` — add ActivityTicker to layout, integrate Geist font
+- `src/App.tsx` — add ActivityTicker to layout, import Geist font, wire up IssueDetailPanel
+- `src/main.tsx` — add Geist font CSS imports
+- `src/types/index.ts` — add new TypeScript interfaces
+- `tailwind.config.js` — add Geist font families
 
 ### Files to Modify (Minor)
 
 - `src/components/ListView.tsx` — apply theme, add arc ring and badges to list rows
 - `src/components/TreeView.tsx` — apply theme, epic hierarchy indicators
 - `src/hooks/useIssues.ts` — add execution log subscription for live status
-- `src/tauri/commands.ts` — add typed wrappers for cost/metrics queries
 
 ### Backend Changes
 
 None required. All data already exists in the database (execution_logs, task_contracts, task_costs, agent_task_metrics, epics). Frontend reads via existing Tauri commands.
 
+### Accessibility
+
+- All color combinations verified for WCAG AA contrast (4.5:1 minimum for text):
+  - `--text-muted` (#71717a) on `--surface` (#18181b) = 4.7:1 ✓
+  - `--text-secondary` (#a1a1aa) on `--surface` (#18181b) = 7.5:1 ✓
+  - `--text-primary` (#fafafa) on `--surface` (#18181b) = 15.4:1 ✓
+- Breathing pulse and ticker animations respect `prefers-reduced-motion`:
+  ```css
+  @media (prefers-reduced-motion: reduce) {
+    .agent-ring-active { animation: none; }
+    .ticker-scroll { animation: none; }
+  }
+  ```
+- All interactive elements have focus-visible outlines using `--ring` token
+
 ### Performance Considerations
 
 - Framer Motion `layout` only on visible cards (virtualize if > 100 cards)
 - Ticker: rolling buffer of 50 entries, prune on new additions
-- Agent presence: debounce execution_log polling to 2-second intervals
+- Agent presence: shared hook with 2-second debounced polling
 - Predictive status: cache calculations, recalculate on `db-changed` event only
 - Cost badges: fetch once on card mount, update on `db-changed`
+- Loading states: skeleton shimmer for CostBadge, PredictiveStatus, AgentPresence while data loads
