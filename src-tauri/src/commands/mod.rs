@@ -1,5 +1,6 @@
 pub mod advanced_search;
 pub mod agents;
+pub mod automations;
 pub mod comments;
 pub mod custom_fields;
 pub mod epics;

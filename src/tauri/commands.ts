@@ -31,6 +31,8 @@ import type {
   MilestoneWithProgress,
   SavedView,
   GitLink,
+  AutomationRule,
+  AutomationLogEntry,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -253,6 +255,27 @@ export const updateProjectAgentConfig = (projectId: number, input: Partial<Omit<
 export const listHooks = (projectId: number) => invoke<Hook[]>("list_hooks", { projectId });
 export const createHook = (input: { project_id: number; event_type: string; command: string }) => invoke<Hook>("create_hook", { input });
 export const deleteHook = (id: number) => invoke<void>("delete_hook", { id });
+
+// Automations
+export const listAutomationRules = (projectId: number) => invoke<AutomationRule[]>("list_automation_rules", { projectId });
+export const createAutomationRule = (input: {
+  project_id: number;
+  name: string;
+  trigger_type: string;
+  trigger_config?: string;
+  conditions?: string;
+  actions?: string;
+}) => invoke<AutomationRule>("create_automation_rule", { input });
+export const updateAutomationRule = (id: number, input: {
+  name?: string;
+  trigger_type?: string;
+  trigger_config?: string;
+  conditions?: string;
+  actions?: string;
+}) => invoke<AutomationRule>("update_automation_rule", { id, input });
+export const deleteAutomationRule = (id: number) => invoke<void>("delete_automation_rule", { id });
+export const toggleAutomationRule = (id: number, enabled: boolean) => invoke<AutomationRule>("toggle_automation_rule", { id, enabled });
+export const listAutomationLog = (projectId: number, limit?: number) => invoke<AutomationLogEntry[]>("list_automation_log", { projectId, limit });
 
 // Task Contracts
 export const createTaskContract = (input: {

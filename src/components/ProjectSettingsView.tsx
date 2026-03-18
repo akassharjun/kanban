@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { Plus, Pencil, Trash2, X } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Zap, Play, Pause, ChevronDown, ChevronUp, Clock, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Project, Status, Label, Member, IssueTemplate, Hook, ProjectAgentConfig, Epic, MilestoneWithProgress } from "@/types";
+import type { Project, Status, Label, Member, IssueTemplate, Hook, ProjectAgentConfig, Epic, MilestoneWithProgress, AutomationRule, AutomationLogEntry, AutomationTriggerType, AutomationActionType } from "@/types";
 import * as api from "@/tauri/commands";
 import { AuditLogView } from "./AuditLogView";
 
@@ -15,7 +15,7 @@ export interface ProjectSettingsViewProps {
   onDeleteProject?: (id: number) => Promise<unknown>;
 }
 
-type Tab = "general" | "statuses" | "labels" | "epics" | "milestones" | "templates" | "hooks" | "agents" | "audit" | "stale";
+type Tab = "general" | "statuses" | "labels" | "epics" | "milestones" | "templates" | "hooks" | "agents" | "audit" | "stale" | "automations";
 
 const statusCategories = [
   { value: "unstarted", label: "Unstarted" },
@@ -93,12 +93,24 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
   const [staleDays, setStaleDays] = useState(project.stale_days ?? 30);
   const [staleCloseStatusId, setStaleCloseStatusId] = useState<number | null>(project.stale_close_status_id);
 
+  // Automations
+  const [automationRules, setAutomationRules] = useState<AutomationRule[]>([]);
+  const [automationLog, setAutomationLog] = useState<AutomationLogEntry[]>([]);
+  const [showAddAutomation, setShowAddAutomation] = useState(false);
+  const [editingAutomationId, setEditingAutomationId] = useState<number | null>(null);
+  const [automationName, setAutomationName] = useState("");
+  const [automationTrigger, setAutomationTrigger] = useState<AutomationTriggerType>("status_change");
+  const [automationTriggerConfig, setAutomationTriggerConfig] = useState("{}");
+  const [automationConditions, setAutomationConditions] = useState<Array<{ field: string; operator: string; value: string }>>([]);
+  const [automationActions, setAutomationActions] = useState<Array<{ type: AutomationActionType; config: Record<string, unknown> }>>([]);
+  const [showAutomationLog, setShowAutomationLog] = useState(false);
+
   useEffect(() => {
     loadData();
   }, [project.id]);
 
   const loadData = async () => {
-    const [s, l, t, h, ac, m, ep, ms] = await Promise.all([
+    const [s, l, t, h, ac, m, ep, ms, ar, al] = await Promise.all([
       api.listStatuses(project.id),
       api.listLabels(project.id),
       api.listTemplates(project.id),
@@ -107,6 +119,8 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
       api.listMembers(),
       api.listEpics(project.id),
       api.listMilestones(project.id),
+      api.listAutomationRules(project.id),
+      api.listAutomationLog(project.id, 50),
     ]);
     setStatuses(s);
     setLabels(l);
@@ -116,6 +130,8 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     setMembers(m);
     setEpicsData(ep);
     setMilestonesData(ms);
+    setAutomationRules(ar);
+    setAutomationLog(al);
   };
 
   const handleSaveGeneral = async () => {
@@ -285,6 +301,101 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     setShowAddMilestone(true);
   };
 
+  // Automation handlers
+  const handleAddAutomation = async () => {
+    if (!automationName.trim()) return;
+    const conditionsJson = JSON.stringify(automationConditions);
+    const actionsJson = JSON.stringify(automationActions);
+    if (editingAutomationId) {
+      await api.updateAutomationRule(editingAutomationId, {
+        name: automationName,
+        trigger_type: automationTrigger,
+        trigger_config: automationTriggerConfig,
+        conditions: conditionsJson,
+        actions: actionsJson,
+      });
+    } else {
+      await api.createAutomationRule({
+        project_id: project.id,
+        name: automationName,
+        trigger_type: automationTrigger,
+        trigger_config: automationTriggerConfig,
+        conditions: conditionsJson,
+        actions: actionsJson,
+      });
+    }
+    resetAutomationForm();
+    await loadData();
+  };
+
+  const resetAutomationForm = () => {
+    setShowAddAutomation(false);
+    setEditingAutomationId(null);
+    setAutomationName("");
+    setAutomationTrigger("status_change");
+    setAutomationTriggerConfig("{}");
+    setAutomationConditions([]);
+    setAutomationActions([]);
+  };
+
+  const startEditAutomation = (r: AutomationRule) => {
+    setEditingAutomationId(r.id);
+    setAutomationName(r.name);
+    setAutomationTrigger(r.trigger_type);
+    setAutomationTriggerConfig(r.trigger_config);
+    try { setAutomationConditions(JSON.parse(r.conditions)); } catch { setAutomationConditions([]); }
+    try { setAutomationActions(JSON.parse(r.actions)); } catch { setAutomationActions([]); }
+    setShowAddAutomation(true);
+  };
+
+  const handleDeleteAutomation = async (ruleId: number) => {
+    await api.deleteAutomationRule(ruleId);
+    await loadData();
+  };
+
+  const handleToggleAutomation = async (ruleId: number, enabled: boolean) => {
+    await api.toggleAutomationRule(ruleId, enabled);
+    await loadData();
+  };
+
+  const addCondition = () => {
+    setAutomationConditions(prev => [...prev, { field: "priority", operator: "equals", value: "" }]);
+  };
+
+  const removeCondition = (index: number) => {
+    setAutomationConditions(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateCondition = (index: number, field: string, value: string) => {
+    setAutomationConditions(prev => prev.map((c, i) => i === index ? { ...c, [field]: value } : c));
+  };
+
+  const addAction = () => {
+    setAutomationActions(prev => [...prev, { type: "change_status" as AutomationActionType, config: {} }]);
+  };
+
+  const removeAction = (index: number) => {
+    setAutomationActions(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateAction = (index: number, field: string, value: unknown) => {
+    setAutomationActions(prev => prev.map((a, i) => {
+      if (i !== index) return a;
+      if (field === "type") return { type: value as AutomationActionType, config: {} };
+      return { ...a, config: { ...a.config, [field]: value } };
+    }));
+  };
+
+  const moveAction = (index: number, direction: "up" | "down") => {
+    setAutomationActions(prev => {
+      const next = [...prev];
+      const swap = direction === "up" ? index - 1 : index + 1;
+      if (swap < 0 || swap >= next.length) return next;
+      [next[index], next[swap]] = [next[swap], next[index]];
+      return next;
+    });
+  };
+
   const tabs: { value: Tab; label: string }[] = [
     { value: "general", label: "General" },
     { value: "statuses", label: "Statuses" },
@@ -294,6 +405,7 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     { value: "templates", label: "Templates" },
     { value: "hooks", label: "Hooks" },
     { value: "stale", label: "Stale Issues" },
+    { value: "automations", label: "Automations" },
     { value: "agents", label: "Agent Config" },
     { value: "audit", label: "Audit Log" },
   ];
@@ -796,6 +908,423 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
                   Run Stale Check Now
                 </button>
                 <p className="text-xs text-muted-foreground mt-1">Manually trigger the stale issue check for this project</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Automations Tab */}
+        {tab === "automations" && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Define automation rules: "When X happens, if Y is true, do Z"</p>
+                <p className="text-xs text-muted-foreground/70 mt-1">
+                  Rules are evaluated automatically when triggers fire
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowAutomationLog(prev => !prev)}
+                  className="flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
+                >
+                  <Clock className="h-4 w-4" /> {showAutomationLog ? "Hide Log" : "View Log"}
+                </button>
+                <button
+                  onClick={() => { resetAutomationForm(); setShowAddAutomation(true); }}
+                  className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  <Plus className="h-4 w-4" /> Add Rule
+                </button>
+              </div>
+            </div>
+
+            {/* Create/Edit Form */}
+            {showAddAutomation && (
+              <div className="mb-4 rounded-lg border border-border bg-card p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-yellow-500" />
+                    {editingAutomationId ? "Edit Rule" : "New Automation Rule"}
+                  </h3>
+                  <button onClick={resetAutomationForm}><X className="h-4 w-4" /></button>
+                </div>
+
+                {/* Name */}
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Rule Name</label>
+                  <input
+                    value={automationName}
+                    onChange={e => setAutomationName(e.target.value)}
+                    placeholder="e.g., Auto-assign urgent bugs to Claude"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                </div>
+
+                {/* Trigger */}
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">When (Trigger)</label>
+                  <select
+                    value={automationTrigger}
+                    onChange={e => setAutomationTrigger(e.target.value as AutomationTriggerType)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none"
+                  >
+                    <option value="status_change">Status Changed</option>
+                    <option value="issue_created">Issue Created</option>
+                    <option value="issue_updated">Issue Updated</option>
+                    <option value="priority_changed">Priority Changed</option>
+                    <option value="comment_added">Comment Added</option>
+                    <option value="label_added">Label Added</option>
+                    <option value="agent_assigned">Agent Assigned</option>
+                    <option value="task_completed">Task Completed</option>
+                    <option value="task_failed">Task Failed</option>
+                    <option value="pr_merged">PR Merged</option>
+                    <option value="pr_opened">PR Opened</option>
+                    <option value="schedule">Schedule (Cron)</option>
+                  </select>
+                </div>
+
+                {/* Trigger Config */}
+                {(automationTrigger === "status_change" || automationTrigger === "schedule") && (
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">
+                      Trigger Config (JSON)
+                    </label>
+                    <input
+                      value={automationTriggerConfig}
+                      onChange={e => setAutomationTriggerConfig(e.target.value)}
+                      placeholder={automationTrigger === "schedule" ? '{"cron": "0 9 * * 1"}' : '{"from_status_id": 2, "to_status_id": 3}'}
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary font-mono"
+                    />
+                  </div>
+                )}
+
+                {/* Conditions */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs text-muted-foreground">If (Conditions) - all must match</label>
+                    <button onClick={addCondition} className="text-xs text-primary hover:underline">+ Add condition</button>
+                  </div>
+                  {automationConditions.length === 0 && (
+                    <p className="text-xs text-muted-foreground/60 italic">No conditions - rule will fire on every trigger</p>
+                  )}
+                  {automationConditions.map((cond, i) => (
+                    <div key={i} className="flex gap-2 mb-2 items-center">
+                      <select
+                        value={cond.field}
+                        onChange={e => updateCondition(i, "field", e.target.value)}
+                        className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                      >
+                        <option value="priority">Priority</option>
+                        <option value="status_id">Status ID</option>
+                        <option value="assignee_id">Assignee ID</option>
+                        <option value="title">Title</option>
+                        <option value="old_value">Old Value</option>
+                        <option value="new_value">New Value</option>
+                      </select>
+                      <select
+                        value={cond.operator}
+                        onChange={e => updateCondition(i, "operator", e.target.value)}
+                        className="rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                      >
+                        <option value="equals">equals</option>
+                        <option value="not_equals">not equals</option>
+                        <option value="contains">contains</option>
+                        <option value="not_contains">not contains</option>
+                        <option value="greater_than">greater than</option>
+                        <option value="less_than">less than</option>
+                        <option value="is_empty">is empty</option>
+                        <option value="is_not_empty">is not empty</option>
+                      </select>
+                      <input
+                        value={cond.value}
+                        onChange={e => updateCondition(i, "value", e.target.value)}
+                        placeholder="value"
+                        className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+                      />
+                      <button onClick={() => removeCondition(i)} className="rounded p-1 hover:bg-destructive/20">
+                        <Trash2 className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Actions */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs text-muted-foreground">Then (Actions) - executed in order</label>
+                    <button onClick={addAction} className="text-xs text-primary hover:underline">+ Add action</button>
+                  </div>
+                  {automationActions.length === 0 && (
+                    <p className="text-xs text-muted-foreground/60 italic">No actions configured</p>
+                  )}
+                  {automationActions.map((action, i) => (
+                    <div key={i} className="mb-2 rounded-md border border-border bg-background/50 p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[10px] text-muted-foreground font-mono">#{i + 1}</span>
+                        <select
+                          value={action.type}
+                          onChange={e => updateAction(i, "type", e.target.value)}
+                          className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                        >
+                          <option value="change_status">Change Status</option>
+                          <option value="set_priority">Set Priority</option>
+                          <option value="assign_to">Assign To</option>
+                          <option value="add_label">Add Label</option>
+                          <option value="create_issue">Create Issue</option>
+                          <option value="create_task_contract">Create Task Contract</option>
+                          <option value="add_comment">Add Comment</option>
+                          <option value="send_notification">Send Notification</option>
+                          <option value="trigger_webhook">Trigger Webhook</option>
+                        </select>
+                        <div className="flex gap-0.5">
+                          <button onClick={() => moveAction(i, "up")} disabled={i === 0} className="rounded p-1 hover:bg-accent disabled:opacity-30">
+                            <ChevronUp className="h-3 w-3" />
+                          </button>
+                          <button onClick={() => moveAction(i, "down")} disabled={i === automationActions.length - 1} className="rounded p-1 hover:bg-accent disabled:opacity-30">
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
+                        </div>
+                        <button onClick={() => removeAction(i)} className="rounded p-1 hover:bg-destructive/20">
+                          <Trash2 className="h-3 w-3 text-muted-foreground" />
+                        </button>
+                      </div>
+                      {/* Action-specific config */}
+                      {action.type === "change_status" && (
+                        <input
+                          value={String(action.config.status_id ?? "")}
+                          onChange={e => updateAction(i, "status_id", parseInt(e.target.value) || 0)}
+                          placeholder="Status ID"
+                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+                        />
+                      )}
+                      {action.type === "set_priority" && (
+                        <select
+                          value={String(action.config.priority ?? "none")}
+                          onChange={e => updateAction(i, "priority", e.target.value)}
+                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                        >
+                          <option value="none">None</option>
+                          <option value="urgent">Urgent</option>
+                          <option value="high">High</option>
+                          <option value="medium">Medium</option>
+                          <option value="low">Low</option>
+                        </select>
+                      )}
+                      {action.type === "assign_to" && (
+                        <input
+                          value={String(action.config.member_id ?? "")}
+                          onChange={e => updateAction(i, "member_id", parseInt(e.target.value) || 0)}
+                          placeholder="Member ID (or agent_type for first_available)"
+                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+                        />
+                      )}
+                      {action.type === "add_label" && (
+                        <input
+                          value={String(action.config.label_id ?? "")}
+                          onChange={e => updateAction(i, "label_id", parseInt(e.target.value) || 0)}
+                          placeholder="Label ID"
+                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+                        />
+                      )}
+                      {action.type === "create_issue" && (
+                        <div className="space-y-2">
+                          <input
+                            value={String(action.config.title_template ?? "")}
+                            onChange={e => updateAction(i, "title_template", e.target.value)}
+                            placeholder="Title template (supports {{issue.title}})"
+                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+                          />
+                          <select
+                            value={String(action.config.priority ?? "none")}
+                            onChange={e => updateAction(i, "priority", e.target.value)}
+                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                          >
+                            <option value="none">None</option>
+                            <option value="urgent">Urgent</option>
+                            <option value="high">High</option>
+                            <option value="medium">Medium</option>
+                            <option value="low">Low</option>
+                          </select>
+                        </div>
+                      )}
+                      {action.type === "add_comment" && (
+                        <textarea
+                          value={String(action.config.content_template ?? "")}
+                          onChange={e => updateAction(i, "content_template", e.target.value)}
+                          placeholder="Comment template (supports {{issue.identifier}}, {{actor.name}}, etc.)"
+                          rows={2}
+                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary font-mono"
+                        />
+                      )}
+                      {action.type === "send_notification" && (
+                        <input
+                          value={String(action.config.message_template ?? "")}
+                          onChange={e => updateAction(i, "message_template", e.target.value)}
+                          placeholder="Notification message (supports {{issue.identifier}})"
+                          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+                        />
+                      )}
+                      {action.type === "create_task_contract" && (
+                        <div className="space-y-2">
+                          <select
+                            value={String(action.config.type ?? "implementation")}
+                            onChange={e => updateAction(i, "type", e.target.value)}
+                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                          >
+                            <option value="implementation">Implementation</option>
+                            <option value="review">Review</option>
+                            <option value="testing">Testing</option>
+                            <option value="research">Research</option>
+                          </select>
+                          <select
+                            value={String(action.config.complexity ?? "medium")}
+                            onChange={e => updateAction(i, "complexity", e.target.value)}
+                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                          >
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                          </select>
+                          <input
+                            value={String(action.config.skills ?? "")}
+                            onChange={e => updateAction(i, "skills", e.target.value.split(",").map(s => s.trim()).filter(Boolean))}
+                            placeholder="Skills (comma-separated): rust, typescript, react"
+                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary"
+                          />
+                        </div>
+                      )}
+                      {action.type === "trigger_webhook" && (
+                        <div className="space-y-2">
+                          <input
+                            value={String(action.config.url ?? "")}
+                            onChange={e => updateAction(i, "url", e.target.value)}
+                            placeholder="URL (e.g., https://hooks.example.com/notify)"
+                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none focus:border-primary font-mono"
+                          />
+                          <select
+                            value={String(action.config.method ?? "POST")}
+                            onChange={e => updateAction(i, "method", e.target.value)}
+                            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                          >
+                            <option value="POST">POST</option>
+                            <option value="GET">GET</option>
+                            <option value="PUT">PUT</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 text-[10px] text-muted-foreground/60">
+                  <AlertTriangle className="h-3 w-3" />
+                  Template variables: {"{{issue.title}}, {{issue.identifier}}, {{issue.priority}}, {{actor.name}}, {{old_value}}, {{new_value}}, {{agent.name}}, {{task.confidence}}"}
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <button onClick={resetAutomationForm} className="rounded-md px-3 py-1.5 text-sm hover:bg-accent">Cancel</button>
+                  <button onClick={handleAddAutomation} className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+                    {editingAutomationId ? "Save" : "Add Rule"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Rules List */}
+            <div className="space-y-1">
+              {automationRules.map(r => {
+                let parsedActions: Array<{ type: string }> = [];
+                try { parsedActions = JSON.parse(r.actions); } catch { /* empty */ }
+                let parsedConditions: Array<{ field: string; operator: string; value: string }> = [];
+                try { parsedConditions = JSON.parse(r.conditions); } catch { /* empty */ }
+
+                return (
+                  <div key={r.id} className={cn(
+                    "rounded-lg border bg-card px-4 py-3",
+                    r.enabled ? "border-border" : "border-border/50 opacity-60"
+                  )}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <button
+                          onClick={() => handleToggleAutomation(r.id, !r.enabled)}
+                          className={cn("rounded-full p-1", r.enabled ? "text-green-500 hover:bg-green-500/10" : "text-muted-foreground hover:bg-accent")}
+                          title={r.enabled ? "Disable" : "Enable"}
+                        >
+                          {r.enabled ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+                        </button>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate">{r.name}</span>
+                            <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] text-muted-foreground whitespace-nowrap">
+                              {r.trigger_type.replace(/_/g, " ")}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5 text-[10px] text-muted-foreground">
+                            {parsedConditions.length > 0 && (
+                              <span>{parsedConditions.length} condition{parsedConditions.length !== 1 ? "s" : ""}</span>
+                            )}
+                            <span>{parsedActions.length} action{parsedActions.length !== 1 ? "s" : ""}: {parsedActions.map(a => a.type?.replace(/_/g, " ")).join(", ")}</span>
+                            {r.execution_count > 0 && (
+                              <span>Ran {r.execution_count}x</span>
+                            )}
+                            {r.last_executed_at && (
+                              <span>Last: {new Date(r.last_executed_at).toLocaleDateString()}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 ml-2">
+                        <button onClick={() => startEditAutomation(r)} className="rounded p-1.5 hover:bg-accent">
+                          <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                        </button>
+                        <button onClick={() => handleDeleteAutomation(r.id)} className="rounded p-1.5 hover:bg-destructive/20">
+                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {automationRules.length === 0 && !showAddAutomation && (
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  No automation rules yet. Create one to automate your workflow.
+                </div>
+              )}
+            </div>
+
+            {/* Automation Log */}
+            {showAutomationLog && (
+              <div className="mt-6">
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <Clock className="h-4 w-4" /> Recent Executions
+                </h3>
+                <div className="space-y-1">
+                  {automationLog.map(entry => {
+                    const rule = automationRules.find(r => r.id === entry.rule_id);
+                    return (
+                      <div key={entry.id} className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-2.5 text-xs">
+                        {entry.success ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                        ) : (
+                          <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <span className="font-medium">{rule?.name ?? `Rule #${entry.rule_id}`}</span>
+                          <span className="text-muted-foreground ml-2">{entry.trigger_type.replace(/_/g, " ")}</span>
+                          {entry.issue_id && <span className="text-muted-foreground ml-1">(issue #{entry.issue_id})</span>}
+                          {entry.error_message && <span className="text-red-400 ml-2">{entry.error_message}</span>}
+                        </div>
+                        <span className="text-muted-foreground whitespace-nowrap shrink-0">
+                          {new Date(entry.executed_at).toLocaleString()}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {automationLog.length === 0 && (
+                    <div className="py-4 text-center text-xs text-muted-foreground">No executions yet</div>
+                  )}
+                </div>
               </div>
             )}
           </div>

@@ -308,14 +308,6 @@ CREATE TABLE IF NOT EXISTS epics (
     description TEXT,
     color TEXT NOT NULL DEFAULT '#6366f1',
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'closed')),
--- Git Links (branch/PR/commit linking to issues)
-CREATE TABLE IF NOT EXISTS git_links (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
-    link_type TEXT NOT NULL CHECK(link_type IN ('branch', 'pull_request', 'commit')),
-    url TEXT,
-    ref_name TEXT NOT NULL,
-    status TEXT DEFAULT 'open' CHECK(status IN ('open', 'merged', 'closed')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -335,4 +327,56 @@ CREATE TABLE IF NOT EXISTS milestones (
 );
 
 CREATE INDEX IF NOT EXISTS idx_milestones_project ON milestones(project_id);
+
+-- Git Links (branch/PR/commit linking to issues)
+CREATE TABLE IF NOT EXISTS git_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    link_type TEXT NOT NULL CHECK(link_type IN ('branch', 'pull_request', 'commit')),
+    url TEXT,
+    ref_name TEXT NOT NULL,
+    status TEXT DEFAULT 'open' CHECK(status IN ('open', 'merged', 'closed')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_git_links_issue ON git_links(issue_id);
+
+-- Automation rules
+CREATE TABLE IF NOT EXISTS automation_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    trigger_type TEXT NOT NULL CHECK(trigger_type IN (
+        'status_change', 'issue_created', 'issue_updated',
+        'pr_merged', 'pr_opened', 'task_completed', 'task_failed',
+        'agent_assigned', 'label_added', 'priority_changed',
+        'comment_added', 'schedule'
+    )),
+    trigger_config TEXT NOT NULL DEFAULT '{}',
+    conditions TEXT NOT NULL DEFAULT '[]',
+    actions TEXT NOT NULL DEFAULT '[]',
+    execution_count INTEGER NOT NULL DEFAULT 0,
+    last_executed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_rules_project ON automation_rules(project_id);
+CREATE INDEX IF NOT EXISTS idx_automation_rules_trigger ON automation_rules(trigger_type);
+
+-- Automation execution log
+CREATE TABLE IF NOT EXISTS automation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id INTEGER NOT NULL REFERENCES automation_rules(id) ON DELETE CASCADE,
+    issue_id INTEGER REFERENCES issues(id) ON DELETE SET NULL,
+    trigger_type TEXT NOT NULL,
+    actions_executed TEXT NOT NULL DEFAULT '[]',
+    success INTEGER NOT NULL DEFAULT 1,
+    error_message TEXT,
+    executed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_automation_log_rule ON automation_log(rule_id);
+CREATE INDEX IF NOT EXISTS idx_automation_log_executed ON automation_log(executed_at);

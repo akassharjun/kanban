@@ -314,3 +314,31 @@ pub struct GitLink {
     pub created_at: String,
     pub updated_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct AutomationRule {
+    pub id: i64,
+    pub project_id: i64,
+    pub name: String,
+    pub enabled: bool,
+    pub trigger_type: String,
+    pub trigger_config: String,
+    pub conditions: String,
+    pub actions: String,
+    pub execution_count: i64,
+    pub last_executed_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct AutomationLogEntry {
+    pub id: i64,
+    pub rule_id: i64,
+    pub issue_id: Option<i64>,
+    pub trigger_type: String,
+    pub actions_executed: String,
+    pub success: bool,
+    pub error_message: Option<String>,
+    pub executed_at: String,
+}
