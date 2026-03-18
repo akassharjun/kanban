@@ -78,6 +78,21 @@ pub fn update_member(state: State<AppState>, id: i64, input: UpdateMemberInput) 
 #[tauri::command]
 pub fn delete_member(state: State<AppState>, id: i64) -> Result<(), String> {
     state.rt.block_on(async {
+        // Check if member is referenced by agents (prevent deletion)
+        let agent_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agents WHERE member_id = $1")
+            .bind(id).fetch_one(&state.pool).await?;
+        if agent_count > 0 {
+            return Err(sqlx::Error::Protocol(
+                format!("Cannot delete member: {} agent(s) reference this member. Remove the agent association first.", agent_count)
+            ));
+        }
+
+        // Nullify FK references before deletion
+        sqlx::query("UPDATE issues SET assignee_id = NULL WHERE assignee_id = $1")
+            .bind(id).execute(&state.pool).await?;
+        sqlx::query("UPDATE comments SET member_id = NULL WHERE member_id = $1")
+            .bind(id).execute(&state.pool).await?;
+
         sqlx::query("DELETE FROM members WHERE id = $1").bind(id).execute(&state.pool).await?;
         Ok(())
     }).map_err(|e: sqlx::Error| e.to_string())

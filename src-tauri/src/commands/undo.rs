@@ -12,10 +12,13 @@ pub fn undo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
 
         let Some(entry) = entry else { return Ok(None); };
 
+        // Wrap data restoration and flag update in a single transaction
+        let mut tx = state.pool.begin().await.map_err(|e| e.to_string())?;
+
         match (entry.operation_type.as_str(), entry.entity_type.as_str()) {
             ("create", "issue") => {
                 sqlx::query("DELETE FROM issues WHERE id = $1")
-                    .bind(entry.entity_id).execute(&state.pool).await.map_err(|e| e.to_string())?;
+                    .bind(entry.entity_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
             }
             ("update", "issue") => {
                 if let Some(ref before) = entry.snapshot_before {
@@ -25,7 +28,7 @@ pub fn undo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
                         .bind(&issue.priority).bind(issue.assignee_id).bind(issue.parent_id)
                         .bind(issue.position).bind(issue.estimate).bind(&issue.due_date)
                         .bind(&issue.updated_at).bind(issue.id)
-                        .execute(&state.pool).await.map_err(|e| e.to_string())?;
+                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
                 }
             }
             ("delete", "issue") => {
@@ -37,7 +40,7 @@ pub fn undo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
                         .bind(&issue.priority).bind(issue.assignee_id).bind(issue.parent_id)
                         .bind(issue.position).bind(issue.estimate).bind(&issue.due_date)
                         .bind(&issue.created_at).bind(&issue.updated_at)
-                        .execute(&state.pool).await.map_err(|e| e.to_string())?;
+                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
                     // Restore labels if present in snapshot
                     let snapshot_val: serde_json::Value = serde_json::from_str(before).unwrap_or_default();
@@ -46,7 +49,7 @@ pub fn undo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
                             if let Some(label_id) = label_val.as_i64() {
                                 sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES ($1, $2)")
                                     .bind(issue.id).bind(label_id)
-                                    .execute(&state.pool).await.map_err(|e| e.to_string())?;
+                                    .execute(&mut *tx).await.map_err(|e| e.to_string())?;
                             }
                         }
                     }
@@ -54,7 +57,7 @@ pub fn undo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
             }
             ("create", "project") => {
                 sqlx::query("DELETE FROM projects WHERE id = $1")
-                    .bind(entry.entity_id).execute(&state.pool).await.map_err(|e| e.to_string())?;
+                    .bind(entry.entity_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
             }
             ("update", "project") => {
                 if let Some(ref before) = entry.snapshot_before {
@@ -62,7 +65,7 @@ pub fn undo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
                     sqlx::query("UPDATE projects SET name = $1, description = $2, icon = $3, status = $4, updated_at = $5 WHERE id = $6")
                         .bind(&project.name).bind(&project.description).bind(&project.icon)
                         .bind(&project.status).bind(&project.updated_at).bind(project.id)
-                        .execute(&state.pool).await.map_err(|e| e.to_string())?;
+                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
                 }
             }
             ("delete", "project") => {
@@ -72,14 +75,16 @@ pub fn undo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
                         .bind(project.id).bind(&project.name).bind(&project.description)
                         .bind(&project.icon).bind(&project.status).bind(&project.prefix)
                         .bind(project.issue_counter).bind(&project.created_at).bind(&project.updated_at)
-                        .execute(&state.pool).await.map_err(|e| e.to_string())?;
+                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
                 }
             }
             _ => {}
         }
 
         sqlx::query("UPDATE undo_log SET undone = TRUE WHERE id = $1")
-            .bind(entry.id).execute(&state.pool).await.map_err(|e| e.to_string())?;
+            .bind(entry.id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        tx.commit().await.map_err(|e| e.to_string())?;
 
         Ok(Some(entry))
     })
@@ -94,6 +99,9 @@ pub fn redo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
 
         let Some(entry) = entry else { return Ok(None); };
 
+        // Wrap data mutation and flag update in a single transaction
+        let mut tx = state.pool.begin().await.map_err(|e| e.to_string())?;
+
         match (entry.operation_type.as_str(), entry.entity_type.as_str()) {
             ("create", "issue") => {
                 if let Some(ref after) = entry.snapshot_after {
@@ -104,7 +112,7 @@ pub fn redo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
                         .bind(&issue.priority).bind(issue.assignee_id).bind(issue.parent_id)
                         .bind(issue.position).bind(issue.estimate).bind(&issue.due_date)
                         .bind(&issue.created_at).bind(&issue.updated_at)
-                        .execute(&state.pool).await.map_err(|e| e.to_string())?;
+                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
                 }
             }
             ("update", "issue") => {
@@ -115,12 +123,12 @@ pub fn redo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
                         .bind(&issue.priority).bind(issue.assignee_id).bind(issue.parent_id)
                         .bind(issue.position).bind(issue.estimate).bind(&issue.due_date)
                         .bind(&issue.updated_at).bind(issue.id)
-                        .execute(&state.pool).await.map_err(|e| e.to_string())?;
+                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
                 }
             }
             ("delete", "issue") => {
                 sqlx::query("DELETE FROM issues WHERE id = $1")
-                    .bind(entry.entity_id).execute(&state.pool).await.map_err(|e| e.to_string())?;
+                    .bind(entry.entity_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
             }
             ("create", "project") => {
                 if let Some(ref after) = entry.snapshot_after {
@@ -129,7 +137,7 @@ pub fn redo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
                         .bind(project.id).bind(&project.name).bind(&project.description)
                         .bind(&project.icon).bind(&project.status).bind(&project.prefix)
                         .bind(project.issue_counter).bind(&project.created_at).bind(&project.updated_at)
-                        .execute(&state.pool).await.map_err(|e| e.to_string())?;
+                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
                 }
             }
             ("update", "project") => {
@@ -138,18 +146,20 @@ pub fn redo(state: State<AppState>) -> Result<Option<UndoLogEntry>, String> {
                     sqlx::query("UPDATE projects SET name = $1, description = $2, icon = $3, status = $4, updated_at = $5 WHERE id = $6")
                         .bind(&project.name).bind(&project.description).bind(&project.icon)
                         .bind(&project.status).bind(&project.updated_at).bind(project.id)
-                        .execute(&state.pool).await.map_err(|e| e.to_string())?;
+                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
                 }
             }
             ("delete", "project") => {
                 sqlx::query("DELETE FROM projects WHERE id = $1")
-                    .bind(entry.entity_id).execute(&state.pool).await.map_err(|e| e.to_string())?;
+                    .bind(entry.entity_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
             }
             _ => {}
         }
 
         sqlx::query("UPDATE undo_log SET undone = FALSE WHERE id = $1")
-            .bind(entry.id).execute(&state.pool).await.map_err(|e| e.to_string())?;
+            .bind(entry.id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        tx.commit().await.map_err(|e| e.to_string())?;
 
         Ok(Some(entry))
     })
