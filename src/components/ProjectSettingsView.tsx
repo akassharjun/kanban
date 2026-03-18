@@ -1,18 +1,21 @@
 import { useState, useEffect } from "react";
 import { Plus, Pencil, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Project, Status, Label, IssueTemplate, Hook, ProjectAgentConfig } from "@/types";
+import type { Project, Status, Label, Member, IssueTemplate, Hook, ProjectAgentConfig } from "@/types";
 import * as api from "@/tauri/commands";
+import { RecurringIssuesTab } from "./RecurringIssuesTab";
 
 export interface ProjectSettingsViewProps {
   project: Project;
+  statuses?: Status[];
+  members?: Member[];
   onUpdateProject: (id: number, input: { name?: string; description?: string; icon?: string; status?: string; path?: string }) => Promise<unknown>;
   onRefreshStatuses: () => void;
   onRefreshLabels: () => void;
   onDeleteProject?: (id: number) => Promise<unknown>;
 }
 
-type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents";
+type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents" | "recurring";
 
 const statusCategories = [
   { value: "unstarted", label: "Unstarted" },
@@ -28,7 +31,7 @@ const labelColors = [
   "#a855f7", "#d946ef", "#ec4899", "#f43f5e",
 ];
 
-export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuses, onRefreshLabels, onDeleteProject: _onDeleteProject }: ProjectSettingsViewProps) {
+export function ProjectSettingsView({ project, statuses: propStatuses, members: propMembers, onUpdateProject, onRefreshStatuses, onRefreshLabels, onDeleteProject: _onDeleteProject }: ProjectSettingsViewProps) {
   const [tab, setTab] = useState<Tab>("general");
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [labels, setLabels] = useState<Label[]>([]);
@@ -195,6 +198,7 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     { value: "labels", label: "Labels" },
     { value: "templates", label: "Templates" },
     { value: "hooks", label: "Hooks" },
+    { value: "recurring", label: "Recurring" },
     { value: "agents", label: "Agent Config" },
   ];
 
@@ -491,6 +495,15 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
               {hooks.length === 0 && <div className="py-8 text-center text-sm text-muted-foreground">No hooks configured yet</div>}
             </div>
           </div>
+        )}
+
+        {/* Recurring Tab */}
+        {tab === "recurring" && (
+          <RecurringIssuesTab
+            projectId={project.id}
+            statuses={propStatuses ?? statuses}
+            members={propMembers ?? []}
+          />
         )}
 
         {/* Agent Config Tab */}

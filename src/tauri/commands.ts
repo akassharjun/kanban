@@ -23,6 +23,9 @@ import type {
   TaskGraph,
   ProjectAgentConfig,
   Hook,
+  RecurringIssue,
+  RecurringPreview,
+  DependencyGraph,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -244,3 +247,37 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// Recurring Issues
+export const listRecurring = (projectId: number) => invoke<RecurringIssue[]>("list_recurring", { projectId });
+export const createRecurring = (input: {
+  project_id: number;
+  title_template: string;
+  description_template?: string;
+  status_id: number;
+  priority?: string;
+  assignee_id?: number;
+  label_ids?: number[];
+  recurrence_type: string;
+  recurrence_config?: string;
+  next_run_at: string;
+}) => invoke<RecurringIssue>("create_recurring", { input });
+export const updateRecurring = (id: number, input: {
+  title_template?: string;
+  description_template?: string;
+  status_id?: number;
+  priority?: string;
+  assignee_id?: number;
+  label_ids?: number[];
+  recurrence_type?: string;
+  recurrence_config?: string;
+  next_run_at?: string;
+  enabled?: boolean;
+}) => invoke<RecurringIssue>("update_recurring", { id, input });
+export const deleteRecurring = (id: number) => invoke<void>("delete_recurring", { id });
+export const toggleRecurring = (id: number, enabled: boolean) => invoke<RecurringIssue>("toggle_recurring", { id, enabled });
+export const checkRecurring = (projectId: number) => invoke<Issue[]>("check_recurring", { projectId });
+export const previewRecurring = (id: number) => invoke<RecurringPreview>("preview_recurring", { id });
+
+// Dependency Graph
+export const dependencyGraph = (projectId: number) => invoke<DependencyGraph>("dependency_graph", { projectId });

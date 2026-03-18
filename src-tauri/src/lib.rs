@@ -139,6 +139,15 @@ pub fn run_gui(database_url: Option<String>) {
             commands::relations::list_relations,
             commands::relations::create_relation,
             commands::relations::delete_relation,
+            commands::relations::dependency_graph,
+            // Recurring Issues
+            commands::recurring::list_recurring,
+            commands::recurring::create_recurring,
+            commands::recurring::update_recurring,
+            commands::recurring::delete_recurring,
+            commands::recurring::toggle_recurring,
+            commands::recurring::check_recurring,
+            commands::recurring::preview_recurring,
             // Templates
             commands::templates::list_templates,
             commands::templates::create_template,

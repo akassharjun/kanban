@@ -7,7 +7,8 @@ import type {
   ActivityLogEntry, Notification, Agent, AgentMetrics,
   ProjectMetrics, CustomField, IssueTemplate, Hook,
   ProjectAgentConfig, FullTaskContract, ExecutionLog, TaskGraph,
-  IssueWithLabels, UndoLogEntry,
+  IssueWithLabels, UndoLogEntry, RecurringIssue, RecurringPreview,
+  DependencyGraph, DependencyNode, DependencyEdge, IssueRelation,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -120,6 +121,27 @@ const notifications: Notification[] = [
   { id: 1, type: "mention", issue_id: 6, message: "Claude mentioned you in KAN-6", read: false, created_at: ago(80) },
   { id: 2, type: "status_change", issue_id: 9, message: "KAN-9 moved to In Review", read: false, created_at: ago(60) },
   { id: 3, type: "comment", issue_id: 7, message: "New comment on KAN-7", read: true, created_at: ago(400) },
+];
+
+const recurringIssues: RecurringIssue[] = [
+  {
+    id: 1, project_id: 1, title_template: "Daily standup review - {{date}}", description_template: "Review open issues and blocked items for {{day}}.\n\nIteration: #{{count}}", status_id: 2, priority: "medium", assignee_id: 2, label_ids: "[]", recurrence_type: "daily", recurrence_config: "{}", next_run_at: new Date(Date.now() + 86400000).toISOString(), last_run_at: ago(1440), enabled: true, total_created: 12, created_at: ago(20000), updated_at: ago(1440),
+  },
+  {
+    id: 2, project_id: 1, title_template: "Weekly dependency audit - week {{count}}", description_template: null, status_id: 2, priority: "low", assignee_id: null, label_ids: "[4]", recurrence_type: "weekly", recurrence_config: '{"day_of_week": 1}', next_run_at: new Date(Date.now() + 604800000).toISOString(), last_run_at: ago(10080), enabled: true, total_created: 4, created_at: ago(40000), updated_at: ago(10080),
+  },
+  {
+    id: 3, project_id: 1, title_template: "Monthly performance review - {{date}}", description_template: null, status_id: 1, priority: "high", assignee_id: 1, label_ids: "[5]", recurrence_type: "monthly", recurrence_config: '{"day_of_month": 1}', next_run_at: new Date(Date.now() + 2592000000).toISOString(), last_run_at: null, enabled: false, total_created: 0, created_at: ago(5000), updated_at: ago(5000),
+  },
+];
+
+const issueRelations: IssueRelation[] = [
+  { id: 1, source_issue_id: 6, target_issue_id: 7, relation_type: "blocks" },
+  { id: 2, source_issue_id: 7, target_issue_id: 8, relation_type: "blocks" },
+  { id: 3, source_issue_id: 9, target_issue_id: 6, relation_type: "related" },
+  { id: 4, source_issue_id: 3, target_issue_id: 4, relation_type: "blocks" },
+  { id: 5, source_issue_id: 10, target_issue_id: 11, relation_type: "blocks" },
+  { id: 6, source_issue_id: 11, target_issue_id: 12, relation_type: "blocks" },
 ];
 
 // ---- Mock command handler ----
@@ -289,9 +311,23 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "delete_label": { for (const arr of Object.values(labels)) { const idx = arr.findIndex(x => x.id === args?.id); if (idx >= 0) { arr.splice(idx, 1); return; } } return; }
 
     // Relations
-    case "list_relations": return [];
-    case "create_relation": return { id: id(), ...args!.input };
-    case "delete_relation": return;
+    case "list_relations": return issueRelations.filter(r => r.source_issue_id === args?.issueId || r.target_issue_id === args?.issueId);
+    case "create_relation": { const r = { id: id(), ...args!.input } as IssueRelation; issueRelations.push(r); return r; }
+    case "delete_relation": { const idx = issueRelations.findIndex(r => r.id === args?.id); if (idx >= 0) issueRelations.splice(idx, 1); return; }
+    case "dependency_graph": {
+      const pid = args?.projectId;
+      const projectIssues = issues.filter(i => i.project_id === pid);
+      const projectIssueIds = new Set(projectIssues.map(i => i.id));
+      const nodes: DependencyNode[] = projectIssues.map(i => {
+        const s = (statuses[pid] ?? []).find(st => st.id === i.status_id);
+        const m = members.find(mm => mm.id === i.assignee_id);
+        return { id: i.id, identifier: i.identifier, title: i.title, status_category: s?.category ?? "unstarted", priority: i.priority, assignee_name: m?.display_name ?? m?.name ?? null };
+      });
+      const edges: DependencyEdge[] = issueRelations
+        .filter(r => projectIssueIds.has(r.source_issue_id) && projectIssueIds.has(r.target_issue_id))
+        .map(r => ({ source_id: r.source_issue_id, target_id: r.target_issue_id, relation_type: r.relation_type }));
+      return { nodes, edges } as DependencyGraph;
+    }
 
     // Templates
     case "list_templates": return [];
@@ -356,6 +392,42 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "reject_task": return;
     case "unclaim_task": return;
     case "log_task_activity": return;
+
+    // Recurring Issues
+    case "list_recurring": return recurringIssues.filter(r => r.project_id === args?.projectId);
+    case "create_recurring": {
+      const r: RecurringIssue = { id: id(), ...args!.input, label_ids: JSON.stringify(args!.input.label_ids ?? []), recurrence_config: args!.input.recurrence_config ?? "{}", priority: args!.input.priority ?? "medium", assignee_id: args!.input.assignee_id ?? null, description_template: args!.input.description_template ?? null, last_run_at: null, enabled: true, total_created: 0, created_at: now, updated_at: now };
+      recurringIssues.push(r);
+      return r;
+    }
+    case "update_recurring": {
+      const r = recurringIssues.find(x => x.id === args?.id);
+      if (r) Object.assign(r, args!.input, { updated_at: now });
+      return r;
+    }
+    case "delete_recurring": {
+      const idx = recurringIssues.findIndex(x => x.id === args?.id);
+      if (idx >= 0) recurringIssues.splice(idx, 1);
+      return;
+    }
+    case "toggle_recurring": {
+      const r = recurringIssues.find(x => x.id === args?.id);
+      if (r) { r.enabled = args!.enabled; r.updated_at = now; }
+      return r;
+    }
+    case "check_recurring": return [] as Issue[];
+    case "preview_recurring": {
+      const r = recurringIssues.find(x => x.id === args?.id);
+      if (!r) return null;
+      const today = new Date().toISOString().slice(0, 10);
+      const dayName = new Date().toLocaleDateString("en-US", { weekday: "long" });
+      const count = r.total_created + 1;
+      return {
+        title: r.title_template.replace("{{date}}", today).replace("{{count}}", String(count)).replace("{{day}}", dayName),
+        description: r.description_template?.replace("{{date}}", today).replace("{{count}}", String(count)).replace("{{day}}", dayName) ?? null,
+        next_dates: [r.next_run_at, new Date(Date.now() + 86400000 * 2).toISOString(), new Date(Date.now() + 86400000 * 3).toISOString()],
+      } as RecurringPreview;
+    }
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);

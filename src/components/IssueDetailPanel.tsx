@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown } from "lucide-react";
+import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,6 +17,7 @@ interface IssueDetailPanelProps {
   onDelete: (id: number) => Promise<void>;
   onDuplicate: (id: number) => Promise<unknown>;
   onClickIssue: (issue: Issue) => void;
+  onShowDependencies?: (issueId: number) => void;
 }
 
 const priorities = [
@@ -67,6 +68,7 @@ export function IssueDetailPanel({
   onDelete,
   onDuplicate,
   onClickIssue,
+  onShowDependencies,
 }: IssueDetailPanelProps) {
   const [issue, setIssue] = useState<IssueWithLabels | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -390,8 +392,8 @@ export function IssueDetailPanel({
           )}
         </div>
 
-        {/* Task Contract */}
-        <div className="mt-4 px-5">
+        {/* Task Contract & Dependencies */}
+        <div className="mt-4 px-5 flex gap-2">
           <button
             onClick={() => setShowTaskContractDialog(true)}
             className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
@@ -399,6 +401,15 @@ export function IssueDetailPanel({
             <FileText className="h-3.5 w-3.5" />
             Create Task Contract
           </button>
+          {onShowDependencies && (
+            <button
+              onClick={() => onShowDependencies(issueId)}
+              className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              Show Dependencies
+            </button>
+          )}
         </div>
 
         {/* Sub-issues */}

@@ -17,6 +17,7 @@ import { ProjectSettingsView } from "./components/ProjectSettingsView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AgentDashboard } from "@/components/AgentDashboard";
 import { ReplayViewer } from "@/components/ReplayViewer";
+import { DependencyGraph } from "@/components/DependencyGraph";
 import { useProjects } from "./hooks/use-projects";
 import { useIssues } from "./hooks/use-issues";
 import { useMembers } from "./hooks/use-members";
@@ -44,6 +45,8 @@ function App() {
   const [createIssueStatusId, setCreateIssueStatusId] = useState<number | undefined>();
   const [filters, setFilters] = useState<Filters>({});
   const [replayIdentifier, setReplayIdentifier] = useState<string | null>(null);
+  const [showDepGraph, setShowDepGraph] = useState(false);
+  const [depGraphFocusId, setDepGraphFocusId] = useState<number | undefined>(undefined);
 
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return document.documentElement.classList.contains("dark") ? "dark" : "light";
@@ -207,6 +210,7 @@ function App() {
               onOpenNotifications={() => setShowNotifications(true)}
               theme={theme}
               onToggleTheme={toggleTheme}
+              onOpenDependencyGraph={() => { setDepGraphFocusId(undefined); setShowDepGraph(true); }}
             />
 
             <FilterBar
@@ -276,6 +280,8 @@ function App() {
         {page === "settings" && selectedProject && (
           <ProjectSettingsView
             project={selectedProject}
+            statuses={statuses}
+            members={members}
             onUpdateProject={updateProject}
             onRefreshStatuses={refreshStatuses}
             onRefreshLabels={refreshLabels}
@@ -309,6 +315,7 @@ function App() {
           onDelete={async (id) => { await deleteIssue(id); setSelectedIssueId(null); }}
           onDuplicate={async (id) => { await duplicateIssue(id); }}
           onClickIssue={(issue) => setSelectedIssueId(issue.id)}
+          onShowDependencies={(issueId) => { setDepGraphFocusId(issueId); setShowDepGraph(true); }}
         />
       )}
 
@@ -344,6 +351,15 @@ function App() {
       )}
 
       {showNotifications && <NotificationsPanel onClose={() => setShowNotifications(false)} />}
+
+      {showDepGraph && selectedProjectId && (
+        <DependencyGraph
+          projectId={selectedProjectId}
+          focusIssueId={depGraphFocusId}
+          onClose={() => { setShowDepGraph(false); setDepGraphFocusId(undefined); }}
+          onClickIssue={(id) => { setShowDepGraph(false); setDepGraphFocusId(undefined); setSelectedIssueId(id); }}
+        />
+      )}
 
       {replayIdentifier && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8">
