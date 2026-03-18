@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "@/tauri/events";
 import type { AgentMetrics, ExecutionLog } from "@/types";
 import { useAgents, useProjectMetrics } from "@/hooks/use-agents";
 import { getAgentStats, recentActivity, getIssue, deregisterAgent } from "@/tauri/commands";

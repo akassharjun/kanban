@@ -11,12 +11,12 @@ interface BoardColumnProps {
   issues: Issue[];
   allIssues?: Issue[];
   members: Member[];
-  labels: Label[];
+  getLabelsForIssue: (issueId: number) => Label[];
   onClickIssue: (issue: Issue) => void;
   onQuickCreate: (title: string) => Promise<unknown>;
 }
 
-export function BoardColumn({ status, issues, allIssues, members, labels, onClickIssue, onQuickCreate }: BoardColumnProps) {
+export function BoardColumn({ status, issues, allIssues, members, getLabelsForIssue, onClickIssue, onQuickCreate }: BoardColumnProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -72,7 +72,7 @@ export function BoardColumn({ status, issues, allIssues, members, labels, onClic
                 key={issue.id}
                 issue={issue}
                 member={getMember(issue.assignee_id)}
-                labels={labels.filter((l) => l.project_id === issue.project_id)}
+                labels={getLabelsForIssue(issue.id)}
                 issues={allIssues}
                 onClick={() => onClickIssue(issue)}
               />
