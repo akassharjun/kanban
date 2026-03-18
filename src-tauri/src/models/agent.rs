@@ -186,4 +186,5 @@ pub struct ProjectAgentConfig {
     pub max_attempts: i64,
     pub heartbeat_interval_seconds: i64,
     pub missed_heartbeats_before_offline: i64,
+    pub use_wsjf_scoring: bool,
 }

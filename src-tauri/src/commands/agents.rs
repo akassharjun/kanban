@@ -280,6 +280,7 @@ pub struct UpdateAgentConfigInput {
     pub max_attempts: Option<i64>,
     pub heartbeat_interval_seconds: Option<i64>,
     pub missed_heartbeats_before_offline: Option<i64>,
+    pub use_wsjf_scoring: Option<bool>,
 }
 
 #[tauri::command]
@@ -307,6 +308,9 @@ pub fn update_project_agent_config(state: State<AppState>, project_id: i64, inpu
         }
         if let Some(v) = input.missed_heartbeats_before_offline {
             qb.push(", missed_heartbeats_before_offline = "); qb.push_bind(v);
+        }
+        if let Some(v) = input.use_wsjf_scoring {
+            qb.push(", use_wsjf_scoring = "); qb.push_bind(v);
         }
 
         qb.push(" WHERE project_id = "); qb.push_bind(project_id);

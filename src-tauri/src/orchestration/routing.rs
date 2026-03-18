@@ -115,7 +115,8 @@ pub async fn next_task(
         return Ok(None);
     }
 
-    // 2. Query candidate tasks ordered by priority then creation time
+    // 2. Check if WSJF scoring is enabled for any project these tasks belong to
+    // Use WSJF ordering when wsjf_score is available, fall back to priority ordering
     let candidates: Vec<CandidateRow> = sqlx::query_as(
         r#"
         SELECT tc.issue_id, i.identifier, i.priority, tc.required_skills, tc.estimated_complexity
@@ -130,6 +131,8 @@ pub async fn next_task(
               AND (dtc.task_state IS NULL OR dtc.task_state NOT IN ('completed'))
           )
         ORDER BY
+          CASE WHEN i.wsjf_score IS NOT NULL THEN 0 ELSE 1 END,
+          i.wsjf_score DESC,
           CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
           i.created_at ASC
         "#,

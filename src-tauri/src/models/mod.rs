@@ -81,6 +81,11 @@ pub struct Issue {
     pub position: f64,
     pub estimate: Option<f64>,
     pub due_date: Option<String>,
+    pub business_value: Option<i64>,
+    pub time_criticality: Option<i64>,
+    pub risk_reduction: Option<i64>,
+    pub job_size: Option<i64>,
+    pub wsjf_score: Option<f64>,
     pub created_at: String,
     pub updated_at: String,
 }

@@ -47,6 +47,11 @@ export interface Issue {
   position: number;
   estimate: number | null;
   due_date: string | null;
+  business_value: number | null;
+  time_criticality: number | null;
+  risk_reduction: number | null;
+  job_size: number | null;
+  wsjf_score: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -267,4 +272,27 @@ export interface ProjectAgentConfig {
   max_attempts: number;
   heartbeat_interval_seconds: number;
   missed_heartbeats_before_offline: number;
+  use_wsjf_scoring: boolean;
+}
+
+export interface WsjfScore {
+  issue_id: number;
+  identifier: string;
+  title: string;
+  business_value: number;
+  time_criticality: number;
+  risk_reduction: number;
+  job_size: number;
+  wsjf_score: number;
+  priority: string;
+}
+
+export interface AutoScoreResult {
+  issue_id: number;
+  business_value: number;
+  time_criticality: number;
+  risk_reduction: number;
+  job_size: number;
+  wsjf_score: number;
+  reasoning: string;
 }

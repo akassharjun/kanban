@@ -23,6 +23,8 @@ import type {
   TaskGraph,
   ProjectAgentConfig,
   Hook,
+  WsjfScore,
+  AutoScoreResult,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -244,3 +246,16 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// WSJF Scoring
+export const setWsjfScores = (input: {
+  issue_id: number;
+  business_value: number;
+  time_criticality: number;
+  risk_reduction: number;
+  job_size: number;
+}) => invoke<WsjfScore>("set_wsjf_scores", { input });
+export const autoScoreIssue = (issueId: number) => invoke<AutoScoreResult>("auto_score_issue", { issueId });
+export const getRankedBacklog = (projectId: number) => invoke<WsjfScore[]>("get_ranked_backlog", { projectId });
+export const autoScoreProject = (projectId: number) => invoke<AutoScoreResult[]>("auto_score_project", { projectId });
+export const recalculateScores = (projectId: number) => invoke<WsjfScore[]>("recalculate_scores", { projectId });

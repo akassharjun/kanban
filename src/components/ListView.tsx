@@ -11,7 +11,7 @@ interface ListViewProps {
   onClickIssue: (issue: Issue) => void;
 }
 
-type SortField = "identifier" | "title" | "priority" | "status" | "assignee" | "created_at" | "updated_at" | "due_date";
+type SortField = "identifier" | "title" | "priority" | "status" | "assignee" | "created_at" | "updated_at" | "due_date" | "wsjf_score";
 
 const priorityOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3, none: 4 };
 const priorityConfig: Record<string, { icon: React.ElementType; color: string; label: string }> = {
@@ -40,6 +40,7 @@ export function ListView({ issues, statuses, members, onClickIssue }: ListViewPr
         case "created_at": cmp = a.created_at.localeCompare(b.created_at); break;
         case "updated_at": cmp = a.updated_at.localeCompare(b.updated_at); break;
         case "due_date": cmp = (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999"); break;
+        case "wsjf_score": cmp = (a.wsjf_score ?? -1) - (b.wsjf_score ?? -1); break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -70,6 +71,7 @@ export function ListView({ issues, statuses, members, onClickIssue }: ListViewPr
                 ["title", "Title"],
                 ["status", "Status"],
                 ["assignee", "Assignee"],
+                ["wsjf_score", "WSJF"],
                 ["due_date", "Due Date"],
                 ["updated_at", "Updated"],
               ] as [SortField, string][]
@@ -121,6 +123,21 @@ export function ListView({ issues, statuses, members, onClickIssue }: ListViewPr
                       </div>
                       <span>{member.display_name || member.name}</span>
                     </div>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  {issue.wsjf_score != null ? (
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-1.5 w-12 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-primary"
+                          style={{ width: `${Math.min(100, (issue.wsjf_score / 10) * 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-medium">{issue.wsjf_score.toFixed(1)}</span>
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground/40">-</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-muted-foreground">{issue.due_date || "-"}</td>

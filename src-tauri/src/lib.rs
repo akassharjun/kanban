@@ -192,6 +192,12 @@ pub fn run_gui(database_url: Option<String>) {
             commands::task_contracts::task_graph,
             commands::task_contracts::project_metrics,
             commands::task_contracts::agent_metrics_cmd,
+            // WSJF Scoring
+            commands::scoring::set_wsjf_scores,
+            commands::scoring::auto_score_issue,
+            commands::scoring::get_ranked_backlog,
+            commands::scoring::auto_score_project,
+            commands::scoring::recalculate_scores,
             // Execution Logs
             commands::execution_logs::log_task_activity,
             commands::execution_logs::task_replay,

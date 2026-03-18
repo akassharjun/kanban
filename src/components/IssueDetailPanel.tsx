@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown } from "lucide-react";
+import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, Zap, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -81,6 +81,11 @@ export function IssueDetailPanel({
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
   const [showTaskContractDialog, setShowTaskContractDialog] = useState(false);
+  const [showWsjf, setShowWsjf] = useState(false);
+  const [wsjfBv, setWsjfBv] = useState(5);
+  const [wsjfTc, setWsjfTc] = useState(5);
+  const [wsjfRr, setWsjfRr] = useState(5);
+  const [wsjfSize, setWsjfSize] = useState(5);
 
   const loadIssue = useCallback(async () => {
     try {
@@ -88,6 +93,10 @@ export function IssueDetailPanel({
       setIssue(data);
       setTitle(data.title);
       setDesc(data.description || "");
+      if (data.business_value != null) setWsjfBv(data.business_value);
+      if (data.time_criticality != null) setWsjfTc(data.time_criticality);
+      if (data.risk_reduction != null) setWsjfRr(data.risk_reduction);
+      if (data.job_size != null) setWsjfSize(data.job_size);
       const [acts, subs, comms] = await Promise.all([
         api.getActivityLog(issueId),
         api.getSubIssues(issueId),
@@ -363,8 +372,84 @@ export function IssueDetailPanel({
           </div>
         </div>
 
+        {/* WSJF Scoring */}
+        <div className="mt-4 border-t border-border/50 px-5 pt-3">
+          <button
+            onClick={() => setShowWsjf(!showWsjf)}
+            className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          >
+            <ChevronRight className={cn("h-3 w-3 transition-transform", showWsjf && "rotate-90")} />
+            WSJF Score
+            {issue.wsjf_score != null && (
+              <span className="ml-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary normal-case tracking-normal">
+                {issue.wsjf_score.toFixed(1)}
+              </span>
+            )}
+          </button>
+          {showWsjf && (
+            <div className="mt-3 space-y-3">
+              {(
+                [
+                  ["Business Value", wsjfBv, setWsjfBv, "How much value to users/business"],
+                  ["Time Criticality", wsjfTc, setWsjfTc, "How urgent based on deadlines"],
+                  ["Risk Reduction", wsjfRr, setWsjfRr, "Risk/opportunity if done"],
+                  ["Job Size", wsjfSize, setWsjfSize, "Effort required (higher = bigger)"],
+                ] as [string, number, (v: number) => void, string][]
+              ).map(([label, value, setter, tooltip]) => (
+                <div key={label} className="flex items-center gap-3">
+                  <span className="w-28 text-[12px] text-muted-foreground/70" title={tooltip}>{label}</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    value={value}
+                    onChange={(e) => setter(Number(e.target.value))}
+                    className="h-1.5 flex-1 appearance-none rounded-full bg-muted accent-primary"
+                  />
+                  <span className="w-6 text-center text-[12px] font-medium">{value}</span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-1">
+                <div className="text-[12px] text-muted-foreground/70">
+                  Score: <span className="font-bold text-foreground">{wsjfSize > 0 ? ((wsjfBv + wsjfTc + wsjfRr) / wsjfSize).toFixed(2) : "0.00"}</span>
+                  <span className="ml-1 text-[10px] text-muted-foreground/50">= ({wsjfBv}+{wsjfTc}+{wsjfRr}) / {wsjfSize}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={async () => {
+                    try {
+                      await api.setWsjfScores({ issue_id: issueId, business_value: wsjfBv, time_criticality: wsjfTc, risk_reduction: wsjfRr, job_size: wsjfSize });
+                      await loadIssue();
+                    } catch (e) { console.error("Failed to set WSJF", e); }
+                  }}
+                  className="rounded-md bg-primary/10 px-3 py-1.5 text-[11px] font-medium text-primary hover:bg-primary/20 transition-colors"
+                >
+                  Save Score
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const result = await api.autoScoreIssue(issueId);
+                      setWsjfBv(result.business_value);
+                      setWsjfTc(result.time_criticality);
+                      setWsjfRr(result.risk_reduction);
+                      setWsjfSize(result.job_size);
+                      await loadIssue();
+                    } catch (e) { console.error("Failed to auto-score", e); }
+                  }}
+                  className="flex items-center gap-1 rounded-md border border-border/50 px-3 py-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <Zap className="h-3 w-3" />
+                  Auto Score
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Description */}
-        <div className="mt-6 border-t border-border/50 px-5 pt-4">
+        <div className="mt-4 border-t border-border/50 px-5 pt-4">
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">Description</h3>
           {editingDesc ? (
             <textarea

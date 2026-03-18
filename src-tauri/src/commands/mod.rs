@@ -10,6 +10,7 @@ pub mod members;
 pub mod notifications;
 pub mod projects;
 pub mod relations;
+pub mod scoring;
 pub mod statuses;
 pub mod task_contracts;
 pub mod templates;

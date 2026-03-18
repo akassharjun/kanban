@@ -53,6 +53,11 @@ CREATE TABLE IF NOT EXISTS issues (
     position REAL NOT NULL DEFAULT 0,
     estimate REAL,
     due_date TEXT,
+    business_value INTEGER,
+    time_criticality INTEGER,
+    risk_reduction INTEGER,
+    job_size INTEGER,
+    wsjf_score REAL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -243,5 +248,6 @@ CREATE TABLE IF NOT EXISTS project_agent_config (
     human_review_threshold REAL NOT NULL DEFAULT 0.50,
     max_attempts INTEGER NOT NULL DEFAULT 3,
     heartbeat_interval_seconds INTEGER NOT NULL DEFAULT 60,
-    missed_heartbeats_before_offline INTEGER NOT NULL DEFAULT 3
+    missed_heartbeats_before_offline INTEGER NOT NULL DEFAULT 3,
+    use_wsjf_scoring INTEGER NOT NULL DEFAULT 0
 );
