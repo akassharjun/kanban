@@ -15,6 +15,10 @@ cask "kanban" do
 
   app "Kanban.app"
 
+  postflight do
+    system "xattr", "-d", "com.apple.quarantine", "#{appdir}/Kanban.app"
+  end
+
   zap trash: [
     "~/.kanban",
     "~/Library/Caches/com.kanban.desktop",
