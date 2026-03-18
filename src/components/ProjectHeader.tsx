@@ -30,39 +30,30 @@ export function ProjectHeader({
   onToggleTheme,
 }: ProjectHeaderProps) {
   return (
-    <div className="flex items-center justify-between border-b border-border px-4 py-2">
+    <div className="flex items-center justify-between px-4 py-3">
       <div className="flex items-center gap-3">
-        <span className="text-base">{project.icon || "📋"}</span>
-        <h1 className="text-sm font-semibold">{project.name}</h1>
+        <span className="text-lg">{project.icon || "📋"}</span>
+        <h1 className="text-sm font-semibold tracking-tight">{project.name}</h1>
 
-        <div className="ml-4 flex items-center rounded-md border border-border">
-          <button
-            onClick={() => onViewModeChange("board")}
-            className={cn(
-              "flex items-center gap-1 px-2.5 py-1 text-xs transition-colors rounded-l-md",
-              viewMode === "board" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <LayoutGrid className="h-3.5 w-3.5" /> Board
-          </button>
-          <button
-            onClick={() => onViewModeChange("list")}
-            className={cn(
-              "flex items-center gap-1 px-2.5 py-1 text-xs transition-colors",
-              viewMode === "list" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <List className="h-3.5 w-3.5" /> List
-          </button>
-          <button
-            onClick={() => onViewModeChange("tree")}
-            className={cn(
-              "flex items-center gap-1 px-2.5 py-1 text-xs transition-colors rounded-r-md",
-              viewMode === "tree" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <TreePine className="h-3.5 w-3.5" /> Tree
-          </button>
+        <div className="ml-3 flex items-center rounded-lg bg-muted/50 p-0.5">
+          {([
+            { mode: "board" as const, icon: LayoutGrid, label: "Board" },
+            { mode: "list" as const, icon: List, label: "List" },
+            { mode: "tree" as const, icon: TreePine, label: "Tree" },
+          ]).map(({ mode, icon: Icon, label }) => (
+            <button
+              key={mode}
+              onClick={() => onViewModeChange(mode)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all",
+                viewMode === mode
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" /> {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -94,7 +85,7 @@ export function ProjectHeader({
           </Button>
         </Tooltip>
 
-        <Button size="sm" onClick={onCreateIssue} className="ml-1">
+        <Button size="sm" onClick={onCreateIssue} className="ml-1.5 rounded-lg">
           <Plus className="h-3.5 w-3.5 mr-1" /> Issue
         </Button>
       </div>

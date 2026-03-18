@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "./tauri/events";
 import { Sidebar } from "./components/Sidebar";
 import { ProjectHeader, type ViewMode } from "./components/ProjectHeader";
 import { Button } from "./components/ui/button";
@@ -22,6 +22,7 @@ import { useIssues } from "./hooks/use-issues";
 import { useMembers } from "./hooks/use-members";
 import { useStatuses } from "./hooks/use-statuses";
 import { useLabels } from "./hooks/use-labels";
+import { useIssueLabelMap } from "./hooks/use-issue-labels";
 import { useAgents } from "./hooks/use-agents";
 import * as api from "./tauri/commands";
 import type { IssueTemplate } from "./types";
@@ -60,6 +61,7 @@ function App() {
   const { members, create: createMember, update: updateMember, remove: deleteMember } = useMembers();
   const { statuses, refresh: refreshStatuses } = useStatuses(selectedProjectId);
   const { labels, refresh: refreshLabels } = useLabels(selectedProjectId);
+  const { getLabelsForIssue, refresh: refreshIssueLabelMap } = useIssueLabelMap(selectedProjectId, labels);
   const { agents: allAgents } = useAgents();
   const onlineAgentCount = allAgents.filter(a => a.status !== "offline").length;
 
@@ -144,9 +146,10 @@ function App() {
       refreshIssues();
       refreshStatuses();
       refreshLabels();
+      refreshIssueLabelMap();
     });
     return () => { unlisten.then(fn => fn()); };
-  }, [refreshProjects, refreshIssues, refreshStatuses, refreshLabels]);
+  }, [refreshProjects, refreshIssues, refreshStatuses, refreshLabels, refreshIssueLabelMap]);
 
   const handleQuickCreate = async (statusId: number, title: string) => {
     if (!selectedProjectId) return;
@@ -181,6 +184,7 @@ function App() {
       <Sidebar
         projects={projects}
         selectedProjectId={selectedProjectId}
+        activePage={page}
         onSelectProject={handleSelectProject}
         onCreateProject={() => setShowCreateProject(true)}
         onOpenMembers={() => { setPage("members"); setSelectedIssueId(null); }}
@@ -221,6 +225,7 @@ function App() {
                   statuses={statuses}
                   members={members}
                   labels={labels}
+                  getLabelsForIssue={getLabelsForIssue}
                   onUpdateIssue={updateIssue}
                   onClickIssue={(issue) => setSelectedIssueId(issue.id)}
                   onQuickCreate={handleQuickCreate}

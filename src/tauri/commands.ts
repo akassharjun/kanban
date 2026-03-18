@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { isTauri, mockInvoke } from "./mock-backend";
 import type {
   Project,
   Status,
@@ -23,6 +24,13 @@ import type {
   ProjectAgentConfig,
   Hook,
 } from "@/types";
+
+// Use real Tauri invoke when in Tauri, mock otherwise
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function invoke<T>(cmd: string, args?: Record<string, any>): Promise<T> {
+  if (isTauri) return tauriInvoke<T>(cmd, args);
+  return mockInvoke(cmd, args) as Promise<T>;
+}
 
 // Health
 export const healthCheck = () => invoke<string>("health_check");
@@ -109,6 +117,7 @@ export const bulkUpdateIssues = (input: {
 export const searchIssues = (projectId: number, query: string) => invoke<Issue[]>("search_issues", { projectId, query });
 export const getSubIssues = (parentId: number) => invoke<Issue[]>("get_sub_issues", { parentId });
 export const setIssueLabels = (issueId: number, labelIds: number[]) => invoke<void>("set_issue_labels", { issueId, labelIds });
+export const listIssueLabelMappings = (projectId: number) => invoke<{ issue_id: number; label_id: number }[]>("list_issue_label_mappings", { projectId });
 export const getActivityLog = (issueId: number) => invoke<ActivityLogEntry[]>("get_activity_log", { issueId });
 
 // Members

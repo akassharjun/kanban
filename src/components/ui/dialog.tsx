@@ -11,7 +11,7 @@ const DialogOverlay = React.forwardRef<HTMLDivElement, DialogOverlayProps>(
     <div
       ref={ref}
       className={cn(
-        "fixed inset-0 z-50 flex items-center justify-center bg-black/50",
+        "fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm",
         className
       )}
       onClick={onClose}
@@ -30,7 +30,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
     <div
       ref={ref}
       className={cn(
-        "w-[520px] rounded-lg border border-border bg-card p-6 shadow-xl max-h-[85vh] overflow-y-auto",
+        "w-[520px] rounded-xl border border-border/50 bg-card p-6 shadow-2xl max-h-[85vh] overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-150",
         className
       )}
       onClick={(e) => e.stopPropagation()}
@@ -48,11 +48,11 @@ interface DialogHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
 
 function DialogHeader({ className, children, onClose, ...props }: DialogHeaderProps) {
   return (
-    <div className={cn("flex items-center justify-between mb-4", className)} {...props}>
+    <div className={cn("flex items-center justify-between mb-5", className)} {...props}>
       <div className="flex-1">{children}</div>
       {onClose && (
-        <button onClick={onClose} className="rounded p-1 hover:bg-accent">
-          <X className="h-4 w-4" />
+        <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-muted transition-colors">
+          <X className="h-4 w-4 text-muted-foreground" />
         </button>
       )}
     </div>

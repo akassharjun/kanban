@@ -40,6 +40,8 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        sidebar: "hsl(var(--sidebar))",
+        column: "hsl(var(--column))",
       },
       borderRadius: {
         lg: "var(--radius)",

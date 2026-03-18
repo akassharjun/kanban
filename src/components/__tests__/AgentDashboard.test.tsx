@@ -32,11 +32,11 @@ describe("AgentDashboard", () => {
 
   it("renders 'No agents registered' when empty", () => {
     render(<AgentDashboard projectId={1} />);
-    expect(screen.getByText("No agents registered.")).toBeInTheDocument();
+    expect(screen.getByText("No agents registered")).toBeInTheDocument();
   });
 
-  it("renders show inactive toggle", () => {
+  it("renders agents section header", () => {
     render(<AgentDashboard projectId={1} />);
-    expect(screen.getByText("Show inactive")).toBeInTheDocument();
+    expect(screen.getByText("Agents")).toBeInTheDocument();
   });
 });
