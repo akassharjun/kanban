@@ -7,6 +7,7 @@ pub mod hooks;
 pub mod issues;
 pub mod labels;
 pub mod members;
+pub mod mentions;
 pub mod notifications;
 pub mod projects;
 pub mod relations;

@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Plus, Pencil, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Project, Status, Label, IssueTemplate, Hook, ProjectAgentConfig } from "@/types";
+import type { Project, Status, Label, Member, IssueTemplate, Hook, ProjectAgentConfig } from "@/types";
 import * as api from "@/tauri/commands";
+import { AuditLogView } from "./AuditLogView";
 
 export interface ProjectSettingsViewProps {
   project: Project;
@@ -12,7 +13,7 @@ export interface ProjectSettingsViewProps {
   onDeleteProject?: (id: number) => Promise<unknown>;
 }
 
-type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents";
+type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents" | "audit";
 
 const statusCategories = [
   { value: "unstarted", label: "Unstarted" },
@@ -36,6 +37,7 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
   const [hooks, setHooks] = useState<Hook[]>([]);
   const [agentConfig, setAgentConfig] = useState<ProjectAgentConfig | null>(null);
   const [agentConfigSaving, setAgentConfigSaving] = useState(false);
+  const [members, setMembers] = useState<Member[]>([]);
   const [path, setPath] = useState(project.path || "");
 
   // General form
@@ -74,18 +76,20 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
   }, [project.id]);
 
   const loadData = async () => {
-    const [s, l, t, h, ac] = await Promise.all([
+    const [s, l, t, h, ac, m] = await Promise.all([
       api.listStatuses(project.id),
       api.listLabels(project.id),
       api.listTemplates(project.id),
       api.listHooks(project.id),
       api.getProjectAgentConfig(project.id),
+      api.listMembers(),
     ]);
     setStatuses(s);
     setLabels(l);
     setTemplates(t);
     setHooks(h);
     setAgentConfig(ac);
+    setMembers(m);
   };
 
   const handleSaveGeneral = async () => {
@@ -196,6 +200,7 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     { value: "templates", label: "Templates" },
     { value: "hooks", label: "Hooks" },
     { value: "agents", label: "Agent Config" },
+    { value: "audit", label: "Audit Log" },
   ];
 
   const handleSaveAgentConfig = async () => {
@@ -538,6 +543,12 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
         )}
         {tab === "agents" && !agentConfig && (
           <div className="py-8 text-center text-sm text-muted-foreground">Loading agent configuration...</div>
+        )}
+
+        {tab === "audit" && (
+          <div className="-mx-6 -mb-6" style={{ height: "calc(100vh - 200px)" }}>
+            <AuditLogView projectId={project.id} statuses={statuses} members={members} />
+          </div>
         )}
       </div>
     </div>

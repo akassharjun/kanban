@@ -108,10 +108,27 @@ CREATE TABLE IF NOT EXISTS activity_log (
     field_changed TEXT NOT NULL,
     old_value TEXT,
     new_value TEXT,
+    actor_id INTEGER REFERENCES members(id),
+    actor_type TEXT DEFAULT 'user',
     timestamp TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_activity_issue ON activity_log(issue_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_actor ON activity_log(actor_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_timestamp ON activity_log(timestamp);
+
+-- Mentions
+CREATE TABLE IF NOT EXISTS mentions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    comment_id INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+    member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    source TEXT NOT NULL CHECK(source IN ('description', 'comment')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_mentions_member ON mentions(member_id);
+CREATE INDEX IF NOT EXISTS idx_mentions_issue ON mentions(issue_id);
 
 -- Undo Log
 CREATE TABLE IF NOT EXISTS undo_log (

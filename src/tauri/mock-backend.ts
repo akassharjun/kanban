@@ -4,7 +4,8 @@
  */
 import type {
   Project, Status, Issue, Label, Member, Comment,
-  ActivityLogEntry, Notification, Agent, AgentMetrics,
+  ActivityLogEntry, AuditLogEntry, IssueHistoryEntry, MentionEntry,
+  Notification, Agent, AgentMetrics,
   ProjectMetrics, CustomField, IssueTemplate, Hook,
   ProjectAgentConfig, FullTaskContract, ExecutionLog, TaskGraph,
   IssueWithLabels, UndoLogEntry,
@@ -274,7 +275,24 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
       }
       return mappings;
     }
-    case "get_activity_log": return [] as ActivityLogEntry[];
+    case "get_activity_log": return [
+      { id: 1, issue_id: args?.issueId ?? 0, field_changed: "status_id", old_value: "1", new_value: "3", actor_id: 1, actor_type: "user", timestamp: ago(100) },
+      { id: 2, issue_id: args?.issueId ?? 0, field_changed: "priority", old_value: "medium", new_value: "high", actor_id: 2, actor_type: "agent", timestamp: ago(200) },
+    ] as ActivityLogEntry[];
+    case "get_audit_log": return [
+      { id: 1, issue_id: 6, issue_identifier: "KAN-6", issue_title: "Fix drag-drop position calculation", field_changed: "status_id", old_value: "1", new_value: "3", actor_id: 2, actor_type: "agent", actor_name: "Claude", actor_avatar_color: "#f59e0b", timestamp: ago(100) },
+      { id: 2, issue_id: 7, issue_identifier: "KAN-7", issue_title: "Improve issue detail panel UX", field_changed: "priority", old_value: "medium", new_value: "high", actor_id: 1, actor_type: "user", actor_name: "Arjun", actor_avatar_color: "#6366f1", timestamp: ago(200) },
+    ] as AuditLogEntry[];
+    case "get_issue_history": return [
+      { id: 1, issue_id: args?.issueId ?? 0, field_changed: "status_id", old_value: "1", new_value: "3", actor_id: 1, actor_type: "user", actor_name: "Arjun", actor_avatar_color: "#6366f1", timestamp: ago(100) },
+      { id: 2, issue_id: args?.issueId ?? 0, field_changed: "priority", old_value: "medium", new_value: "high", actor_id: 2, actor_type: "agent", actor_name: "Claude", actor_avatar_color: "#f59e0b", timestamp: ago(200) },
+      { id: 3, issue_id: args?.issueId ?? 0, field_changed: "title", old_value: "Old title", new_value: "New title", actor_id: 1, actor_type: "user", actor_name: "Arjun", actor_avatar_color: "#6366f1", timestamp: ago(300) },
+    ] as IssueHistoryEntry[];
+    case "list_mentions": return [] as MentionEntry[];
+    case "search_members_for_mention": {
+      const q = (args?.query ?? "").toLowerCase();
+      return members.filter(m => m.name.toLowerCase().includes(q) || (m.display_name ?? "").toLowerCase().includes(q));
+    }
 
     // Members
     case "list_members": return [...members];

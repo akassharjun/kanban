@@ -125,6 +125,8 @@ pub fn run_gui(database_url: Option<String>) {
             commands::issues::get_sub_issues,
             commands::issues::set_issue_labels,
             commands::issues::get_activity_log,
+            commands::issues::get_audit_log,
+            commands::issues::get_issue_history,
             // Members
             commands::members::list_members,
             commands::members::create_member,
@@ -159,6 +161,9 @@ pub fn run_gui(database_url: Option<String>) {
             commands::comments::update_comment,
             commands::comments::delete_comment,
             commands::comments::comment_count,
+            // Mentions
+            commands::mentions::list_mentions,
+            commands::mentions::search_members_for_mention,
             // Custom Fields
             commands::custom_fields::list_custom_fields,
             commands::custom_fields::create_custom_field,
