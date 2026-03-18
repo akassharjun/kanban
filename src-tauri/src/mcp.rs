@@ -540,7 +540,10 @@ fn tools_list() -> Vec<Value> {
             "Get file heat map showing files ranked by issue count",
             json!({
                 "project_id": prop("number", "Project ID"),
-                "limit": prop("number", "Max results (default: 20)")
+                "limit": prop("number", "Max results (default: 20)"),
+            }),
+            vec!["project_id"],
+        ),
         // WSJF Scoring
         tool_def(
             "set_wsjf",
@@ -696,7 +699,10 @@ fn tools_list() -> Vec<Value> {
             "list_pipelines",
             "List multi-agent pipelines for a project",
             json!({
-                "project_id": prop("number", "Project ID")
+                "project_id": prop("number", "Project ID"),
+            }),
+            vec!["project_id"],
+        ),
         tool_def(
             "check_budget",
             "Check budget status and alerts for a project",
@@ -2596,6 +2602,23 @@ async fn handle_tool_call(
             let link_type = args.get("link_type").and_then(|v| v.as_str()).unwrap_or("related");
 
             let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
+                .bind(identifier)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO issue_file_links (issue_id, file_path, link_type) VALUES ($1, $2, $3) RETURNING id",
+            )
+            .bind(issue_id)
+            .bind(file_path)
+            .bind(link_type)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            notify_change();
+            Ok(json!({"id": id, "issue_id": issue_id, "file_path": file_path, "link_type": link_type}))
+        }
         "set_wsjf" => {
             let identifier = args["identifier"].as_str().ok_or("identifier required")?;
             let bv = args["business_value"].as_i64().ok_or("business_value required")? as i32;
@@ -2609,12 +2632,23 @@ async fn handle_tool_call(
                 .await
                 .map_err(|e| e.to_string())?;
 
-            let id: i64 = sqlx::query_scalar(
-                "INSERT INTO issue_file_links (issue_id, file_path, link_type) VALUES ($1, $2, $3) RETURNING id",
+            let bv = bv.max(1).min(10);
+            let tc = tc.max(1).min(10);
+            let rr = rr.max(1).min(10);
+            let size = size.max(1).min(10);
+            let score = (bv as f64 + tc as f64 + rr as f64) / size as f64;
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+            sqlx::query(
+                "UPDATE issues SET business_value = $1, time_criticality = $2, risk_reduction = $3, job_size = $4, wsjf_score = $5, updated_at = $6 WHERE id = $7"
             )
-            .bind(issue_id)
-            .bind(file_path)
-            .bind(link_type)
+            .bind(bv).bind(tc).bind(rr).bind(size).bind(score).bind(&now).bind(issue.id)
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            notify_change();
+            Ok(json!({"identifier": identifier, "business_value": bv, "time_criticality": tc, "risk_reduction": rr, "job_size": size, "wsjf_score": score}))
+        }
         // Pipeline tools
         "list_pipelines" => {
             let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
@@ -2644,6 +2678,13 @@ async fn handle_tool_call(
             .bind(description)
             .bind(&stages_str)
             .bind(&now)
+            .bind(&now)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            notify_change();
+            Ok(json!({"id": id, "name": name, "project_id": project_id}))
+        }
         // Cost tracking
         "record_cost" => {
             let task_identifier = args["task_identifier"].as_str().ok_or("task_identifier required")?;
@@ -2667,11 +2708,9 @@ async fn handle_tool_call(
             .fetch_one(pool)
             .await
             .map_err(|e| e.to_string())?;
-
-            let link = sqlx::query_as::<_, crate::models::IssueFileLink>(
-                "SELECT * FROM issue_file_links WHERE id = $1",
-            let pipeline = sqlx::query_as::<_, crate::commands::pipelines::Pipeline>(
-                "SELECT * FROM pipelines WHERE id = $1",
+            notify_change();
+            Ok(json!({"id": id, "task_identifier": task_identifier, "cost_type": cost_type, "amount": amount}))
+        }
         "list_permissions" => {
             use crate::commands::permissions::AgentPermission;
             let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
@@ -3418,25 +3457,15 @@ async fn handle_tool_call(
             .await
             .map_err(|e| e.to_string())?;
 
-            let mut results = Vec::new();
-            for issue in &unscored {
-                let result = crate::commands::scoring::auto_score_issue_standalone(pool, issue.id)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                results.push(json!(result));
-            }
+            let events = sqlx::query_as::<_, crate::commands::sla::SlaEvent>(
+                "SELECT se.* FROM sla_events se JOIN sla_policies sp ON se.sla_policy_id = sp.id WHERE sp.project_id = $1 ORDER BY se.created_at DESC LIMIT 50"
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
-            Ok(json!(results))
-        }
-            let stages: Vec<Value> = serde_json::from_str(&pipeline.stages).unwrap_or_default();
-            Ok(json!({
-                "run": run,
-                "pipeline_name": pipeline.name,
-                "total_stages": stages.len(),
-                "stages": stages,
-            }))
-        }
-            Ok(json!(perm))
+            Ok(json!({"policies": policies, "recent_events": events}))
         }
         "check_permission" => {
             let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
@@ -3450,15 +3479,6 @@ async fn handle_tool_call(
             .map_err(|e| e.to_string())?;
 
             Ok(json!(result))
-            let events = sqlx::query_as::<_, crate::commands::sla::SlaEvent>(
-                "SELECT se.* FROM sla_events se JOIN sla_policies sp ON se.sla_policy_id = sp.id WHERE sp.project_id = $1 ORDER BY se.created_at DESC LIMIT 50"
-            )
-            .bind(project_id)
-            .fetch_all(pool)
-            .await
-            .map_err(|e| e.to_string())?;
-
-            Ok(json!({"policies": policies, "recent_events": events}))
         }
         _ => Err(format!("Unknown tool: {}", name)),
     }

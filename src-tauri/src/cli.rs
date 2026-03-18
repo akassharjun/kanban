@@ -79,6 +79,7 @@ pub enum Commands {
     Marketplace {
         #[command(subcommand)]
         action: MarketplaceAction,
+    },
     /// Manage multi-agent pipelines
     Pipeline {
         #[command(subcommand)]
@@ -253,6 +254,7 @@ pub enum IssueAction {
         description: Option<String>,
         #[arg(long)]
         assignee: Option<i64>,
+    },
     /// Set WSJF scores for an issue
     Score {
         identifier: String,
@@ -1316,7 +1318,6 @@ async fn handle_issue(
             notify_change();
         }
         IssueAction::Triage { identifier, apply } => {
-        IssueAction::Score { identifier, bv, tc, rr, size } => {
             let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                 .bind(&identifier)
                 .fetch_one(pool)
@@ -1492,6 +1493,15 @@ async fn handle_issue(
                 }
                 if let Some(aid) = suggestion.suggested_assignee_id {
                     println!("  Assignee: {}", aid);
+                }
+            }
+            notify_change();
+        }
+        IssueAction::Score { identifier, bv, tc, rr, size } => {
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
+                .bind(&identifier)
+                .fetch_one(pool)
+                .await?;
             let bv = bv.max(1).min(10);
             let tc = tc.max(1).min(10);
             let rr = rr.max(1).min(10);
@@ -3915,6 +3925,13 @@ async fn handle_code(
             } else {
                 for i in &issues {
                     println!("{} | {} | {}", i.identifier, i.title, i.priority);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 // ---- Cost Tracking ----
 
 use crate::commands::costs::{TaskCost, CostBudget};
