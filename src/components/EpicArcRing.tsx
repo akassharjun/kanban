@@ -14,7 +14,7 @@ const sizeConfig = {
 export function EpicArcRing({
   total,
   completed,
-  blocked = 0,
+  blocked: _blocked = 0,
   size = "lg",
 }: EpicArcRingProps) {
   const config = sizeConfig[size];

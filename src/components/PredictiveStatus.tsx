@@ -20,7 +20,7 @@ export function PredictiveStatus({
     const estimate = async () => {
       try {
         const perf = await api.getAgentPerformance(agentId);
-        if (perf.tasks_completed < 3) return;
+        if (perf.completed < 3) return;
 
         const due = new Date(dueDate).getTime();
         const now = Date.now();

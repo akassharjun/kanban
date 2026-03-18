@@ -11,8 +11,9 @@ import { IssueHistoryPanel } from "./IssueHistoryPanel";
 import { MentionInput, MentionText } from "./MentionInput";
 import { ReviewToolbar } from "./ReviewToolbar";
 import { AttemptTabs } from "./AttemptTabs";
-import { DiffPreview } from "./DiffPreview";
-import { useExecutionLogs } from "@/hooks/use-execution-logs";
+// DiffPreview and useExecutionLogs available for future per-attempt diff view
+// import { DiffPreview } from "./DiffPreview";
+// import { useExecutionLogs } from "@/hooks/use-execution-logs";
 
 interface IssueDetailPanelProps {
   issueId: number;
