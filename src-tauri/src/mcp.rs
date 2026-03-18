@@ -2443,6 +2443,7 @@ async fn handle_tool_call(
             ).await?;
             notify_change();
             Ok(json!(issue))
+        }
         "marketplace_register" => {
             let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
             let name = args["name"].as_str().ok_or("name required")?;
