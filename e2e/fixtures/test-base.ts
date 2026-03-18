@@ -7,8 +7,9 @@ import { test as base, expect, type Page } from "@playwright/test";
  */
 export async function appReady(page: Page) {
   await page.goto("/");
-  // Wait for the sidebar to render with the first project name
-  await page.getByText("Kanban Core").waitFor({ state: "visible", timeout: 10_000 });
+  // Wait for the sidebar to render with the first project name.
+  // Use .first() because "Kanban Core" appears in both the sidebar button and the project heading.
+  await page.getByText("Kanban Core").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
 export { base as test, expect };
