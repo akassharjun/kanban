@@ -7,7 +7,7 @@ import type {
   ActivityLogEntry, Notification, Agent, AgentMetrics,
   ProjectMetrics, CustomField, IssueTemplate, Hook,
   ProjectAgentConfig, FullTaskContract, ExecutionLog, TaskGraph,
-  IssueWithLabels, UndoLogEntry,
+  IssueWithLabels, UndoLogEntry, SavedView,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -114,6 +114,25 @@ const agents: Agent[] = [
   { id: "claude-opus-1", name: "Claude Opus", agent_type: "implementation", skills: ["rust", "typescript", "react", "sql"], task_types: ["implementation", "review"], max_concurrent: 3, max_complexity: "high", member_id: 2, worktree_path: "/tmp/kanban-wt-1", status: "busy", registered_at: ago(5000), last_heartbeat: ago(1), last_activity_at: ago(2) },
   { id: "review-bot-1", name: "Review Bot", agent_type: "review", skills: ["code-review", "testing"], task_types: ["review", "testing"], max_concurrent: 5, max_complexity: "medium", member_id: 3, worktree_path: null, status: "idle", registered_at: ago(3000), last_heartbeat: ago(5), last_activity_at: ago(60) },
   { id: "research-agent-1", name: "Research Agent", agent_type: "research", skills: ["analysis", "documentation"], task_types: ["research", "decomposition"], max_concurrent: 2, max_complexity: "low", member_id: null, worktree_path: null, status: "offline", registered_at: ago(2000), last_heartbeat: ago(600), last_activity_at: ago(500) },
+];
+
+const savedViews: SavedView[] = [
+  { id: 1, project_id: 1, name: "My Open Issues", filters: '{"assignee_id":1}', sort_by: "priority", sort_direction: "desc", view_mode: "board", created_at: ago(2000), updated_at: ago(100) },
+  { id: 2, project_id: 1, name: "Urgent & High Priority", filters: '{"priority":"urgent"}', sort_by: null, sort_direction: "asc", view_mode: "list", created_at: ago(1500), updated_at: ago(50) },
+];
+
+const starredIssues: { issue_id: number; member_id: number }[] = [
+  { issue_id: 6, member_id: 1 },
+  { issue_id: 7, member_id: 1 },
+  { issue_id: 3, member_id: 1 },
+];
+
+const recentlyViewed: { issue_id: number; member_id: number; viewed_at: string }[] = [
+  { issue_id: 6, member_id: 1, viewed_at: ago(2) },
+  { issue_id: 7, member_id: 1, viewed_at: ago(10) },
+  { issue_id: 9, member_id: 1, viewed_at: ago(30) },
+  { issue_id: 3, member_id: 1, viewed_at: ago(60) },
+  { issue_id: 4, member_id: 1, viewed_at: ago(120) },
 ];
 
 const notifications: Notification[] = [
@@ -356,6 +375,66 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "reject_task": return;
     case "unclaim_task": return;
     case "log_task_activity": return;
+
+    // Saved Views
+    case "list_saved_views": return savedViews.filter(v => v.project_id === args?.projectId);
+    case "create_saved_view": {
+      const sv: SavedView = { id: id(), ...args!.input, filters: args!.input.filters ?? '{}', sort_direction: args!.input.sort_direction ?? 'asc', view_mode: args!.input.view_mode ?? 'board', created_at: now, updated_at: now };
+      savedViews.push(sv);
+      return sv;
+    }
+    case "update_saved_view": {
+      const sv = savedViews.find(v => v.id === args?.id);
+      if (sv) Object.assign(sv, args!.input, { updated_at: now });
+      return sv;
+    }
+    case "delete_saved_view": {
+      const idx = savedViews.findIndex(v => v.id === args?.id);
+      if (idx >= 0) savedViews.splice(idx, 1);
+      return;
+    }
+
+    // Starred Issues
+    case "star_issue": {
+      const exists = starredIssues.find(s => s.issue_id === args?.issueId && s.member_id === args?.memberId);
+      if (!exists) starredIssues.push({ issue_id: args!.issueId, member_id: args!.memberId });
+      return;
+    }
+    case "unstar_issue": {
+      const idx = starredIssues.findIndex(s => s.issue_id === args?.issueId && s.member_id === args?.memberId);
+      if (idx >= 0) starredIssues.splice(idx, 1);
+      return;
+    }
+    case "list_starred": {
+      const starred = starredIssues.filter(s => s.member_id === args?.memberId);
+      return starred.map(s => issues.find(i => i.id === s.issue_id)).filter(Boolean);
+    }
+    case "is_starred": {
+      return starredIssues.some(s => s.issue_id === args?.issueId && s.member_id === args?.memberId);
+    }
+
+    // Recently Viewed
+    case "record_view": {
+      const existing = recentlyViewed.find(r => r.issue_id === args?.issueId && r.member_id === args?.memberId);
+      if (existing) { existing.viewed_at = now; }
+      else { recentlyViewed.push({ issue_id: args!.issueId, member_id: args!.memberId, viewed_at: now }); }
+      return;
+    }
+    case "list_recently_viewed": {
+      const limit = args?.limit ?? 10;
+      const entries = recentlyViewed
+        .filter(r => r.member_id === args?.memberId)
+        .sort((a, b) => new Date(b.viewed_at).getTime() - new Date(a.viewed_at).getTime())
+        .slice(0, limit);
+      return entries.map(r => issues.find(i => i.id === r.issue_id)).filter(Boolean);
+    }
+
+    // Advanced Search
+    case "advanced_search": {
+      const q = (args?.queryString ?? "").toLowerCase();
+      // Simple mock: just match title/identifier
+      return issues.filter(i => i.project_id === args?.projectId && (i.title.toLowerCase().includes(q) || i.identifier.toLowerCase().includes(q)));
+    }
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);

@@ -14,9 +14,11 @@ interface BoardColumnProps {
   getLabelsForIssue: (issueId: number) => Label[];
   onClickIssue: (issue: Issue) => void;
   onQuickCreate: (title: string) => Promise<unknown>;
+  isStarred?: (issueId: number) => boolean;
+  onToggleStar?: (issueId: number) => void;
 }
 
-export function BoardColumn({ status, issues, allIssues, members, getLabelsForIssue, onClickIssue, onQuickCreate }: BoardColumnProps) {
+export function BoardColumn({ status, issues, allIssues, members, getLabelsForIssue, onClickIssue, onQuickCreate, isStarred, onToggleStar }: BoardColumnProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -78,6 +80,8 @@ export function BoardColumn({ status, issues, allIssues, members, getLabelsForIs
                 labels={getLabelsForIssue(issue.id)}
                 issues={allIssues}
                 onClick={() => onClickIssue(issue)}
+                isStarred={isStarred?.(issue.id)}
+                onToggleStar={onToggleStar}
               />
             ))}
           </SortableContext>

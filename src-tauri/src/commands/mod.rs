@@ -1,3 +1,4 @@
+pub mod advanced_search;
 pub mod agents;
 pub mod comments;
 pub mod custom_fields;
@@ -9,7 +10,10 @@ pub mod labels;
 pub mod members;
 pub mod notifications;
 pub mod projects;
+pub mod recently_viewed;
 pub mod relations;
+pub mod saved_views;
+pub mod starred_issues;
 pub mod statuses;
 pub mod task_contracts;
 pub mod templates;

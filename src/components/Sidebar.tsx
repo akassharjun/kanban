@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Plus, Users, Settings, ChevronDown, FolderKanban, Bot } from "lucide-react";
+import { Plus, Users, Settings, ChevronDown, FolderKanban, Bot, Star, Clock, Bookmark, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Project } from "@/types";
+import type { Project, Issue, SavedView } from "@/types";
 
 interface SidebarProps {
   projects: Project[];
@@ -14,6 +14,13 @@ interface SidebarProps {
   onOpenAgents?: () => void;
   agentCount?: number;
   collapsed: boolean;
+  starredIssues?: Issue[];
+  recentIssues?: Issue[];
+  savedViews?: SavedView[];
+  onClickIssue?: (issue: Issue) => void;
+  onSelectSavedView?: (view: SavedView) => void;
+  onDeleteSavedView?: (id: number) => void;
+  onRenameSavedView?: (id: number, name: string) => void;
 }
 
 const navItemBase = "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors";
@@ -31,8 +38,21 @@ export function Sidebar({
   onOpenAgents,
   agentCount,
   collapsed,
+  starredIssues = [],
+  recentIssues = [],
+  savedViews = [],
+  onClickIssue,
+  onSelectSavedView,
+  onDeleteSavedView,
+  onRenameSavedView,
 }: SidebarProps) {
   const [projectsExpanded, setProjectsExpanded] = useState(true);
+  const [starredExpanded, setStarredExpanded] = useState(true);
+  const [recentExpanded, setRecentExpanded] = useState(false);
+  const [savedViewsExpanded, setSavedViewsExpanded] = useState(true);
+  const [editingViewId, setEditingViewId] = useState<number | null>(null);
+  const [editingViewName, setEditingViewName] = useState("");
+  const [viewMenuId, setViewMenuId] = useState<number | null>(null);
 
   if (collapsed) return null;
 
@@ -83,6 +103,141 @@ export function Sidebar({
           </div>
         )}
       </div>
+
+      {/* Saved Views */}
+      {savedViews.length > 0 && (
+        <div className="px-3 py-1">
+          <button
+            onClick={() => setSavedViewsExpanded(!savedViewsExpanded)}
+            className="flex w-full items-center gap-1.5 px-1 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 hover:text-muted-foreground"
+          >
+            <ChevronDown className={cn("h-3 w-3 transition-transform", !savedViewsExpanded && "-rotate-90")} />
+            <Bookmark className="h-3 w-3" />
+            Saved Views
+          </button>
+          {savedViewsExpanded && (
+            <div className="mt-0.5 space-y-0.5">
+              {savedViews.map(view => (
+                <div key={view.id} className="group relative">
+                  {editingViewId === view.id ? (
+                    <input
+                      autoFocus
+                      value={editingViewName}
+                      onChange={(e) => setEditingViewName(e.target.value)}
+                      onBlur={() => {
+                        if (editingViewName.trim() && onRenameSavedView) {
+                          onRenameSavedView(view.id, editingViewName.trim());
+                        }
+                        setEditingViewId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          if (editingViewName.trim() && onRenameSavedView) {
+                            onRenameSavedView(view.id, editingViewName.trim());
+                          }
+                          setEditingViewId(null);
+                        }
+                        if (e.key === "Escape") setEditingViewId(null);
+                      }}
+                      className="w-full rounded-lg bg-muted px-2.5 py-2 text-[13px] outline-none"
+                    />
+                  ) : (
+                    <button
+                      onClick={() => onSelectSavedView?.(view)}
+                      className={cn(navItemBase, "text-muted-foreground hover:bg-muted hover:text-foreground pr-8")}
+                    >
+                      <Bookmark className="h-3.5 w-3.5 flex-shrink-0" />
+                      <span className="truncate">{view.name}</span>
+                    </button>
+                  )}
+                  {editingViewId !== view.id && (
+                    <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setViewMenuId(viewMenuId === view.id ? null : view.id); }}
+                        className="rounded p-1 hover:bg-muted"
+                      >
+                        <MoreHorizontal className="h-3 w-3 text-muted-foreground/50" />
+                      </button>
+                      {viewMenuId === view.id && (
+                        <div className="absolute right-0 top-full mt-0.5 z-50 w-32 rounded-lg border border-border bg-popover p-1 shadow-lg">
+                          <button
+                            onClick={() => { setEditingViewId(view.id); setEditingViewName(view.name); setViewMenuId(null); }}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[12px] hover:bg-muted"
+                          >
+                            <Pencil className="h-3 w-3" /> Rename
+                          </button>
+                          <button
+                            onClick={() => { onDeleteSavedView?.(view.id); setViewMenuId(null); }}
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-red-500 hover:bg-red-500/10"
+                          >
+                            <Trash2 className="h-3 w-3" /> Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Starred Issues */}
+      {starredIssues.length > 0 && (
+        <div className="px-3 py-1">
+          <button
+            onClick={() => setStarredExpanded(!starredExpanded)}
+            className="flex w-full items-center gap-1.5 px-1 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 hover:text-muted-foreground"
+          >
+            <ChevronDown className={cn("h-3 w-3 transition-transform", !starredExpanded && "-rotate-90")} />
+            <Star className="h-3 w-3" />
+            Starred
+          </button>
+          {starredExpanded && (
+            <div className="mt-0.5 space-y-0.5">
+              {starredIssues.slice(0, 8).map(issue => (
+                <button
+                  key={issue.id}
+                  onClick={() => onClickIssue?.(issue)}
+                  className={cn(navItemBase, "text-muted-foreground hover:bg-muted hover:text-foreground")}
+                >
+                  <span className="text-[10px] font-mono text-muted-foreground/50 shrink-0">{issue.identifier}</span>
+                  <span className="truncate text-[12px]">{issue.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Recently Viewed */}
+      {recentIssues.length > 0 && (
+        <div className="px-3 py-1">
+          <button
+            onClick={() => setRecentExpanded(!recentExpanded)}
+            className="flex w-full items-center gap-1.5 px-1 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 hover:text-muted-foreground"
+          >
+            <ChevronDown className={cn("h-3 w-3 transition-transform", !recentExpanded && "-rotate-90")} />
+            <Clock className="h-3 w-3" />
+            Recent
+          </button>
+          {recentExpanded && (
+            <div className="mt-0.5 space-y-0.5">
+              {recentIssues.slice(0, 10).map(issue => (
+                <button
+                  key={issue.id}
+                  onClick={() => onClickIssue?.(issue)}
+                  className={cn(navItemBase, "text-muted-foreground hover:bg-muted hover:text-foreground")}
+                >
+                  <span className="text-[10px] font-mono text-muted-foreground/50 shrink-0">{issue.identifier}</span>
+                  <span className="truncate text-[12px]">{issue.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Bottom links */}
       <div className="border-t border-border/50 p-3 space-y-0.5">

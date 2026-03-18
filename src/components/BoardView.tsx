@@ -23,6 +23,8 @@ interface BoardViewProps {
   onUpdateIssue: (id: number, input: { status_id?: number; position?: number }) => Promise<unknown>;
   onClickIssue: (issue: Issue) => void;
   onQuickCreate: (statusId: number, title: string) => Promise<unknown>;
+  isStarred?: (issueId: number) => boolean;
+  onToggleStar?: (issueId: number) => void;
 }
 
 export function BoardView({
@@ -35,6 +37,8 @@ export function BoardView({
   onUpdateIssue,
   onClickIssue,
   onQuickCreate,
+  isStarred,
+  onToggleStar,
 }: BoardViewProps) {
   const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
 
@@ -130,6 +134,8 @@ export function BoardView({
               getLabelsForIssue={getLabelsForIssue}
               onClickIssue={onClickIssue}
               onQuickCreate={(title) => onQuickCreate(status.id, title)}
+              isStarred={isStarred}
+              onToggleStar={onToggleStar}
             />
           );
         })}

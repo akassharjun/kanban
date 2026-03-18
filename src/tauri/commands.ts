@@ -23,6 +23,7 @@ import type {
   TaskGraph,
   ProjectAgentConfig,
   Hook,
+  SavedView,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -244,3 +245,35 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// Saved Views
+export const listSavedViews = (projectId: number) => invoke<SavedView[]>("list_saved_views", { projectId });
+export const createSavedView = (input: {
+  project_id: number;
+  name: string;
+  filters?: string;
+  sort_by?: string;
+  sort_direction?: string;
+  view_mode?: string;
+}) => invoke<SavedView>("create_saved_view", { input });
+export const updateSavedView = (id: number, input: {
+  name?: string;
+  filters?: string;
+  sort_by?: string;
+  sort_direction?: string;
+  view_mode?: string;
+}) => invoke<SavedView>("update_saved_view", { id, input });
+export const deleteSavedView = (id: number) => invoke<void>("delete_saved_view", { id });
+
+// Starred Issues
+export const starIssue = (issueId: number, memberId: number) => invoke<void>("star_issue", { issueId, memberId });
+export const unstarIssue = (issueId: number, memberId: number) => invoke<void>("unstar_issue", { issueId, memberId });
+export const listStarred = (memberId: number) => invoke<Issue[]>("list_starred", { memberId });
+export const isStarred = (issueId: number, memberId: number) => invoke<boolean>("is_starred", { issueId, memberId });
+
+// Recently Viewed
+export const recordView = (issueId: number, memberId: number) => invoke<void>("record_view", { issueId, memberId });
+export const listRecentlyViewed = (memberId: number, limit?: number) => invoke<Issue[]>("list_recently_viewed", { memberId, limit });
+
+// Advanced Search
+export const advancedSearch = (projectId: number, queryString: string, memberId?: number) => invoke<Issue[]>("advanced_search", { projectId, queryString, memberId });

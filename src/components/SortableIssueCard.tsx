@@ -9,9 +9,11 @@ interface Props {
   labels: Label[];
   issues?: Issue[];
   onClick: () => void;
+  isStarred?: boolean;
+  onToggleStar?: (issueId: number) => void;
 }
 
-export function SortableIssueCard({ issue, member, labels, issues, onClick }: Props) {
+export function SortableIssueCard({ issue, member, labels, issues, onClick, isStarred, onToggleStar }: Props) {
   const {
     attributes,
     listeners,
@@ -35,6 +37,8 @@ export function SortableIssueCard({ issue, member, labels, issues, onClick }: Pr
         labels={labels}
         issues={issues}
         onClick={onClick}
+        isStarred={isStarred}
+        onToggleStar={onToggleStar}
       />
     </div>
   );

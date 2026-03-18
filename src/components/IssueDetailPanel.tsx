@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown } from "lucide-react";
+import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,6 +17,9 @@ interface IssueDetailPanelProps {
   onDelete: (id: number) => Promise<void>;
   onDuplicate: (id: number) => Promise<unknown>;
   onClickIssue: (issue: Issue) => void;
+  isStarred?: boolean;
+  onToggleStar?: (issueId: number) => void;
+  onRecordView?: (issueId: number) => void;
 }
 
 const priorities = [
@@ -67,6 +70,9 @@ export function IssueDetailPanel({
   onDelete,
   onDuplicate,
   onClickIssue,
+  isStarred,
+  onToggleStar,
+  onRecordView,
 }: IssueDetailPanelProps) {
   const [issue, setIssue] = useState<IssueWithLabels | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -102,6 +108,13 @@ export function IssueDetailPanel({
   }, [issueId]);
 
   useEffect(() => { loadIssue(); }, [loadIssue]);
+
+  // Record view when opening
+  useEffect(() => {
+    if (issueId && onRecordView) {
+      onRecordView(issueId);
+    }
+  }, [issueId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!issue) return null;
 
@@ -163,6 +176,18 @@ export function IssueDetailPanel({
       <div className="flex items-center justify-between px-5 py-3">
         <span className="text-xs font-mono text-muted-foreground/60">{issue.identifier}</span>
         <div className="flex items-center gap-0.5">
+          {onToggleStar && (
+            <button
+              onClick={() => onToggleStar(issueId)}
+              className={cn(
+                "rounded-md p-1.5 transition-colors",
+                isStarred ? "text-yellow-500 hover:bg-yellow-500/10" : "hover:bg-muted"
+              )}
+              title={isStarred ? "Unstar" : "Star"}
+            >
+              <Star className={cn("h-3.5 w-3.5", isStarred ? "fill-current" : "text-muted-foreground")} />
+            </button>
+          )}
           <button onClick={() => onDuplicate(issueId)} className="rounded-md p-1.5 hover:bg-muted transition-colors" title="Duplicate">
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
           </button>

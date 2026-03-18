@@ -24,8 +24,11 @@ import { useStatuses } from "./hooks/use-statuses";
 import { useLabels } from "./hooks/use-labels";
 import { useIssueLabelMap } from "./hooks/use-issue-labels";
 import { useAgents } from "./hooks/use-agents";
+import { useSavedViews } from "./hooks/use-saved-views";
+import { useStarred } from "./hooks/use-starred";
+import { useRecentlyViewed } from "./hooks/use-recently-viewed";
 import * as api from "./tauri/commands";
-import type { IssueTemplate } from "./types";
+import type { IssueTemplate, SavedView } from "./types";
 
 type Page = "project" | "members" | "settings" | "agents";
 
@@ -64,6 +67,14 @@ function App() {
   const { getLabelsForIssue, refresh: refreshIssueLabelMap } = useIssueLabelMap(selectedProjectId, labels);
   const { agents: allAgents } = useAgents();
   const onlineAgentCount = allAgents.filter(a => a.status !== "offline").length;
+
+  // Current member ID (first member = current user)
+  const currentMemberId = members.length > 0 ? members[0].id : null;
+
+  // Saved Views, Starred, Recently Viewed
+  const { savedViews, create: createSavedView, remove: removeSavedView, update: updateSavedView, refresh: refreshSavedViews } = useSavedViews(selectedProjectId);
+  const { starredIssues, isStarred, toggle: toggleStar, refresh: refreshStarred } = useStarred(currentMemberId);
+  const { recentIssues, recordView, refresh: refreshRecent } = useRecentlyViewed(currentMemberId);
 
   // Auto-select first project
   useEffect(() => {
@@ -147,9 +158,12 @@ function App() {
       refreshStatuses();
       refreshLabels();
       refreshIssueLabelMap();
+      refreshSavedViews();
+      refreshStarred();
+      refreshRecent();
     });
     return () => { unlisten.then(fn => fn()); };
-  }, [refreshProjects, refreshIssues, refreshStatuses, refreshLabels, refreshIssueLabelMap]);
+  }, [refreshProjects, refreshIssues, refreshStatuses, refreshLabels, refreshIssueLabelMap, refreshSavedViews, refreshStarred, refreshRecent]);
 
   const handleQuickCreate = async (statusId: number, title: string) => {
     if (!selectedProjectId) return;
@@ -165,6 +179,36 @@ function App() {
     setPage("project");
     setSelectedIssueId(null);
     setFilters({});
+  };
+
+  const handleSaveView = async (name: string) => {
+    if (!selectedProjectId) return;
+    await createSavedView({
+      project_id: selectedProjectId,
+      name,
+      filters: JSON.stringify(filters),
+      view_mode: viewMode,
+    });
+  };
+
+  const handleSelectSavedView = (view: SavedView) => {
+    if (view.project_id !== selectedProjectId) {
+      setSelectedProjectId(view.project_id);
+    }
+    setPage("project");
+    try {
+      const parsed = JSON.parse(view.filters);
+      setFilters(parsed);
+    } catch {
+      setFilters({});
+    }
+    if (view.view_mode === "board" || view.view_mode === "list" || view.view_mode === "tree") {
+      setViewMode(view.view_mode as ViewMode);
+    }
+  };
+
+  const handleRecordView = (issueId: number) => {
+    recordView(issueId);
   };
 
   const filteredIssues = useMemo(() => {
@@ -192,6 +236,13 @@ function App() {
         onOpenAgents={() => setPage("agents")}
         agentCount={onlineAgentCount}
         collapsed={sidebarCollapsed}
+        starredIssues={starredIssues}
+        recentIssues={recentIssues}
+        savedViews={savedViews}
+        onClickIssue={(issue) => { setSelectedIssueId(issue.id); setPage("project"); if (issue.project_id !== selectedProjectId) setSelectedProjectId(issue.project_id); }}
+        onSelectSavedView={handleSelectSavedView}
+        onDeleteSavedView={removeSavedView}
+        onRenameSavedView={(id, name) => updateSavedView(id, { name })}
       />
 
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -215,6 +266,8 @@ function App() {
               labels={labels}
               filters={filters}
               onFiltersChange={setFilters}
+              onSaveView={handleSaveView}
+              viewMode={viewMode}
             />
 
             <div className="flex flex-1 overflow-hidden">
@@ -229,6 +282,8 @@ function App() {
                   onUpdateIssue={updateIssue}
                   onClickIssue={(issue) => setSelectedIssueId(issue.id)}
                   onQuickCreate={handleQuickCreate}
+                  isStarred={isStarred}
+                  onToggleStar={toggleStar}
                 />
               )}
               {viewMode === "list" && (
@@ -309,6 +364,9 @@ function App() {
           onDelete={async (id) => { await deleteIssue(id); setSelectedIssueId(null); }}
           onDuplicate={async (id) => { await duplicateIssue(id); }}
           onClickIssue={(issue) => setSelectedIssueId(issue.id)}
+          isStarred={isStarred(selectedIssueId)}
+          onToggleStar={toggleStar}
+          onRecordView={handleRecordView}
         />
       )}
 
@@ -340,6 +398,10 @@ function App() {
           onClose={() => setShowSearch(false)}
           onSelectIssue={(issue) => setSelectedIssueId(issue.id)}
           onSelectProject={handleSelectProject}
+          statuses={statuses}
+          members={members}
+          labels={labels}
+          memberId={currentMemberId ?? undefined}
         />
       )}
 

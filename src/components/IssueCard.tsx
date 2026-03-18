@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, Calendar } from "lucide-react";
+import { AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, Calendar, Star } from "lucide-react";
 import type { Issue, Member, Label } from "@/types";
 
 interface IssueCardProps {
@@ -10,6 +10,8 @@ interface IssueCardProps {
   issues?: Issue[];
   onClick: () => void;
   isDragging?: boolean;
+  isStarred?: boolean;
+  onToggleStar?: (issueId: number) => void;
 }
 
 const priorityConfig: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
@@ -31,7 +33,7 @@ function formatDueDate(dateStr: string): { text: string; urgent: boolean } {
   return { text: dateStr, urgent: false };
 }
 
-export function IssueCard({ issue, member, labels, issues, onClick, isDragging }: IssueCardProps) {
+export function IssueCard({ issue, member, labels, issues, onClick, isDragging, isStarred, onToggleStar }: IssueCardProps) {
   const priority = priorityConfig[issue.priority] || priorityConfig.none;
   const PriorityIcon = priority.icon;
   const parent = issue.parent_id ? issues?.find(i => i.id === issue.parent_id) : undefined;
@@ -63,15 +65,29 @@ export function IssueCard({ issue, member, labels, issues, onClick, isDragging }
           <p className="text-[13px] font-medium leading-snug text-card-foreground/90">{issue.title}</p>
         </div>
 
-        {member && (
-          <div
-            className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ring-2 ring-card"
-            style={{ backgroundColor: member.avatar_color }}
-            title={member.display_name || member.name}
-          >
-            {(member.display_name || member.name).charAt(0).toUpperCase()}
-          </div>
-        )}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {onToggleStar && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleStar(issue.id); }}
+              className={cn(
+                "rounded p-0.5 transition-colors",
+                isStarred ? "text-yellow-500" : "text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-yellow-500"
+              )}
+              title={isStarred ? "Unstar" : "Star"}
+            >
+              <Star className={cn("h-3.5 w-3.5", isStarred && "fill-current")} />
+            </button>
+          )}
+          {member && (
+            <div
+              className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white ring-2 ring-card"
+              style={{ backgroundColor: member.avatar_color }}
+              title={member.display_name || member.name}
+            >
+              {(member.display_name || member.name).charAt(0).toUpperCase()}
+            </div>
+          )}
+        </div>
       </div>
 
       {(labels.length > 0 || issue.due_date) && (
