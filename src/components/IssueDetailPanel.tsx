@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown } from "lucide-react";
+import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, Code, Link2, Unlink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment } from "@/types";
+import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, IssueFileLink } from "@/types";
 import * as api from "@/tauri/commands";
 import { TaskContractDialog } from "./TaskContractDialog";
 
@@ -81,6 +81,10 @@ export function IssueDetailPanel({
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
   const [showTaskContractDialog, setShowTaskContractDialog] = useState(false);
+  const [fileLinks, setFileLinks] = useState<IssueFileLink[]>([]);
+  const [newFilePath, setNewFilePath] = useState("");
+  const [newLinkType, setNewLinkType] = useState<"related" | "cause" | "fix">("related");
+  const [showAddFile, setShowAddFile] = useState(false);
 
   const loadIssue = useCallback(async () => {
     try {
@@ -88,14 +92,16 @@ export function IssueDetailPanel({
       setIssue(data);
       setTitle(data.title);
       setDesc(data.description || "");
-      const [acts, subs, comms] = await Promise.all([
+      const [acts, subs, comms, links] = await Promise.all([
         api.getActivityLog(issueId),
         api.getSubIssues(issueId),
         api.listComments(issueId),
+        api.listFileLinks(issueId),
       ]);
       setActivity(acts);
       setSubIssues(subs);
       setComments(comms);
+      setFileLinks(links);
     } catch (e) {
       console.error("Failed to load issue", e);
     }
@@ -150,6 +156,27 @@ export function IssueDetailPanel({
       await loadIssue();
     } catch (e) {
       console.error("Failed to delete comment", e);
+    }
+  };
+
+  const handleAddFileLink = async () => {
+    if (!newFilePath.trim()) return;
+    try {
+      await api.linkFileToIssue({ issue_id: issueId, file_path: newFilePath.trim(), link_type: newLinkType });
+      setNewFilePath("");
+      setShowAddFile(false);
+      await loadIssue();
+    } catch (e) {
+      console.error("Failed to link file", e);
+    }
+  };
+
+  const handleUnlinkFile = async (filePath: string) => {
+    try {
+      await api.unlinkFileFromIssue(issueId, filePath);
+      await loadIssue();
+    } catch (e) {
+      console.error("Failed to unlink file", e);
     }
   };
 
@@ -428,6 +455,86 @@ export function IssueDetailPanel({
             </div>
           </div>
         )}
+
+        {/* Linked Files */}
+        <div className="mt-6 border-t border-border/50 px-5 pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+              Code ({fileLinks.length})
+            </h3>
+            <button
+              onClick={() => setShowAddFile(!showAddFile)}
+              className="rounded-md p-1 hover:bg-muted transition-colors"
+              title="Link a file"
+            >
+              <Link2 className="h-3.5 w-3.5 text-muted-foreground/50" />
+            </button>
+          </div>
+
+          {showAddFile && (
+            <div className="mb-3 flex flex-col gap-1.5">
+              <input
+                autoFocus
+                type="text"
+                value={newFilePath}
+                onChange={(e) => setNewFilePath(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleAddFileLink();
+                  if (e.key === "Escape") setShowAddFile(false);
+                }}
+                placeholder="src/components/Example.tsx"
+                className="w-full rounded-lg border border-border bg-background p-2 text-sm outline-none focus:border-primary/50 font-mono text-xs"
+              />
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={newLinkType}
+                  onChange={(e) => setNewLinkType(e.target.value as "related" | "cause" | "fix")}
+                  className="rounded-lg border border-border bg-background px-2 py-1.5 text-xs outline-none"
+                >
+                  <option value="related">Related</option>
+                  <option value="cause">Cause</option>
+                  <option value="fix">Fix</option>
+                </select>
+                <button
+                  onClick={handleAddFileLink}
+                  disabled={!newFilePath.trim()}
+                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                >
+                  Link
+                </button>
+                <button
+                  onClick={() => setShowAddFile(false)}
+                  className="rounded-lg px-3 py-1.5 text-xs hover:bg-muted"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {fileLinks.length > 0 ? (
+            <div className="space-y-0.5">
+              {fileLinks.map(link => {
+                const typeColor = link.link_type === "cause" ? "text-red-400" : link.link_type === "fix" ? "text-green-400" : "text-blue-400";
+                return (
+                  <div key={link.id} className="group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm hover:bg-muted transition-colors">
+                    <Code className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0" />
+                    <span className="font-mono text-xs truncate flex-1">{link.file_path}</span>
+                    <span className={cn("text-[10px] font-medium uppercase", typeColor)}>{link.link_type}</span>
+                    <button
+                      onClick={() => handleUnlinkFile(link.file_path)}
+                      className="rounded-md p-0.5 opacity-0 group-hover:opacity-100 hover:bg-red-500/10 transition-opacity"
+                    >
+                      <Unlink className="h-3 w-3 text-muted-foreground/50" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : !showAddFile ? (
+            <p className="text-xs text-muted-foreground/40">No files linked</p>
+          ) : null}
+        </div>
 
         {/* Comments */}
         <div className="mt-6 border-t border-border/50 px-5 pt-4">

@@ -1,6 +1,9 @@
 pub mod agents;
+pub mod code_analysis;
 pub mod comments;
+pub mod context;
 pub mod custom_fields;
+pub mod diff_issues;
 pub mod execution_logs;
 pub mod health;
 pub mod hooks;

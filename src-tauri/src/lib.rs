@@ -197,6 +197,18 @@ pub fn run_gui(database_url: Option<String>) {
             commands::execution_logs::task_replay,
             commands::execution_logs::task_attempts,
             commands::execution_logs::recent_activity,
+            // Context Assembly
+            commands::context::get_task_context,
+            commands::context::get_similar_issues,
+            // Code Analysis
+            commands::code_analysis::link_file_to_issue,
+            commands::code_analysis::unlink_file_from_issue,
+            commands::code_analysis::list_file_links,
+            commands::code_analysis::get_file_heat_map,
+            commands::code_analysis::get_directory_heat_map,
+            commands::code_analysis::get_issues_for_file,
+            // Diff Issues
+            commands::diff_issues::create_issue_from_diff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

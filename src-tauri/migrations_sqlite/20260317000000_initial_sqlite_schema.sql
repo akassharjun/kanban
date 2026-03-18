@@ -173,6 +173,17 @@ CREATE TABLE IF NOT EXISTS issue_custom_field_values (
     UNIQUE(issue_id, field_id)
 );
 
+-- Issue-File Links (code heat map)
+CREATE TABLE IF NOT EXISTS issue_file_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL,
+    link_type TEXT NOT NULL DEFAULT 'related' CHECK(link_type IN ('related', 'cause', 'fix')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_issue_file_links_path ON issue_file_links(file_path);
+CREATE INDEX IF NOT EXISTS idx_issue_file_links_issue ON issue_file_links(issue_id);
+
 -- Agent registry
 CREATE TABLE IF NOT EXISTS agents (
     id TEXT PRIMARY KEY,

@@ -23,6 +23,10 @@ import type {
   TaskGraph,
   ProjectAgentConfig,
   Hook,
+  IssueFileLink,
+  FileHeatEntry,
+  DirectoryHeatEntry,
+  TaskContext,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -244,3 +248,27 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// Context Assembly
+export const getTaskContext = (identifier: string) => invoke<TaskContext>("get_task_context", { identifier });
+export const getSimilarIssues = (projectId: number, issueId: number, limit: number) => invoke<Issue[]>("get_similar_issues", { projectId, issueId, limit });
+
+// Code Analysis
+export const linkFileToIssue = (input: { issue_id: number; file_path: string; link_type?: string }) => invoke<IssueFileLink>("link_file_to_issue", { input });
+export const unlinkFileFromIssue = (issueId: number, filePath: string) => invoke<void>("unlink_file_from_issue", { issueId, filePath });
+export const listFileLinks = (issueId: number) => invoke<IssueFileLink[]>("list_file_links", { issueId });
+export const getFileHeatMap = (projectId: number, limit: number) => invoke<FileHeatEntry[]>("get_file_heat_map", { projectId, limit });
+export const getDirectoryHeatMap = (projectId: number, depth: number) => invoke<DirectoryHeatEntry[]>("get_directory_heat_map", { projectId, depth });
+export const getIssuesForFile = (filePath: string, projectId: number) => invoke<Issue[]>("get_issues_for_file", { filePath, projectId });
+
+// Diff Issues
+export const createIssueFromDiff = (input: {
+  project_id: number;
+  title: string;
+  description?: string;
+  file_path: string;
+  line_range?: string;
+  severity: string;
+  status_id?: number;
+  assignee_id?: number;
+}) => invoke<Issue>("create_issue_from_diff", { input });

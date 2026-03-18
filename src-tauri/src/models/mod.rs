@@ -191,3 +191,12 @@ pub struct CustomFieldValue {
     pub field_id: i64,
     pub value: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct IssueFileLink {
+    pub id: i64,
+    pub issue_id: i64,
+    pub file_path: String,
+    pub link_type: String,
+    pub created_at: String,
+}
