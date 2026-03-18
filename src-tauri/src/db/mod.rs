@@ -68,6 +68,8 @@ pub async fn init_db(database_url: Option<&str>) -> Result<(AnyPool, DbBackend),
                 "ALTER TABLE activity_log ADD COLUMN actor_type TEXT DEFAULT 'user'",
                 "ALTER TABLE issues ADD COLUMN epic_id INTEGER REFERENCES epics(id) ON DELETE SET NULL",
                 "ALTER TABLE issues ADD COLUMN milestone_id INTEGER REFERENCES milestones(id) ON DELETE SET NULL",
+                "ALTER TABLE projects ADD COLUMN stale_days INTEGER DEFAULT NULL",
+                "ALTER TABLE projects ADD COLUMN stale_close_status_id INTEGER REFERENCES statuses(id)",
             ];
             for stmt in &backfill {
                 let _ = sqlx::query(stmt).execute(&pool).await;

@@ -229,6 +229,15 @@ pub fn run_gui(database_url: Option<String>) {
             commands::recently_viewed::list_recently_viewed,
             // Advanced Search
             commands::advanced_search::advanced_search,
+            // Git Links
+            commands::git_links::create_git_link,
+            commands::git_links::list_git_links,
+            commands::git_links::update_git_link,
+            commands::git_links::delete_git_link,
+            commands::git_links::git_link_count,
+            // Stale Issues
+            commands::stale_issues::update_stale_config,
+            commands::stale_issues::check_stale_issues,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

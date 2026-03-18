@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, History, MessageSquare, Activity, Star } from "lucide-react";
+import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, History, MessageSquare, Activity, Star, GitBranch, GitPullRequest, GitCommitHorizontal, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, Epic, MilestoneWithProgress } from "@/types";
+import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, Epic, MilestoneWithProgress, GitLink } from "@/types";
 import * as api from "@/tauri/commands";
 import { TaskContractDialog } from "./TaskContractDialog";
 import { IssueHistoryPanel } from "./IssueHistoryPanel";
@@ -97,6 +97,10 @@ export function IssueDetailPanel({
   const [activityLimit, setActivityLimit] = useState(50);
   const isSavingRef = useRef(false);
   const [activeTab, setActiveTab] = useState<"comments" | "history" | "activity">("comments");
+  const [gitLinks, setGitLinks] = useState<GitLink[]>([]);
+  const [showGitLinkForm, setShowGitLinkForm] = useState<"branch" | "pull_request" | "commit" | null>(null);
+  const [gitLinkRefName, setGitLinkRefName] = useState("");
+  const [gitLinkUrl, setGitLinkUrl] = useState("");
 
   const loadIssue = useCallback(async () => {
     // Skip refresh while a save is in-flight to prevent overwriting user edits
@@ -106,14 +110,16 @@ export function IssueDetailPanel({
       setIssue(data);
       setTitle(data.title);
       setDesc(data.description || "");
-      const [acts, subs, comms] = await Promise.all([
+      const [acts, subs, comms, links] = await Promise.all([
         api.getActivityLog(issueId),
         api.getSubIssues(issueId),
         api.listComments(issueId),
+        api.listGitLinks(issueId),
       ]);
       setActivity(acts);
       setSubIssues(subs);
       setComments(comms);
+      setGitLinks(links);
     } catch (e) {
       console.error("Failed to load issue", e);
     }
@@ -544,6 +550,112 @@ export function IssueDetailPanel({
             <FileText className="h-3.5 w-3.5" />
             Create Task Contract
           </button>
+        </div>
+
+        {/* Git Links */}
+        <div className="mt-6 border-t border-border/50 px-5 pt-4">
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+            Git ({gitLinks.length})
+          </h3>
+          {gitLinks.length > 0 && (
+            <div className="space-y-1.5 mb-3">
+              {gitLinks.map((link) => {
+                const Icon = link.link_type === "branch" ? GitBranch : link.link_type === "pull_request" ? GitPullRequest : GitCommitHorizontal;
+                const statusColor = link.status === "merged" ? "text-purple-500 bg-purple-500/10" : link.status === "closed" ? "text-red-500 bg-red-500/10" : "text-green-500 bg-green-500/10";
+                return (
+                  <div key={link.id} className="group flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-muted transition-colors">
+                    <Icon className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    <span className="text-[13px] font-mono truncate flex-1">{link.ref_name}</span>
+                    <span className={cn("text-[10px] font-medium rounded-full px-2 py-0.5", statusColor)}>
+                      {link.status}
+                    </span>
+                    {link.url && (
+                      <a href={link.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-muted-foreground/50 hover:text-foreground">
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                    <button
+                      onClick={async () => { await api.deleteGitLink(link.id); await loadIssue(); }}
+                      className="opacity-0 group-hover:opacity-100 rounded-md p-1 hover:bg-red-500/10 transition-opacity"
+                    >
+                      <Trash2 className="h-3 w-3 text-muted-foreground/50" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {showGitLinkForm ? (
+            <div className="rounded-lg border border-border bg-background p-3 space-y-2">
+              <div className="text-[11px] font-medium text-muted-foreground/70 capitalize">
+                {showGitLinkForm === "pull_request" ? "Pull Request" : showGitLinkForm}
+              </div>
+              <input
+                autoFocus
+                value={gitLinkRefName}
+                onChange={(e) => setGitLinkRefName(e.target.value)}
+                placeholder={showGitLinkForm === "branch" ? "Branch name..." : showGitLinkForm === "pull_request" ? "PR number (e.g. #42)..." : "Commit SHA..."}
+                className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus:border-primary/50"
+              />
+              <input
+                value={gitLinkUrl}
+                onChange={(e) => setGitLinkUrl(e.target.value)}
+                placeholder="URL (optional)..."
+                className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus:border-primary/50"
+              />
+              <div className="flex gap-1.5">
+                <button
+                  onClick={async () => {
+                    if (!gitLinkRefName.trim()) return;
+                    await api.createGitLink({
+                      issue_id: issueId,
+                      link_type: showGitLinkForm,
+                      ref_name: gitLinkRefName.trim(),
+                      url: gitLinkUrl.trim() || undefined,
+                    });
+                    setShowGitLinkForm(null);
+                    setGitLinkRefName("");
+                    setGitLinkUrl("");
+                    await loadIssue();
+                  }}
+                  className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  Link
+                </button>
+                <button
+                  onClick={() => { setShowGitLinkForm(null); setGitLinkRefName(""); setGitLinkUrl(""); }}
+                  className="rounded-lg px-3 py-1.5 text-xs hover:bg-muted"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => setShowGitLinkForm("branch")}
+                className="flex items-center gap-1 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <GitBranch className="h-3 w-3" />
+                Branch
+              </button>
+              <button
+                onClick={() => setShowGitLinkForm("pull_request")}
+                className="flex items-center gap-1 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <GitPullRequest className="h-3 w-3" />
+                PR
+              </button>
+              <button
+                onClick={() => setShowGitLinkForm("commit")}
+                className="flex items-center gap-1 rounded-lg border border-border/50 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <GitCommitHorizontal className="h-3 w-3" />
+                Commit
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Sub-issues */}

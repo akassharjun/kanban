@@ -30,6 +30,7 @@ import type {
   Milestone,
   MilestoneWithProgress,
   SavedView,
+  GitLink,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -336,3 +337,22 @@ export const listRecentlyViewed = (memberId: number, limit?: number) => invoke<I
 
 // Advanced Search
 export const advancedSearch = (projectId: number, queryString: string, memberId?: number) => invoke<Issue[]>("advanced_search", { projectId, queryString, memberId });
+// Git Links
+export const createGitLink = (input: {
+  issue_id: number;
+  link_type: string;
+  ref_name: string;
+  url?: string;
+  status?: string;
+}) => invoke<GitLink>("create_git_link", { input });
+export const listGitLinks = (issueId: number) => invoke<GitLink[]>("list_git_links", { issueId });
+export const updateGitLink = (id: number, input: { status?: string; url?: string }) => invoke<GitLink>("update_git_link", { id, input });
+export const deleteGitLink = (id: number) => invoke<void>("delete_git_link", { id });
+export const gitLinkCount = (issueId: number) => invoke<number>("git_link_count", { issueId });
+
+// Stale Issues
+export const updateStaleConfig = (projectId: number, input: {
+  stale_days: number | null;
+  stale_close_status_id: number | null;
+}) => invoke<void>("update_stale_config", { projectId, input });
+export const checkStaleIssues = (projectId: number) => invoke<Issue[]>("check_stale_issues", { projectId });

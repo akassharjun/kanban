@@ -308,6 +308,14 @@ CREATE TABLE IF NOT EXISTS epics (
     description TEXT,
     color TEXT NOT NULL DEFAULT '#6366f1',
     status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'closed')),
+-- Git Links (branch/PR/commit linking to issues)
+CREATE TABLE IF NOT EXISTS git_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    link_type TEXT NOT NULL CHECK(link_type IN ('branch', 'pull_request', 'commit')),
+    url TEXT,
+    ref_name TEXT NOT NULL,
+    status TEXT DEFAULT 'open' CHECK(status IN ('open', 'merged', 'closed')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -327,3 +335,4 @@ CREATE TABLE IF NOT EXISTS milestones (
 );
 
 CREATE INDEX IF NOT EXISTS idx_milestones_project ON milestones(project_id);
+CREATE INDEX IF NOT EXISTS idx_git_links_issue ON git_links(issue_id);
