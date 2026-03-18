@@ -1420,8 +1420,8 @@ export function IssueDetailPanel({
                       <span className="shrink-0 font-mono">{entry.timestamp.slice(0, 16)}</span>
                       <span>
                         Changed <span className="text-foreground/80">{entry.field_changed}</span>
-                        {entry.old_value && <> from <span className="text-foreground/80">{entry.old_value}</span></>}
-                        {entry.new_value && <> to <span className="text-foreground/80">{entry.new_value}</span></>}
+                        {entry.old_value && <> from <span className="text-foreground/80">{typeof entry.old_value === "object" ? JSON.stringify(entry.old_value) : entry.old_value}</span></>}
+                        {entry.new_value && <> to <span className="text-foreground/80">{typeof entry.new_value === "object" ? JSON.stringify(entry.new_value) : entry.new_value}</span></>}
                       </span>
                     </div>
                   ))}
