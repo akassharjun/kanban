@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -23,9 +23,39 @@ const priorities = [
   { value: "urgent", label: "Urgent", icon: AlertCircle, color: "text-red-500" },
   { value: "high", label: "High", icon: SignalHigh, color: "text-orange-500" },
   { value: "medium", label: "Medium", icon: SignalMedium, color: "text-yellow-500" },
-  { value: "low", label: "Low", icon: SignalLow, color: "text-blue-500" },
+  { value: "low", label: "Low", icon: SignalLow, color: "text-blue-400" },
   { value: "none", label: "None", icon: Minus, color: "text-muted-foreground" },
 ];
+
+/** Dropdown that auto-closes on outside click */
+function Dropdown({ open, onClose, children, trigger }: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  trigger: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open, onClose]);
+
+  return (
+    <div ref={ref} className="relative">
+      {trigger}
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 min-w-[160px] rounded-lg border border-border bg-popover p-1 shadow-lg animate-in fade-in-0 zoom-in-95 duration-100">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function IssueDetailPanel({
   issueId,
@@ -45,35 +75,33 @@ export function IssueDetailPanel({
   const [desc, setDesc] = useState("");
   const [activity, setActivity] = useState<ActivityLogEntry[]>([]);
   const [subIssues, setSubIssues] = useState<Issue[]>([]);
-  const [showPriorityMenu, setShowPriorityMenu] = useState(false);
-  const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [showAssigneeMenu, setShowAssigneeMenu] = useState(false);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
   const [showTaskContractDialog, setShowTaskContractDialog] = useState(false);
 
-  useEffect(() => {
-    loadIssue();
-  }, [issueId]);
-
-  const loadIssue = async () => {
+  const loadIssue = useCallback(async () => {
     try {
       const data = await api.getIssue(issueId);
       setIssue(data);
       setTitle(data.title);
       setDesc(data.description || "");
-      const acts = await api.getActivityLog(issueId);
+      const [acts, subs, comms] = await Promise.all([
+        api.getActivityLog(issueId),
+        api.getSubIssues(issueId),
+        api.listComments(issueId),
+      ]);
       setActivity(acts);
-      const subs = await api.getSubIssues(issueId);
       setSubIssues(subs);
-      const comms = await api.listComments(issueId);
       setComments(comms);
     } catch (e) {
       console.error("Failed to load issue", e);
     }
-  };
+  }, [issueId]);
+
+  useEffect(() => { loadIssue(); }, [loadIssue]);
 
   if (!issue) return null;
 
@@ -130,26 +158,26 @@ export function IssueDetailPanel({
   const currentPriority = priorities.find(p => p.value === issue.priority) || priorities[4];
 
   return (
-    <div className="flex h-full w-[480px] flex-col border-l border-border bg-card">
+    <div className="flex h-full w-[480px] flex-col border-l border-border/50 bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <span className="text-sm text-muted-foreground">{issue.identifier}</span>
-        <div className="flex items-center gap-1">
-          <button onClick={() => onDuplicate(issueId)} className="rounded p-1 hover:bg-accent" title="Duplicate">
-            <Copy className="h-4 w-4 text-muted-foreground" />
+      <div className="flex items-center justify-between px-5 py-3">
+        <span className="text-xs font-mono text-muted-foreground/60">{issue.identifier}</span>
+        <div className="flex items-center gap-0.5">
+          <button onClick={() => onDuplicate(issueId)} className="rounded-md p-1.5 hover:bg-muted transition-colors" title="Duplicate">
+            <Copy className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
-          <button onClick={() => { onDelete(issueId); onClose(); }} className="rounded p-1 hover:bg-destructive/20" title="Delete">
-            <Trash2 className="h-4 w-4 text-muted-foreground" />
+          <button onClick={() => { onDelete(issueId); onClose(); }} className="rounded-md p-1.5 hover:bg-red-500/10 transition-colors" title="Delete">
+            <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
-          <button onClick={onClose} className="rounded p-1 hover:bg-accent" title="Close (Esc)">
-            <X className="h-4 w-4 text-muted-foreground" />
+          <button onClick={onClose} className="rounded-md p-1.5 hover:bg-muted transition-colors" title="Close (Esc)">
+            <X className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {/* Title */}
-        <div className="px-4 pt-4">
+        <div className="px-5">
           {editingTitle ? (
             <input
               autoFocus
@@ -162,7 +190,7 @@ export function IssueDetailPanel({
           ) : (
             <h2
               onClick={() => setEditingTitle(true)}
-              className="cursor-pointer text-lg font-semibold hover:text-primary"
+              className="cursor-pointer text-lg font-semibold leading-snug hover:text-primary transition-colors"
             >
               {issue.title}
             </h2>
@@ -170,134 +198,156 @@ export function IssueDetailPanel({
         </div>
 
         {/* Properties */}
-        <div className="mt-4 space-y-3 px-4">
+        <div className="mt-5 space-y-1 px-5">
           {/* Status */}
-          <div className="flex items-center gap-3 text-sm relative">
-            <span className="w-20 text-muted-foreground">Status</span>
-            <button
-              onClick={() => setShowStatusMenu(!showStatusMenu)}
-              className="flex items-center gap-1.5 rounded px-2 py-1 hover:bg-accent"
+          <div className="flex items-center py-1.5 text-sm">
+            <span className="w-24 text-[13px] text-muted-foreground/70">Status</span>
+            <Dropdown
+              open={openMenu === "status"}
+              onClose={() => setOpenMenu(null)}
+              trigger={
+                <button
+                  onClick={() => setOpenMenu(openMenu === "status" ? null : "status")}
+                  className="flex items-center gap-2 rounded-md px-2 py-1 text-[13px] hover:bg-muted transition-colors"
+                >
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: currentStatus?.color || "#6b7280" }} />
+                  {currentStatus?.name || "Unknown"}
+                  <ChevronDown className="h-3 w-3 text-muted-foreground/40" />
+                </button>
+              }
             >
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: currentStatus?.color || "#6b7280" }} />
-              {currentStatus?.name || "Unknown"}
-            </button>
-            {showStatusMenu && (
-              <div className="absolute left-20 top-8 z-50 rounded-md border border-border bg-popover p-1 shadow-lg">
-                {statuses.map(s => (
-                  <button
-                    key={s.id}
-                    onClick={async () => { await onUpdate(issueId, { status_id: s.id }); await loadIssue(); setShowStatusMenu(false); }}
-                    className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-accent"
-                  >
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color || "#6b7280" }} />
-                    {s.name}
-                  </button>
-                ))}
-              </div>
-            )}
+              {statuses.map(s => (
+                <button
+                  key={s.id}
+                  onClick={async () => { await onUpdate(issueId, { status_id: s.id }); await loadIssue(); setOpenMenu(null); }}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors",
+                    s.id === issue.status_id && "bg-muted font-medium"
+                  )}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color || "#6b7280" }} />
+                  {s.name}
+                </button>
+              ))}
+            </Dropdown>
           </div>
 
           {/* Priority */}
-          <div className="flex items-center gap-3 text-sm relative">
-            <span className="w-20 text-muted-foreground">Priority</span>
-            <button
-              onClick={() => setShowPriorityMenu(!showPriorityMenu)}
-              className="flex items-center gap-1.5 rounded px-2 py-1 hover:bg-accent"
+          <div className="flex items-center py-1.5 text-sm">
+            <span className="w-24 text-[13px] text-muted-foreground/70">Priority</span>
+            <Dropdown
+              open={openMenu === "priority"}
+              onClose={() => setOpenMenu(null)}
+              trigger={
+                <button
+                  onClick={() => setOpenMenu(openMenu === "priority" ? null : "priority")}
+                  className="flex items-center gap-2 rounded-md px-2 py-1 text-[13px] hover:bg-muted transition-colors"
+                >
+                  <currentPriority.icon className={cn("h-3.5 w-3.5", currentPriority.color)} />
+                  {currentPriority.label}
+                  <ChevronDown className="h-3 w-3 text-muted-foreground/40" />
+                </button>
+              }
             >
-              <currentPriority.icon className={cn("h-3.5 w-3.5", currentPriority.color)} />
-              {currentPriority.label}
-            </button>
-            {showPriorityMenu && (
-              <div className="absolute left-20 top-8 z-50 rounded-md border border-border bg-popover p-1 shadow-lg">
-                {priorities.map(p => (
-                  <button
-                    key={p.value}
-                    onClick={async () => { await onUpdate(issueId, { priority: p.value }); await loadIssue(); setShowPriorityMenu(false); }}
-                    className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-accent"
-                  >
-                    <p.icon className={cn("h-3.5 w-3.5", p.color)} />
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            )}
+              {priorities.map(p => (
+                <button
+                  key={p.value}
+                  onClick={async () => { await onUpdate(issueId, { priority: p.value }); await loadIssue(); setOpenMenu(null); }}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors",
+                    p.value === issue.priority && "bg-muted font-medium"
+                  )}
+                >
+                  <p.icon className={cn("h-3.5 w-3.5", p.color)} />
+                  {p.label}
+                </button>
+              ))}
+            </Dropdown>
           </div>
 
           {/* Assignee */}
-          <div className="flex items-center gap-3 text-sm relative">
-            <span className="w-20 text-muted-foreground">Assignee</span>
-            <button
-              onClick={() => setShowAssigneeMenu(!showAssigneeMenu)}
-              className="flex items-center gap-1.5 rounded px-2 py-1 hover:bg-accent"
-            >
-              {currentMember ? (
-                <>
-                  <div
-                    className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-medium text-white"
-                    style={{ backgroundColor: currentMember.avatar_color }}
-                  >
-                    {(currentMember.display_name || currentMember.name).charAt(0).toUpperCase()}
-                  </div>
-                  {currentMember.display_name || currentMember.name}
-                </>
-              ) : (
-                <span className="text-muted-foreground">Unassigned</span>
-              )}
-            </button>
-            {showAssigneeMenu && (
-              <div className="absolute left-20 top-8 z-50 rounded-md border border-border bg-popover p-1 shadow-lg">
+          <div className="flex items-center py-1.5 text-sm">
+            <span className="w-24 text-[13px] text-muted-foreground/70">Assignee</span>
+            <Dropdown
+              open={openMenu === "assignee"}
+              onClose={() => setOpenMenu(null)}
+              trigger={
                 <button
-                  onClick={async () => { await onUpdate(issueId, { assignee_id: -1 }); await loadIssue(); setShowAssigneeMenu(false); }}
-                  className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-accent"
+                  onClick={() => setOpenMenu(openMenu === "assignee" ? null : "assignee")}
+                  className="flex items-center gap-2 rounded-md px-2 py-1 text-[13px] hover:bg-muted transition-colors"
                 >
-                  Unassigned
+                  {currentMember ? (
+                    <>
+                      <div
+                        className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+                        style={{ backgroundColor: currentMember.avatar_color }}
+                      >
+                        {(currentMember.display_name || currentMember.name).charAt(0).toUpperCase()}
+                      </div>
+                      {currentMember.display_name || currentMember.name}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground/60">Unassigned</span>
+                  )}
+                  <ChevronDown className="h-3 w-3 text-muted-foreground/40" />
                 </button>
-                {members.map(m => (
-                  <button
-                    key={m.id}
-                    onClick={async () => { await onUpdate(issueId, { assignee_id: m.id }); await loadIssue(); setShowAssigneeMenu(false); }}
-                    className="flex w-full items-center gap-2 rounded px-3 py-1.5 text-sm hover:bg-accent"
+              }
+            >
+              <button
+                onClick={async () => { await onUpdate(issueId, { assignee_id: -1 }); await loadIssue(); setOpenMenu(null); }}
+                className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors"
+              >
+                <div className="h-5 w-5 rounded-full border border-dashed border-muted-foreground/30" />
+                Unassigned
+              </button>
+              {members.map(m => (
+                <button
+                  key={m.id}
+                  onClick={async () => { await onUpdate(issueId, { assignee_id: m.id }); await loadIssue(); setOpenMenu(null); }}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors",
+                    m.id === issue.assignee_id && "bg-muted font-medium"
+                  )}
+                >
+                  <div
+                    className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white"
+                    style={{ backgroundColor: m.avatar_color }}
                   >
-                    <div
-                      className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-medium text-white"
-                      style={{ backgroundColor: m.avatar_color }}
-                    >
-                      {(m.display_name || m.name).charAt(0).toUpperCase()}
-                    </div>
-                    {m.display_name || m.name}
-                  </button>
-                ))}
-              </div>
-            )}
+                    {(m.display_name || m.name).charAt(0).toUpperCase()}
+                  </div>
+                  {m.display_name || m.name}
+                </button>
+              ))}
+            </Dropdown>
           </div>
 
           {/* Labels */}
-          <div className="flex items-start gap-3 text-sm">
-            <span className="w-20 pt-1 text-muted-foreground">Labels</span>
+          <div className="flex items-start py-1.5 text-sm">
+            <span className="w-24 pt-0.5 text-[13px] text-muted-foreground/70">Labels</span>
             <div className="flex flex-wrap gap-1">
               {issue.labels.map(l => (
-                <span key={l.id} className="rounded-full px-2 py-0.5 text-xs" style={{ backgroundColor: l.color + "20", color: l.color }}>
+                <span key={l.id} className="rounded-md px-2 py-0.5 text-[11px] font-medium" style={{ backgroundColor: l.color + "18", color: l.color }}>
                   {l.name}
                 </span>
               ))}
-              {issue.labels.length === 0 && <span className="text-muted-foreground">None</span>}
+              {issue.labels.length === 0 && <span className="text-[13px] text-muted-foreground/40">None</span>}
             </div>
           </div>
 
           {/* Due date */}
-          <div className="flex items-center gap-3 text-sm">
-            <span className="w-20 text-muted-foreground">Due date</span>
+          <div className="flex items-center py-1.5 text-sm">
+            <span className="w-24 text-[13px] text-muted-foreground/70">Due date</span>
             <input
               type="date"
               value={issue.due_date || ""}
               onChange={async (e) => { await onUpdate(issueId, { due_date: e.target.value || "" }); await loadIssue(); }}
-              className="rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
+              className="rounded-md bg-transparent px-2 py-1 text-[13px] outline-none hover:bg-muted transition-colors cursor-pointer"
             />
           </div>
 
           {/* Estimate */}
-          <div className="flex items-center gap-3 text-sm">
-            <span className="w-20 text-muted-foreground">Estimate</span>
+          <div className="flex items-center py-1.5 text-sm">
+            <span className="w-24 text-[13px] text-muted-foreground/70">Estimate</span>
             <input
               type="number"
               min="0"
@@ -308,14 +358,14 @@ export function IssueDetailPanel({
                 await loadIssue();
               }}
               placeholder="Points"
-              className="w-20 rounded bg-transparent px-2 py-1 text-sm outline-none hover:bg-accent"
+              className="w-20 rounded-md bg-transparent px-2 py-1 text-[13px] outline-none hover:bg-muted transition-colors"
             />
           </div>
         </div>
 
         {/* Description */}
-        <div className="mt-6 border-t border-border px-4 pt-4">
-          <h3 className="mb-2 text-xs font-medium text-muted-foreground">Description</h3>
+        <div className="mt-6 border-t border-border/50 px-5 pt-4">
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">Description</h3>
           {editingDesc ? (
             <textarea
               autoFocus
@@ -323,28 +373,28 @@ export function IssueDetailPanel({
               onChange={(e) => setDesc(e.target.value)}
               onBlur={handleDescSave}
               rows={8}
-              className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:border-primary"
+              className="w-full rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
               placeholder="Add a description... (Markdown supported)"
             />
           ) : (
             <div
               onClick={() => setEditingDesc(true)}
-              className="prose prose-sm prose-invert max-w-none cursor-pointer rounded-md p-2 hover:bg-accent/30 min-h-[80px]"
+              className="prose prose-sm dark:prose-invert max-w-none cursor-pointer rounded-lg p-2.5 hover:bg-muted/50 min-h-[60px] transition-colors"
             >
               {desc ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{desc}</ReactMarkdown>
               ) : (
-                <p className="text-muted-foreground">Add a description...</p>
+                <p className="text-muted-foreground/40 text-sm">Click to add a description...</p>
               )}
             </div>
           )}
         </div>
 
         {/* Task Contract */}
-        <div className="mt-4 px-4">
+        <div className="mt-4 px-5">
           <button
             onClick={() => setShowTaskContractDialog(true)}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <FileText className="h-3.5 w-3.5" />
             Create Task Contract
@@ -353,24 +403,24 @@ export function IssueDetailPanel({
 
         {/* Sub-issues */}
         {subIssues.length > 0 && (
-          <div className="mt-6 border-t border-border px-4 pt-4">
-            <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+          <div className="mt-6 border-t border-border/50 px-5 pt-4">
+            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
               Sub-issues ({subIssues.filter(s => {
                 const st = statuses.find(st2 => st2.id === s.status_id);
                 return st?.category === "completed" || st?.category === "discarded";
               }).length}/{subIssues.length})
             </h3>
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {subIssues.map(sub => {
                 const subStatus = statuses.find(s => s.id === sub.status_id);
                 return (
                   <button
                     key={sub.id}
                     onClick={() => onClickIssue(sub)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent"
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-muted transition-colors"
                   >
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: subStatus?.color || "#6b7280" }} />
-                    <span className="text-muted-foreground">{sub.identifier}</span>
+                    <span className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: subStatus?.color || "#6b7280" }} />
+                    <span className="text-muted-foreground/60 font-mono text-xs">{sub.identifier}</span>
                     <span className="truncate">{sub.title}</span>
                   </button>
                 );
@@ -380,8 +430,8 @@ export function IssueDetailPanel({
         )}
 
         {/* Comments */}
-        <div className="mt-6 border-t border-border px-4 pt-4">
-          <h3 className="mb-3 text-xs font-medium text-muted-foreground">
+        <div className="mt-6 border-t border-border/50 px-5 pt-4">
+          <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
             Comments ({comments.length})
           </h3>
 
@@ -390,69 +440,69 @@ export function IssueDetailPanel({
               const commentMember = members.find(m => m.id === comment.member_id);
               return (
                 <div key={comment.id} className="group">
-                  <div className="flex items-start gap-2">
+                  <div className="flex items-start gap-2.5">
                     {commentMember ? (
                       <div
-                        className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-medium text-white mt-0.5"
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white mt-0.5"
                         style={{ backgroundColor: commentMember.avatar_color }}
                       >
                         {(commentMember.display_name || commentMember.name).charAt(0).toUpperCase()}
                       </div>
                     ) : (
-                      <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground mt-0.5">
+                      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground mt-0.5">
                         S
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium">
+                        <span className="text-[13px] font-medium">
                           {commentMember ? (commentMember.display_name || commentMember.name) : "System"}
                         </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {comment.created_at.slice(0, 16)}
+                        <span className="text-[11px] text-muted-foreground/40">
+                          {comment.created_at.slice(0, 16).replace("T", " ")}
                         </span>
-                        <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => { setEditingCommentId(comment.id); setEditingCommentContent(comment.content); }}
-                            className="rounded p-0.5 hover:bg-accent"
+                            className="rounded-md p-1 hover:bg-muted"
                           >
-                            <Pencil className="h-3 w-3 text-muted-foreground" />
+                            <Pencil className="h-3 w-3 text-muted-foreground/50" />
                           </button>
                           <button
                             onClick={() => handleDeleteComment(comment.id)}
-                            className="rounded p-0.5 hover:bg-destructive/20"
+                            className="rounded-md p-1 hover:bg-red-500/10"
                           >
-                            <Trash2 className="h-3 w-3 text-muted-foreground" />
+                            <Trash2 className="h-3 w-3 text-muted-foreground/50" />
                           </button>
                         </div>
                       </div>
 
                       {editingCommentId === comment.id ? (
-                        <div className="mt-1">
+                        <div className="mt-1.5">
                           <textarea
                             autoFocus
                             value={editingCommentContent}
                             onChange={(e) => setEditingCommentContent(e.target.value)}
                             rows={3}
-                            className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:border-primary"
+                            className="w-full rounded-lg border border-border bg-background p-2.5 text-sm outline-none focus:border-primary/50"
                           />
-                          <div className="mt-1 flex gap-1">
+                          <div className="mt-1.5 flex gap-1.5">
                             <button
                               onClick={() => handleUpdateComment(comment.id)}
-                              className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                             >
                               Save
                             </button>
                             <button
                               onClick={() => { setEditingCommentId(null); setEditingCommentContent(""); }}
-                              className="rounded-md px-2 py-1 text-xs hover:bg-accent"
+                              className="rounded-lg px-3 py-1.5 text-xs hover:bg-muted"
                             >
                               Cancel
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <div className="mt-1 prose prose-sm prose-invert max-w-none text-sm">
+                        <div className="mt-1 prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{comment.content}</ReactMarkdown>
                         </div>
                       )}
@@ -464,7 +514,7 @@ export function IssueDetailPanel({
           </div>
 
           {/* Add comment */}
-          <div className="mt-4">
+          <div className="mt-4 pb-4">
             <textarea
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
@@ -476,13 +526,13 @@ export function IssueDetailPanel({
               }}
               rows={3}
               placeholder="Leave a comment... (Markdown supported, Cmd+Enter to submit)"
-              className="w-full rounded-md border border-border bg-background p-2 text-sm outline-none focus:border-primary"
+              className="w-full rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 placeholder:text-muted-foreground/40"
             />
-            <div className="mt-1 flex justify-end">
+            <div className="mt-2 flex justify-end">
               <button
                 onClick={handleAddComment}
                 disabled={!newComment.trim()}
-                className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                className="rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
               >
                 Comment
               </button>
@@ -492,16 +542,16 @@ export function IssueDetailPanel({
 
         {/* Activity log */}
         {activity.length > 0 && (
-          <div className="mt-6 border-t border-border px-4 pt-4 pb-4">
-            <h3 className="mb-2 text-xs font-medium text-muted-foreground">Activity</h3>
+          <div className="border-t border-border/50 px-5 pt-4 pb-4">
+            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">Activity</h3>
             <div className="space-y-2">
               {activity.slice(0, 20).map(entry => (
-                <div key={entry.id} className="flex items-start gap-2 text-xs text-muted-foreground">
-                  <span className="shrink-0">{entry.timestamp.slice(0, 16)}</span>
+                <div key={entry.id} className="flex items-start gap-2 text-xs text-muted-foreground/60">
+                  <span className="shrink-0 font-mono">{entry.timestamp.slice(0, 16)}</span>
                   <span>
-                    Changed <span className="text-foreground">{entry.field_changed}</span>
-                    {entry.old_value && <> from <span className="text-foreground">{entry.old_value}</span></>}
-                    {entry.new_value && <> to <span className="text-foreground">{entry.new_value}</span></>}
+                    Changed <span className="text-foreground/80">{entry.field_changed}</span>
+                    {entry.old_value && <> from <span className="text-foreground/80">{entry.old_value}</span></>}
+                    {entry.new_value && <> to <span className="text-foreground/80">{entry.new_value}</span></>}
                   </span>
                 </div>
               ))}
