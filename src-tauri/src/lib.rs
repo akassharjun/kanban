@@ -315,6 +315,17 @@ pub fn run_gui(database_url: Option<String>) {
             commands::learnings::find_similar_learnings,
             commands::learnings::list_learnings,
             commands::learnings::get_learnings_for_task,
+            // Pipelines
+            commands::pipelines::list_pipelines,
+            commands::pipelines::get_pipeline,
+            commands::pipelines::create_pipeline,
+            commands::pipelines::update_pipeline,
+            commands::pipelines::delete_pipeline,
+            commands::pipelines::trigger_pipeline,
+            commands::pipelines::advance_pipeline,
+            commands::pipelines::cancel_pipeline,
+            commands::pipelines::get_pipeline_run,
+            commands::pipelines::list_pipeline_runs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

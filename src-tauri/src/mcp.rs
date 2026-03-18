@@ -671,6 +671,52 @@ fn tools_list() -> Vec<Value> {
             }),
             vec!["project_id"],
         ),
+        // Pipelines
+        tool_def(
+            "list_pipelines",
+            "List multi-agent pipelines for a project",
+            json!({
+                "project_id": prop("number", "Project ID")
+            }),
+            vec!["project_id"],
+        ),
+        tool_def(
+            "create_pipeline",
+            "Create a multi-agent pipeline with sequential stages",
+            json!({
+                "project_id": prop("number", "Project ID"),
+                "name": prop("string", "Pipeline name"),
+                "description": prop("string", "Pipeline description"),
+                "stages": {"type": "array", "items": {"type": "object"}, "description": "Array of PipelineStage objects with name, task_type, required_skills, max_complexity, timeout_minutes, title_template, objective_template, success_criteria, auto_advance"}
+            }),
+            vec!["project_id", "name", "stages"],
+        ),
+        tool_def(
+            "trigger_pipeline",
+            "Trigger a pipeline run, creating the first stage task",
+            json!({
+                "pipeline_id": prop("number", "Pipeline ID"),
+                "trigger_issue_id": prop("number", "Optional issue ID that triggered this pipeline"),
+                "context": prop("string", "Optional JSON context for the pipeline run")
+            }),
+            vec!["pipeline_id"],
+        ),
+        tool_def(
+            "advance_pipeline",
+            "Advance a pipeline run to its next stage",
+            json!({
+                "run_id": prop("number", "Pipeline run ID")
+            }),
+            vec!["run_id"],
+        ),
+        tool_def(
+            "pipeline_status",
+            "Get status of a pipeline run including stage progress",
+            json!({
+                "run_id": prop("number", "Pipeline run ID")
+            }),
+            vec!["run_id"],
+        ),
     ]
 }
 
@@ -1617,6 +1663,10 @@ async fn handle_tool_call(
             // Auto-unblock downstream tasks when completed
             if new_state == "completed" {
                 let _ = orchestration::dependency::resolve_downstream(pool, issue.id).await;
+                // Check pipeline auto-advance
+                let _ = crate::commands::pipelines::check_pipeline_advancement(
+                    pool, backend, identifier,
+                ).await;
             }
 
             notify_change();
@@ -2489,12 +2539,44 @@ async fn handle_tool_call(
             .bind(issue_id)
             .bind(file_path)
             .bind(link_type)
+        // Pipeline tools
+        "list_pipelines" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let pipelines = sqlx::query_as::<_, crate::commands::pipelines::Pipeline>(
+                "SELECT * FROM pipelines WHERE project_id = $1 ORDER BY created_at DESC",
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            Ok(json!(pipelines))
+        }
+        "create_pipeline" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let name = args["name"].as_str().ok_or("name required")?;
+            let description = args.get("description").and_then(|v| v.as_str());
+            let stages = args.get("stages").ok_or("stages required")?;
+            let now = chrono::Utc::now().to_rfc3339();
+            let stages_str = serde_json::to_string(stages).unwrap_or_else(|_| "[]".to_string());
+
+            let jb = crate::db::compat::jsonb_cast(backend);
+            let id: i64 = sqlx::query_scalar(&format!(
+                "INSERT INTO pipelines (project_id, name, description, stages, created_at, updated_at) VALUES ($1, $2, $3, $4{jb}, $5, $6) RETURNING id"
+            ))
+            .bind(project_id)
+            .bind(name)
+            .bind(description)
+            .bind(&stages_str)
+            .bind(&now)
+            .bind(&now)
             .fetch_one(pool)
             .await
             .map_err(|e| e.to_string())?;
 
             let link = sqlx::query_as::<_, crate::models::IssueFileLink>(
                 "SELECT * FROM issue_file_links WHERE id = $1",
+            let pipeline = sqlx::query_as::<_, crate::commands::pipelines::Pipeline>(
+                "SELECT * FROM pipelines WHERE id = $1",
             )
             .bind(id)
             .fetch_one(pool)
@@ -2689,6 +2771,130 @@ async fn handle_tool_call(
             .bind(&risks_str)
             .bind(&test_str)
             .bind(&now)
+            Ok(json!(pipeline))
+        }
+        "trigger_pipeline" => {
+            let pipeline_id = args["pipeline_id"].as_i64().ok_or("pipeline_id required")?;
+            let trigger_issue_id = args.get("trigger_issue_id").and_then(|v| v.as_i64());
+            let context = args.get("context").and_then(|v| v.as_str()).map(String::from);
+
+            let pipeline = sqlx::query_as::<_, crate::commands::pipelines::Pipeline>(
+                "SELECT * FROM pipelines WHERE id = $1",
+            )
+            .bind(pipeline_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            if !pipeline.enabled {
+                return Err("Pipeline is disabled".to_string());
+            }
+
+            let stages: Vec<Value> = serde_json::from_str(&pipeline.stages).unwrap_or_default();
+            if stages.is_empty() {
+                return Err("Pipeline has no stages".to_string());
+            }
+
+            let now = chrono::Utc::now().to_rfc3339();
+            let initial_context = context.unwrap_or_else(|| "{}".to_string());
+
+            let trigger_title = if let Some(tid) = trigger_issue_id {
+                sqlx::query_scalar::<_, String>("SELECT title FROM issues WHERE id = $1")
+                    .bind(tid).fetch_optional(pool).await.map_err(|e| e.to_string())?
+                    .unwrap_or_default()
+            } else { String::new() };
+            let trigger_description = if let Some(tid) = trigger_issue_id {
+                sqlx::query_scalar::<_, Option<String>>("SELECT description FROM issues WHERE id = $1")
+                    .bind(tid).fetch_optional(pool).await.map_err(|e| e.to_string())?
+                    .flatten().unwrap_or_default()
+            } else { String::new() };
+
+            let jb = crate::db::compat::jsonb_cast(backend);
+            let run_id: i64 = sqlx::query_scalar(&format!(
+                "INSERT INTO pipeline_runs (pipeline_id, trigger_issue_id, status, current_stage, stage_tasks, context, started_at) VALUES ($1, $2, 'running', 0, '[]'{jb}, $3{jb}, $4) RETURNING id"
+            ))
+            .bind(pipeline_id)
+            .bind(trigger_issue_id)
+            .bind(&initial_context)
+            .bind(&now)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            // Create first stage task (inline)
+            let stage = &stages[0];
+            let stage_name = stage["name"].as_str().unwrap_or("Stage");
+            let task_type = stage["task_type"].as_str().unwrap_or("implementation");
+            let skills: Vec<String> = stage["required_skills"].as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            let complexity = stage["max_complexity"].as_str().unwrap_or("medium");
+            let timeout = stage["timeout_minutes"].as_i64().unwrap_or(30);
+            let sc: Vec<String> = stage["success_criteria"].as_array()
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+
+            let title_tmpl = stage["title_template"].as_str().unwrap_or("{{pipeline.name}}: {{stage.name}}");
+            let obj_tmpl = stage["objective_template"].as_str().unwrap_or("Execute stage: {{stage.name}}");
+            let title = title_tmpl.replace("{{pipeline.name}}", &pipeline.name).replace("{{stage.name}}", stage_name).replace("{{trigger.title}}", &trigger_title);
+            let objective = obj_tmpl.replace("{{pipeline.name}}", &pipeline.name).replace("{{stage.name}}", stage_name).replace("{{trigger.title}}", &trigger_title).replace("{{trigger.description}}", &trigger_description);
+
+            let (counter, prefix): (i64, String) = sqlx::query_as(
+                "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix",
+            ).bind(pipeline.project_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
+            let task_identifier = format!("{}-{}", prefix, counter);
+
+            let sid: i64 = sqlx::query_scalar(
+                "SELECT id FROM statuses WHERE project_id = $1 AND category = 'unstarted' ORDER BY position ASC LIMIT 1",
+            ).bind(pipeline.project_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
+
+            let max_pos: Option<f64> = sqlx::query_scalar(
+                "SELECT MAX(position) FROM issues WHERE project_id = $1 AND status_id = $2",
+            ).bind(pipeline.project_id).bind(sid).fetch_one(pool).await.map_err(|e| e.to_string())?;
+            let position = max_pos.unwrap_or(-1.0) + 1.0;
+
+            let desc = format!("Pipeline run #{} - Stage 1 ({})\n\n{}", run_id, stage_name, objective);
+            let issue_id: i64 = sqlx::query_scalar(
+                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 'medium', $6, $7, $8) RETURNING id",
+            ).bind(pipeline.project_id).bind(&task_identifier).bind(&title).bind(&desc).bind(sid).bind(position).bind(&now).bind(&now)
+            .fetch_one(pool).await.map_err(|e| e.to_string())?;
+
+            let ctx = json!({ "files": [], "related_tasks": [], "prior_attempts": [], "pipeline": { "run_id": run_id, "stage_index": 0, "pipeline_name": &pipeline.name, "stage_name": stage_name } });
+            let skills_json = serde_json::to_string(&skills).unwrap_or_else(|_| "[]".to_string());
+            let sc_json = serde_json::to_string(&sc).unwrap_or_else(|_| "[]".to_string());
+
+            sqlx::query(&format!(
+                "INSERT INTO task_contracts (issue_id, type, task_state, objective, context, constraints, success_criteria, required_skills, estimated_complexity, timeout_minutes, attempt_count) VALUES ($1, $2, 'queued', $3, $4{jb}, '[]'{jb}, $5{jb}, $6{jb}, $7, $8, 0)"
+            )).bind(issue_id).bind(task_type).bind(&objective).bind(&ctx.to_string()).bind(&sc_json).bind(&skills_json).bind(complexity).bind(timeout)
+            .execute(pool).await.map_err(|e| e.to_string())?;
+
+            let stage_tasks = json!([{ "stage_index": 0, "task_identifier": task_identifier, "status": "queued" }]);
+            sqlx::query(&format!("UPDATE pipeline_runs SET stage_tasks = $1{jb} WHERE id = $2"))
+                .bind(stage_tasks.to_string()).bind(run_id).execute(pool).await.map_err(|e| e.to_string())?;
+            sqlx::query("UPDATE pipelines SET total_runs = total_runs + 1, updated_at = $1 WHERE id = $2")
+                .bind(&now).bind(pipeline_id).execute(pool).await.map_err(|e| e.to_string())?;
+
+            let run = sqlx::query_as::<_, crate::commands::pipelines::PipelineRun>(
+                "SELECT * FROM pipeline_runs WHERE id = $1",
+            ).bind(run_id).fetch_one(pool).await.map_err(|e| e.to_string())?;
+
+            notify_change();
+            Ok(json!(run))
+        }
+        "advance_pipeline" => {
+            let run_id = args["run_id"].as_i64().ok_or("run_id required")?;
+            let run = crate::commands::pipelines::advance_pipeline_internal(pool, backend, run_id)
+                .await
+                .map_err(|e| e.to_string())?;
+            notify_change();
+            Ok(json!(run))
+        }
+        "pipeline_status" => {
+            let run_id = args["run_id"].as_i64().ok_or("run_id required")?;
+            let run = sqlx::query_as::<_, crate::commands::pipelines::PipelineRun>(
+                "SELECT * FROM pipeline_runs WHERE id = $1",
+            )
+            .bind(run_id)
             .fetch_one(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -2755,6 +2961,10 @@ async fn handle_tool_call(
             .bind(&files_str)
             .bind(&tags_str)
             .bind(&now)
+            let pipeline = sqlx::query_as::<_, crate::commands::pipelines::Pipeline>(
+                "SELECT * FROM pipelines WHERE id = $1",
+            )
+            .bind(run.pipeline_id)
             .fetch_one(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -2925,6 +3135,14 @@ async fn handle_tool_call(
             }
 
             Ok(json!(results))
+        }
+            let stages: Vec<Value> = serde_json::from_str(&pipeline.stages).unwrap_or_default();
+            Ok(json!({
+                "run": run,
+                "pipeline_name": pipeline.name,
+                "total_stages": stages.len(),
+                "stages": stages,
+            }))
         }
         _ => Err(format!("Unknown tool: {}", name)),
     }

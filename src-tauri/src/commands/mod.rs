@@ -24,6 +24,7 @@ pub mod mentions;
 pub mod milestones;
 pub mod nl_create;
 pub mod notifications;
+pub mod pipelines;
 pub mod projects;
 pub mod recently_viewed;
 pub mod relations;

@@ -427,6 +427,15 @@ CREATE TABLE IF NOT EXISTS automation_rules (
     actions TEXT NOT NULL DEFAULT '[]',
     execution_count INTEGER NOT NULL DEFAULT 0,
     last_executed_at TEXT,
+-- Pipelines (multi-agent stage chains)
+CREATE TABLE IF NOT EXISTS pipelines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    stages TEXT NOT NULL DEFAULT '[]',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    total_runs INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -538,3 +547,18 @@ CREATE TABLE IF NOT EXISTS task_learnings (
 
 CREATE INDEX IF NOT EXISTS idx_task_learnings_tags ON task_learnings(tags);
 CREATE INDEX IF NOT EXISTS idx_task_learnings_task ON task_learnings(task_identifier);
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pipeline_id INTEGER NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+    trigger_issue_id INTEGER REFERENCES issues(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running', 'completed', 'failed', 'cancelled')),
+    current_stage INTEGER NOT NULL DEFAULT 0,
+    stage_tasks TEXT NOT NULL DEFAULT '[]',
+    context TEXT NOT NULL DEFAULT '{}',
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at TEXT,
+    error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline ON pipeline_runs(pipeline_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status);

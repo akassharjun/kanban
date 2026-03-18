@@ -22,6 +22,7 @@ import { AgentDashboard } from "@/components/AgentDashboard";
 import { CodeHeatMap } from "@/components/CodeHeatMap";
 import { ReplayViewer } from "@/components/ReplayViewer";
 import { DependencyGraph } from "@/components/DependencyGraph";
+import { PipelinesView } from "@/components/PipelinesView";
 import { useProjects } from "./hooks/use-projects";
 import { useIssues } from "./hooks/use-issues";
 import { useMembers } from "./hooks/use-members";
@@ -37,7 +38,7 @@ import { useRecentlyViewed } from "./hooks/use-recently-viewed";
 import * as api from "./tauri/commands";
 import type { IssueTemplate, SavedView } from "./types";
 
-type Page = "project" | "members" | "settings" | "agents" | "code";
+type Page = "project" | "members" | "settings" | "agents" | "code" | "pipelines";
 
 function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
@@ -279,6 +280,7 @@ function App() {
         onOpenSettings={() => setPage("settings")}
         onOpenAgents={() => setPage("agents")}
         onOpenCode={() => setPage("code")}
+        onOpenPipelines={() => setPage("pipelines")}
         agentCount={onlineAgentCount}
         collapsed={sidebarCollapsed}
         starredIssues={starredIssues}
@@ -433,6 +435,10 @@ function App() {
 
         {page === "code" && (
           <CodeHeatMap projectId={selectedProjectId} projectName={selectedProject?.name ?? null} />
+        )}
+
+        {page === "pipelines" && (
+          <PipelinesView projectId={selectedProjectId} projectName={selectedProject?.name ?? null} issues={issues} />
         )}
       </div>
 

@@ -57,6 +57,8 @@ import type {
   SimilarTaskResult,
   WsjfScore,
   AutoScoreResult,
+  Pipeline,
+  PipelineRun,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -566,3 +568,24 @@ export const autoScoreIssue = (issueId: number) => invoke<AutoScoreResult>("auto
 export const getRankedBacklog = (projectId: number) => invoke<WsjfScore[]>("get_ranked_backlog", { projectId });
 export const autoScoreProject = (projectId: number) => invoke<AutoScoreResult[]>("auto_score_project", { projectId });
 export const recalculateScores = (projectId: number) => invoke<WsjfScore[]>("recalculate_scores", { projectId });
+// Pipelines
+export const listPipelines = (projectId: number) => invoke<Pipeline[]>("list_pipelines", { projectId });
+export const getPipeline = (id: number) => invoke<Pipeline>("get_pipeline", { id });
+export const createPipeline = (input: {
+  project_id: number;
+  name: string;
+  description?: string;
+  stages: unknown[];
+}) => invoke<Pipeline>("create_pipeline", { input });
+export const updatePipeline = (id: number, input: {
+  name?: string;
+  description?: string;
+  stages?: unknown[];
+  enabled?: boolean;
+}) => invoke<Pipeline>("update_pipeline", { id, input });
+export const deletePipeline = (id: number) => invoke<void>("delete_pipeline", { id });
+export const triggerPipeline = (pipelineId: number, triggerIssueId?: number, context?: string) => invoke<PipelineRun>("trigger_pipeline", { pipelineId, triggerIssueId, context });
+export const advancePipeline = (runId: number) => invoke<PipelineRun>("advance_pipeline", { runId });
+export const cancelPipeline = (runId: number) => invoke<PipelineRun>("cancel_pipeline", { runId });
+export const getPipelineRun = (runId: number) => invoke<PipelineRun>("get_pipeline_run", { runId });
+export const listPipelineRuns = (pipelineId: number) => invoke<PipelineRun[]>("list_pipeline_runs", { pipelineId });
