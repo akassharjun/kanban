@@ -432,6 +432,69 @@ fn tools_list() -> Vec<Value> {
             }),
             vec!["identifier"],
         ),
+        // Cost tracking
+        tool_def(
+            "record_cost",
+            "Record a cost entry for a task",
+            json!({
+                "task_identifier": prop("string", "Task identifier (e.g. KAN-42)"),
+                "agent_id": prop("string", "Agent ID"),
+                "cost_type": prop("string", "Cost type: compute_time, api_tokens, custom"),
+                "amount": prop("number", "Cost amount"),
+                "unit": prop("string", "Unit: minutes, tokens, dollars, credits"),
+                "description": prop("string", "Optional description"),
+            }),
+            vec!["task_identifier", "agent_id", "cost_type", "amount", "unit"],
+        ),
+        tool_def(
+            "task_cost",
+            "Get cost summary for a task",
+            json!({
+                "task_identifier": prop("string", "Task identifier"),
+            }),
+            vec!["task_identifier"],
+        ),
+        tool_def(
+            "project_costs",
+            "Get cost summary for a project",
+            json!({
+                "project_id": prop("number", "Project ID"),
+            }),
+            vec!["project_id"],
+        ),
+        tool_def(
+            "check_budget",
+            "Check budget status and alerts for a project",
+            json!({
+                "project_id": prop("number", "Project ID"),
+            }),
+            vec!["project_id"],
+        ),
+        // SLA engine
+        tool_def(
+            "check_sla",
+            "Check SLA compliance for all in-progress issues in a project",
+            json!({
+                "project_id": prop("number", "Project ID"),
+            }),
+            vec!["project_id"],
+        ),
+        tool_def(
+            "enforce_sla",
+            "Enforce SLA policies and execute escalation actions",
+            json!({
+                "project_id": prop("number", "Project ID"),
+            }),
+            vec!["project_id"],
+        ),
+        tool_def(
+            "sla_status",
+            "Get SLA dashboard with policies, compliance, and events",
+            json!({
+                "project_id": prop("number", "Project ID"),
+            }),
+            vec!["project_id"],
+        ),
     ]
 }
 
@@ -2062,6 +2125,194 @@ async fn handle_tool_call(
             }
 
             Ok(json!({"nodes": nodes, "edges": edges}))
+        }
+        // Cost tracking
+        "record_cost" => {
+            let task_identifier = args["task_identifier"].as_str().ok_or("task_identifier required")?;
+            let agent_id = args["agent_id"].as_str().ok_or("agent_id required")?;
+            let cost_type = args["cost_type"].as_str().ok_or("cost_type required")?;
+            let amount = args["amount"].as_f64().ok_or("amount required")?;
+            let unit = args["unit"].as_str().ok_or("unit required")?;
+            let description = args.get("description").and_then(|v| v.as_str());
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO task_costs (task_identifier, agent_id, cost_type, amount, unit, description, recorded_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id"
+            )
+            .bind(task_identifier)
+            .bind(agent_id)
+            .bind(cost_type)
+            .bind(amount)
+            .bind(unit)
+            .bind(description)
+            .bind(&now)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            // Update budget spent
+            if unit == "dollars" {
+                let project_id: Option<i64> = sqlx::query_scalar(
+                    "SELECT project_id FROM issues WHERE identifier = $1"
+                )
+                .bind(task_identifier)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+                if let Some(pid) = project_id {
+                    let _ = sqlx::query("UPDATE cost_budgets SET spent = spent + $1 WHERE project_id = $2")
+                        .bind(amount)
+                        .bind(pid)
+                        .execute(pool)
+                        .await;
+                }
+            }
+
+            notify_change();
+            Ok(json!({"id": id, "task_identifier": task_identifier, "amount": amount, "unit": unit}))
+        }
+        "task_cost" => {
+            let task_identifier = args["task_identifier"].as_str().ok_or("task_identifier required")?;
+            let costs = sqlx::query_as::<_, crate::commands::costs::TaskCost>(
+                "SELECT * FROM task_costs WHERE task_identifier = $1 ORDER BY recorded_at ASC"
+            )
+            .bind(task_identifier)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let mut total_dollars = 0.0f64;
+            let mut total_minutes = 0.0f64;
+            let mut total_tokens = 0i64;
+            for c in &costs {
+                if c.unit == "dollars" { total_dollars += c.amount; }
+                if c.cost_type == "compute_time" && c.unit == "minutes" { total_minutes += c.amount; }
+                if c.cost_type == "api_tokens" && c.unit == "tokens" { total_tokens += c.amount as i64; }
+            }
+            Ok(json!({
+                "task_identifier": task_identifier,
+                "total_cost_dollars": total_dollars,
+                "total_compute_minutes": total_minutes,
+                "total_tokens": total_tokens,
+                "entries": costs,
+            }))
+        }
+        "project_costs" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let total: Option<f64> = sqlx::query_scalar(
+                "SELECT SUM(tc.amount) FROM task_costs tc JOIN issues i ON tc.task_identifier = i.identifier WHERE i.project_id = $1 AND tc.unit = 'dollars'"
+            )
+            .bind(project_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let budgets = sqlx::query_as::<_, crate::commands::costs::CostBudget>(
+                "SELECT * FROM cost_budgets WHERE project_id = $1"
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            Ok(json!({
+                "project_id": project_id,
+                "total_cost": total.unwrap_or(0.0),
+                "budgets": budgets,
+            }))
+        }
+        "check_budget" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let budgets = sqlx::query_as::<_, crate::commands::costs::CostBudget>(
+                "SELECT * FROM cost_budgets WHERE project_id = $1"
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let alerts: Vec<Value> = budgets.iter().filter_map(|b| {
+                let pct = if b.amount > 0.0 { b.spent / b.amount } else { 0.0 };
+                let threshold = b.alert_threshold.unwrap_or(0.8);
+                if pct >= threshold {
+                    Some(json!({"budget_id": b.id, "budget_type": b.budget_type, "amount": b.amount, "spent": b.spent, "percentage": pct, "alert": true}))
+                } else {
+                    None
+                }
+            }).collect();
+            Ok(json!({"alerts": alerts, "all_budgets": budgets}))
+        }
+        // SLA engine
+        "check_sla" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let statuses = crate::commands::sla::enforce_sla_async(pool, project_id).await;
+            // Just check compliance without enforcing - recompute
+            let policies = sqlx::query_as::<_, crate::commands::sla::SlaPolicy>(
+                "SELECT * FROM sla_policies WHERE project_id = $1 AND enabled = 1"
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let issues_list = sqlx::query_as::<_, Issue>(
+                "SELECT i.* FROM issues i JOIN statuses s ON i.status_id = s.id WHERE i.project_id = $1 AND s.category = 'started'"
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let now = chrono::Utc::now();
+            let mut results = Vec::new();
+            for issue in &issues_list {
+                for policy in &policies {
+                    if let Some(ref pf) = policy.priority_filter {
+                        if !pf.is_empty() && pf != &issue.priority { continue; }
+                    }
+                    let start = chrono::NaiveDateTime::parse_from_str(&issue.created_at, "%Y-%m-%d %H:%M:%SZ")
+                        .unwrap_or_else(|_| now.naive_utc());
+                    let elapsed = now.naive_utc().signed_duration_since(start).num_minutes() as f64;
+                    let remaining = policy.breach_minutes as f64 - elapsed;
+                    let status = if elapsed >= policy.breach_minutes as f64 { "breached" }
+                        else if elapsed >= (policy.breach_minutes - policy.warning_minutes) as f64 { "warning" }
+                        else { "ok" };
+                    results.push(json!({
+                        "issue": issue.identifier, "title": issue.title,
+                        "policy": policy.name, "status": status,
+                        "elapsed_minutes": elapsed, "remaining_minutes": remaining.max(0.0),
+                    }));
+                }
+            }
+            let _ = statuses; // consume the result
+            Ok(json!(results))
+        }
+        "enforce_sla" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let events = crate::commands::sla::enforce_sla_async(pool, project_id).await
+                .map_err(|e| e.to_string())?;
+            notify_change();
+            Ok(json!(events))
+        }
+        "sla_status" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let policies = sqlx::query_as::<_, crate::commands::sla::SlaPolicy>(
+                "SELECT * FROM sla_policies WHERE project_id = $1"
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let events = sqlx::query_as::<_, crate::commands::sla::SlaEvent>(
+                "SELECT se.* FROM sla_events se JOIN sla_policies sp ON se.sla_policy_id = sp.id WHERE sp.project_id = $1 ORDER BY se.created_at DESC LIMIT 50"
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            Ok(json!({"policies": policies, "recent_events": events}))
         }
         _ => Err(format!("Unknown tool: {}", name)),
     }

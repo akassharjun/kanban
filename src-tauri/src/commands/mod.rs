@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod comments;
+pub mod costs;
 pub mod custom_fields;
 pub mod execution_logs;
 pub mod health;
@@ -10,6 +11,7 @@ pub mod members;
 pub mod notifications;
 pub mod projects;
 pub mod relations;
+pub mod sla;
 pub mod statuses;
 pub mod task_contracts;
 pub mod templates;

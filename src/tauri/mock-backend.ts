@@ -8,6 +8,8 @@ import type {
   ProjectMetrics, CustomField, IssueTemplate, Hook,
   ProjectAgentConfig, FullTaskContract, ExecutionLog, TaskGraph,
   IssueWithLabels, UndoLogEntry,
+  TaskCost, TaskCostSummary, ProjectCostSummary, BudgetStatus,
+  CostBudget, SlaPolicy, SlaStatus, SlaEvent, SlaDashboard,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -356,6 +358,89 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "reject_task": return;
     case "unclaim_task": return;
     case "log_task_activity": return;
+
+    // Cost Tracking
+    case "record_cost": {
+      const c: TaskCost = { id: id(), ...args!.input, recorded_at: now };
+      return c;
+    }
+    case "get_task_cost_summary": return {
+      task_identifier: args?.taskIdentifier ?? "",
+      total_compute_minutes: 45.5,
+      total_tokens: 125000,
+      total_cost_dollars: 3.25,
+      cost_breakdown: [
+        { id: 1, task_identifier: args?.taskIdentifier ?? "", agent_id: "claude-opus-1", cost_type: "compute_time", amount: 45.5, unit: "minutes", description: "Task execution", recorded_at: ago(60) },
+        { id: 2, task_identifier: args?.taskIdentifier ?? "", agent_id: "claude-opus-1", cost_type: "api_tokens", amount: 125000, unit: "tokens", description: null, recorded_at: ago(60) },
+        { id: 3, task_identifier: args?.taskIdentifier ?? "", agent_id: "claude-opus-1", cost_type: "custom", amount: 3.25, unit: "dollars", description: "API cost", recorded_at: ago(60) },
+      ],
+    } as TaskCostSummary;
+    case "get_project_cost_summary": return {
+      project_id: args?.projectId ?? 1,
+      total_cost: 47.80,
+      cost_by_agent: [
+        { agent_id: "claude-opus-1", agent_name: "Claude Opus", total_cost: 35.20, task_count: 8, avg_cost_per_task: 4.40 },
+        { agent_id: "review-bot-1", agent_name: "Review Bot", total_cost: 12.60, task_count: 5, avg_cost_per_task: 2.52 },
+      ],
+      daily_costs: [
+        { date: new Date(Date.now() - 6 * 86400000).toISOString().split("T")[0], cost: 5.20, task_count: 2 },
+        { date: new Date(Date.now() - 5 * 86400000).toISOString().split("T")[0], cost: 8.40, task_count: 3 },
+        { date: new Date(Date.now() - 4 * 86400000).toISOString().split("T")[0], cost: 3.10, task_count: 1 },
+        { date: new Date(Date.now() - 3 * 86400000).toISOString().split("T")[0], cost: 12.50, task_count: 4 },
+        { date: new Date(Date.now() - 2 * 86400000).toISOString().split("T")[0], cost: 7.80, task_count: 2 },
+        { date: new Date(Date.now() - 1 * 86400000).toISOString().split("T")[0], cost: 6.30, task_count: 2 },
+        { date: new Date().toISOString().split("T")[0], cost: 4.50, task_count: 1 },
+      ],
+      budget_status: [
+        { budget_id: 1, budget_type: "monthly", amount: 100, unit: "dollars", spent: 47.80, percentage: 0.478, alert: false, alert_threshold: 0.8 },
+        { budget_id: 2, budget_type: "daily", amount: 15, unit: "dollars", spent: 12.50, percentage: 0.833, alert: true, alert_threshold: 0.8 },
+      ],
+    } as ProjectCostSummary;
+    case "set_budget": return { id: id(), ...args!.input, spent: 0, period_start: null, period_end: null, alert_threshold: 0.8, created_at: now } as CostBudget;
+    case "list_budgets": return [
+      { budget_id: 1, budget_type: "monthly", amount: 100, unit: "dollars", spent: 47.80, percentage: 0.478, alert: false, alert_threshold: 0.8 },
+      { budget_id: 2, budget_type: "daily", amount: 15, unit: "dollars", spent: 12.50, percentage: 0.833, alert: true, alert_threshold: 0.8 },
+    ] as BudgetStatus[];
+    case "check_budget": return [
+      { budget_id: 2, budget_type: "daily", amount: 15, unit: "dollars", spent: 12.50, percentage: 0.833, alert: true, alert_threshold: 0.8 },
+    ] as BudgetStatus[];
+    case "delete_budget": return;
+
+    // SLA
+    case "list_sla_policies": return [
+      { id: 1, project_id: args?.projectId ?? 1, name: "Urgent Response", target_type: "response_time", priority_filter: "urgent", warning_minutes: 15, breach_minutes: 30, escalation_action: '{"type":"change_priority"}', enabled: 1, created_at: ago(5000) },
+      { id: 2, project_id: args?.projectId ?? 1, name: "Standard Resolution", target_type: "resolution_time", priority_filter: null, warning_minutes: 120, breach_minutes: 240, escalation_action: '{"type":"notify"}', enabled: 1, created_at: ago(4000) },
+    ] as SlaPolicy[];
+    case "create_sla_policy": return { id: id(), ...args!.input, enabled: 1, escalation_action: args!.input.escalation_action ?? "{}", created_at: now } as SlaPolicy;
+    case "update_sla_policy": return args?.input;
+    case "delete_sla_policy": return;
+    case "check_sla_compliance": return [
+      { issue_id: 6, issue_identifier: "KAN-6", issue_title: "Fix drag-drop position calculation", policy_id: 1, policy_name: "Urgent Response", status: "warning", elapsed_minutes: 22, remaining_minutes: 8, breach_at: ago(-8) },
+      { issue_id: 7, issue_identifier: "KAN-7", issue_title: "Improve issue detail panel UX", policy_id: 2, policy_name: "Standard Resolution", status: "ok", elapsed_minutes: 45, remaining_minutes: 195, breach_at: ago(-195) },
+      { issue_id: 8, issue_identifier: "KAN-8", issue_title: "Add comment mentions", policy_id: 2, policy_name: "Standard Resolution", status: "breached", elapsed_minutes: 260, remaining_minutes: 0, breach_at: ago(20) },
+    ] as SlaStatus[];
+    case "enforce_sla": return [] as SlaEvent[];
+    case "get_sla_events": return [
+      { id: 1, sla_policy_id: 1, issue_id: args?.issueId ?? 6, event_type: "warning", message: "SLA warning for KAN-6: 22m elapsed", metadata: "{}", created_at: ago(10) },
+    ] as SlaEvent[];
+    case "get_sla_dashboard": return {
+      total_tracked: 3,
+      total_ok: 1,
+      total_warning: 1,
+      total_breached: 1,
+      policies: [
+        { id: 1, project_id: args?.projectId ?? 1, name: "Urgent Response", target_type: "response_time", priority_filter: "urgent", warning_minutes: 15, breach_minutes: 30, escalation_action: '{"type":"change_priority"}', enabled: 1, created_at: ago(5000) },
+        { id: 2, project_id: args?.projectId ?? 1, name: "Standard Resolution", target_type: "resolution_time", priority_filter: null, warning_minutes: 120, breach_minutes: 240, escalation_action: '{"type":"notify"}', enabled: 1, created_at: ago(4000) },
+      ],
+      statuses: [
+        { issue_id: 6, issue_identifier: "KAN-6", issue_title: "Fix drag-drop", policy_id: 1, policy_name: "Urgent Response", status: "warning", elapsed_minutes: 22, remaining_minutes: 8, breach_at: ago(-8) },
+        { issue_id: 8, issue_identifier: "KAN-8", issue_title: "Add comment mentions", policy_id: 2, policy_name: "Standard Resolution", status: "breached", elapsed_minutes: 260, remaining_minutes: 0, breach_at: ago(20) },
+      ],
+      recent_events: [
+        { id: 1, sla_policy_id: 2, issue_id: 8, event_type: "breach", message: "SLA breach for KAN-8", metadata: "{}", created_at: ago(20) },
+        { id: 2, sla_policy_id: 1, issue_id: 6, event_type: "warning", message: "SLA warning for KAN-6", metadata: "{}", created_at: ago(10) },
+      ],
+    } as SlaDashboard;
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);

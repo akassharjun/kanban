@@ -90,6 +90,12 @@ pub fn run_gui(database_url: Option<String>) {
                                 let _ = app_handle2.emit("db-changed", ());
                             }
                         }
+                        // Enforce SLA policies for all active projects
+                        if let Ok(events) = crate::commands::sla::enforce_sla_all_projects(&pool).await {
+                            if !events.is_empty() {
+                                let _ = app_handle2.emit("db-changed", ());
+                            }
+                        }
                     });
                 }
             });
@@ -197,6 +203,23 @@ pub fn run_gui(database_url: Option<String>) {
             commands::execution_logs::task_replay,
             commands::execution_logs::task_attempts,
             commands::execution_logs::recent_activity,
+            // Costs
+            commands::costs::record_cost,
+            commands::costs::get_task_cost_summary,
+            commands::costs::get_project_cost_summary,
+            commands::costs::set_budget,
+            commands::costs::list_budgets,
+            commands::costs::check_budget,
+            commands::costs::delete_budget,
+            // SLA
+            commands::sla::list_sla_policies,
+            commands::sla::create_sla_policy,
+            commands::sla::update_sla_policy,
+            commands::sla::delete_sla_policy,
+            commands::sla::check_sla_compliance,
+            commands::sla::enforce_sla,
+            commands::sla::get_sla_events,
+            commands::sla::get_sla_dashboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

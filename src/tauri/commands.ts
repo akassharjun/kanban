@@ -23,6 +23,15 @@ import type {
   TaskGraph,
   ProjectAgentConfig,
   Hook,
+  TaskCost,
+  TaskCostSummary,
+  ProjectCostSummary,
+  BudgetStatus,
+  CostBudget,
+  SlaPolicy,
+  SlaStatus,
+  SlaEvent,
+  SlaDashboard,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -244,3 +253,51 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// Cost Tracking
+export const recordCost = (input: {
+  task_identifier: string;
+  agent_id: string;
+  cost_type: string;
+  amount: number;
+  unit: string;
+  description?: string;
+}) => invoke<TaskCost>("record_cost", { input });
+export const getTaskCostSummary = (taskIdentifier: string) => invoke<TaskCostSummary>("get_task_cost_summary", { taskIdentifier });
+export const getProjectCostSummary = (projectId: number) => invoke<ProjectCostSummary>("get_project_cost_summary", { projectId });
+export const setBudget = (input: {
+  project_id: number;
+  budget_type: string;
+  amount: number;
+  unit?: string;
+  alert_threshold?: number;
+}) => invoke<CostBudget>("set_budget", { input });
+export const listBudgets = (projectId: number) => invoke<BudgetStatus[]>("list_budgets", { projectId });
+export const checkBudget = (projectId: number) => invoke<BudgetStatus[]>("check_budget", { projectId });
+export const deleteBudget = (id: number) => invoke<void>("delete_budget", { id });
+
+// SLA
+export const listSlaPolicies = (projectId: number) => invoke<SlaPolicy[]>("list_sla_policies", { projectId });
+export const createSlaPolicy = (input: {
+  project_id: number;
+  name: string;
+  target_type: string;
+  priority_filter?: string;
+  warning_minutes: number;
+  breach_minutes: number;
+  escalation_action?: string;
+}) => invoke<SlaPolicy>("create_sla_policy", { input });
+export const updateSlaPolicy = (id: number, input: {
+  name?: string;
+  target_type?: string;
+  priority_filter?: string;
+  warning_minutes?: number;
+  breach_minutes?: number;
+  escalation_action?: string;
+  enabled?: boolean;
+}) => invoke<SlaPolicy>("update_sla_policy", { id, input });
+export const deleteSlaPolicy = (id: number) => invoke<void>("delete_sla_policy", { id });
+export const checkSlaCompliance = (projectId: number) => invoke<SlaStatus[]>("check_sla_compliance", { projectId });
+export const enforceSla = (projectId: number) => invoke<SlaEvent[]>("enforce_sla", { projectId });
+export const getSlaEvents = (issueId: number) => invoke<SlaEvent[]>("get_sla_events", { issueId });
+export const getSlaDashboard = (projectId: number) => invoke<SlaDashboard>("get_sla_dashboard", { projectId });

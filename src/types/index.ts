@@ -268,3 +268,117 @@ export interface ProjectAgentConfig {
   heartbeat_interval_seconds: number;
   missed_heartbeats_before_offline: number;
 }
+
+// Cost Tracking Types
+
+export interface TaskCost {
+  id: number;
+  task_identifier: string;
+  agent_id: string;
+  cost_type: "compute_time" | "api_tokens" | "custom";
+  amount: number;
+  unit: string;
+  description: string | null;
+  recorded_at: string;
+}
+
+export interface TaskCostSummary {
+  task_identifier: string;
+  total_compute_minutes: number;
+  total_tokens: number;
+  total_cost_dollars: number;
+  cost_breakdown: TaskCost[];
+}
+
+export interface AgentCostEntry {
+  agent_id: string;
+  agent_name: string;
+  total_cost: number;
+  task_count: number;
+  avg_cost_per_task: number;
+}
+
+export interface DailyCostEntry {
+  date: string;
+  cost: number;
+  task_count: number;
+}
+
+export interface BudgetStatus {
+  budget_id: number;
+  budget_type: "daily" | "weekly" | "monthly" | "per_task" | "total";
+  amount: number;
+  unit: string;
+  spent: number;
+  percentage: number;
+  alert: boolean;
+  alert_threshold: number;
+}
+
+export interface ProjectCostSummary {
+  project_id: number;
+  total_cost: number;
+  cost_by_agent: AgentCostEntry[];
+  daily_costs: DailyCostEntry[];
+  budget_status: BudgetStatus[];
+}
+
+export interface CostBudget {
+  id: number;
+  project_id: number;
+  budget_type: string;
+  amount: number;
+  unit: string;
+  spent: number;
+  period_start: string | null;
+  period_end: string | null;
+  alert_threshold: number | null;
+  created_at: string;
+}
+
+// SLA Types
+
+export interface SlaPolicy {
+  id: number;
+  project_id: number;
+  name: string;
+  target_type: "response_time" | "resolution_time" | "task_timeout";
+  priority_filter: string | null;
+  warning_minutes: number;
+  breach_minutes: number;
+  escalation_action: string;
+  enabled: number;
+  created_at: string;
+}
+
+export interface SlaStatus {
+  issue_id: number;
+  issue_identifier: string;
+  issue_title: string;
+  policy_id: number;
+  policy_name: string;
+  status: "ok" | "warning" | "breached";
+  elapsed_minutes: number;
+  remaining_minutes: number;
+  breach_at: string;
+}
+
+export interface SlaEvent {
+  id: number;
+  sla_policy_id: number;
+  issue_id: number;
+  event_type: "warning" | "breach" | "escalated" | "resolved";
+  message: string;
+  metadata: string | null;
+  created_at: string;
+}
+
+export interface SlaDashboard {
+  total_tracked: number;
+  total_ok: number;
+  total_warning: number;
+  total_breached: number;
+  policies: SlaPolicy[];
+  statuses: SlaStatus[];
+  recent_events: SlaEvent[];
+}

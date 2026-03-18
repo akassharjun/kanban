@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, Calendar } from "lucide-react";
-import type { Issue, Member, Label } from "@/types";
+import { AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, Calendar, AlertTriangle, XCircle } from "lucide-react";
+import type { Issue, Member, Label, SlaStatus } from "@/types";
 
 interface IssueCardProps {
   issue: Issue;
@@ -10,6 +10,7 @@ interface IssueCardProps {
   issues?: Issue[];
   onClick: () => void;
   isDragging?: boolean;
+  slaStatus?: SlaStatus;
 }
 
 const priorityConfig: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
@@ -31,7 +32,7 @@ function formatDueDate(dateStr: string): { text: string; urgent: boolean } {
   return { text: dateStr, urgent: false };
 }
 
-export function IssueCard({ issue, member, labels, issues, onClick, isDragging }: IssueCardProps) {
+export function IssueCard({ issue, member, labels, issues, onClick, isDragging, slaStatus }: IssueCardProps) {
   const priority = priorityConfig[issue.priority] || priorityConfig.none;
   const PriorityIcon = priority.icon;
   const parent = issue.parent_id ? issues?.find(i => i.id === issue.parent_id) : undefined;
@@ -42,7 +43,9 @@ export function IssueCard({ issue, member, labels, issues, onClick, isDragging }
       className={cn(
         "group cursor-pointer rounded-lg border border-border/60 bg-card p-3 transition-all",
         "hover:border-border hover:shadow-sm",
-        isDragging && "rotate-2 shadow-xl opacity-95 ring-2 ring-primary/20"
+        isDragging && "rotate-2 shadow-xl opacity-95 ring-2 ring-primary/20",
+        slaStatus?.status === "breached" && "border-red-500/40",
+        slaStatus?.status === "warning" && "border-yellow-500/40"
       )}
     >
       {parent && (
@@ -63,6 +66,18 @@ export function IssueCard({ issue, member, labels, issues, onClick, isDragging }
           <p className="text-[13px] font-medium leading-snug text-card-foreground/90">{issue.title}</p>
         </div>
 
+        <div className="flex flex-col items-end gap-1 shrink-0">
+        {slaStatus && slaStatus.status === "warning" && (
+          <span className="flex items-center gap-0.5 text-[10px] text-yellow-500 bg-yellow-500/10 px-1 py-0.5 rounded" title={`SLA warning: ${slaStatus.remaining_minutes.toFixed(0)}m remaining`}>
+            <AlertTriangle className="h-3 w-3" />
+          </span>
+        )}
+        {slaStatus && slaStatus.status === "breached" && (
+          <span className="flex items-center gap-0.5 text-[10px] text-red-500 bg-red-500/10 px-1 py-0.5 rounded" title={`SLA breached: ${slaStatus.elapsed_minutes.toFixed(0)}m elapsed`}>
+            <XCircle className="h-3 w-3" />
+          </span>
+        )}
+
         {member && (
           <div
             className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ring-2 ring-card"
@@ -72,6 +87,7 @@ export function IssueCard({ issue, member, labels, issues, onClick, isDragging }
             {(member.display_name || member.name).charAt(0).toUpperCase()}
           </div>
         )}
+        </div>
       </div>
 
       {(labels.length > 0 || issue.due_date) && (

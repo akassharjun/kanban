@@ -245,3 +245,57 @@ CREATE TABLE IF NOT EXISTS project_agent_config (
     heartbeat_interval_seconds INTEGER NOT NULL DEFAULT 60,
     missed_heartbeats_before_offline INTEGER NOT NULL DEFAULT 3
 );
+
+-- Cost tracking per task
+CREATE TABLE IF NOT EXISTS task_costs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_identifier TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    cost_type TEXT NOT NULL CHECK(cost_type IN ('compute_time', 'api_tokens', 'custom')),
+    amount REAL NOT NULL,
+    unit TEXT NOT NULL,
+    description TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_task_costs_task ON task_costs(task_identifier);
+CREATE INDEX IF NOT EXISTS idx_task_costs_agent ON task_costs(agent_id);
+
+-- Cost budgets per project
+CREATE TABLE IF NOT EXISTS cost_budgets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    budget_type TEXT NOT NULL CHECK(budget_type IN ('daily', 'weekly', 'monthly', 'per_task', 'total')),
+    amount REAL NOT NULL,
+    unit TEXT NOT NULL DEFAULT 'dollars',
+    spent REAL NOT NULL DEFAULT 0,
+    period_start TEXT,
+    period_end TEXT,
+    alert_threshold REAL DEFAULT 0.8,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- SLA policies
+CREATE TABLE IF NOT EXISTS sla_policies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    target_type TEXT NOT NULL CHECK(target_type IN ('response_time', 'resolution_time', 'task_timeout')),
+    priority_filter TEXT,
+    warning_minutes INTEGER NOT NULL,
+    breach_minutes INTEGER NOT NULL,
+    escalation_action TEXT NOT NULL DEFAULT '{}',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- SLA events
+CREATE TABLE IF NOT EXISTS sla_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sla_policy_id INTEGER NOT NULL REFERENCES sla_policies(id) ON DELETE CASCADE,
+    issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL CHECK(event_type IN ('warning', 'breach', 'escalated', 'resolved')),
+    message TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sla_events_issue ON sla_events(issue_id);

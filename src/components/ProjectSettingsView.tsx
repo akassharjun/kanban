@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Project, Status, Label, IssueTemplate, Hook, ProjectAgentConfig } from "@/types";
 import * as api from "@/tauri/commands";
+import { SlaDashboard } from "@/components/SlaDashboard";
 
 export interface ProjectSettingsViewProps {
   project: Project;
@@ -12,7 +13,7 @@ export interface ProjectSettingsViewProps {
   onDeleteProject?: (id: number) => Promise<unknown>;
 }
 
-type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents";
+type Tab = "general" | "statuses" | "labels" | "templates" | "hooks" | "agents" | "sla";
 
 const statusCategories = [
   { value: "unstarted", label: "Unstarted" },
@@ -196,6 +197,7 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     { value: "templates", label: "Templates" },
     { value: "hooks", label: "Hooks" },
     { value: "agents", label: "Agent Config" },
+    { value: "sla", label: "SLA Policies" },
   ];
 
   const handleSaveAgentConfig = async () => {
@@ -538,6 +540,11 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
         )}
         {tab === "agents" && !agentConfig && (
           <div className="py-8 text-center text-sm text-muted-foreground">Loading agent configuration...</div>
+        )}
+
+        {/* SLA Tab */}
+        {tab === "sla" && (
+          <SlaDashboard projectId={project.id} />
         )}
       </div>
     </div>
