@@ -271,3 +271,32 @@ pub struct CustomFieldValue {
     pub field_id: i64,
     pub value: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct SavedView {
+    pub id: i64,
+    pub project_id: i64,
+    pub name: String,
+    pub filters: String,
+    pub sort_by: Option<String>,
+    pub sort_direction: Option<String>,
+    pub view_mode: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct StarredIssue {
+    pub id: i64,
+    pub issue_id: i64,
+    pub member_id: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct RecentlyViewed {
+    pub id: i64,
+    pub issue_id: i64,
+    pub member_id: i64,
+    pub viewed_at: String,
+}

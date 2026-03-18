@@ -214,6 +214,21 @@ pub fn run_gui(database_url: Option<String>) {
             commands::execution_logs::task_replay,
             commands::execution_logs::task_attempts,
             commands::execution_logs::recent_activity,
+            // Saved Views
+            commands::saved_views::list_saved_views,
+            commands::saved_views::create_saved_view,
+            commands::saved_views::update_saved_view,
+            commands::saved_views::delete_saved_view,
+            // Starred Issues
+            commands::starred_issues::star_issue,
+            commands::starred_issues::unstar_issue,
+            commands::starred_issues::list_starred,
+            commands::starred_issues::is_starred,
+            // Recently Viewed
+            commands::recently_viewed::record_view,
+            commands::recently_viewed::list_recently_viewed,
+            // Advanced Search
+            commands::advanced_search::advanced_search,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

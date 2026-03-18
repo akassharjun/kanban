@@ -334,6 +334,32 @@ export interface Hook {
   command: string;
 }
 
+export interface SavedView {
+  id: number;
+  project_id: number;
+  name: string;
+  filters: string;
+  sort_by: string | null;
+  sort_direction: string | null;
+  view_mode: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StarredIssue {
+  id: number;
+  issue_id: number;
+  member_id: number;
+  created_at: string;
+}
+
+export interface RecentlyViewedEntry {
+  id: number;
+  issue_id: number;
+  member_id: number;
+  viewed_at: string;
+}
+
 export interface ProjectAgentConfig {
   project_id: number;
   auto_accept_threshold: number;

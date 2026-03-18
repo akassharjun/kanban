@@ -1,18 +1,19 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { IssueCard } from "./IssueCard";
-import type { Issue, Member, Label, Epic } from "@/types";
+import type { Issue, Member, Label } from "@/types";
 
 interface Props {
   issue: Issue;
   member?: Member;
   labels: Label[];
-  epic?: Epic;
   issues?: Issue[];
   onClick: () => void;
+  isStarred?: boolean;
+  onToggleStar?: (issueId: number) => void;
 }
 
-export function SortableIssueCard({ issue, member, labels, epic, issues, onClick }: Props) {
+export function SortableIssueCard({ issue, member, labels, issues, onClick, isStarred, onToggleStar }: Props) {
   const {
     attributes,
     listeners,
@@ -34,9 +35,10 @@ export function SortableIssueCard({ issue, member, labels, epic, issues, onClick
         issue={issue}
         member={member}
         labels={labels}
-        epic={epic}
         issues={issues}
         onClick={onClick}
+        isStarred={isStarred}
+        onToggleStar={onToggleStar}
       />
     </div>
   );

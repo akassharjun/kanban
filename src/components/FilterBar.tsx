@@ -1,4 +1,5 @@
-import { Filter, X } from "lucide-react";
+import { useState } from "react";
+import { Filter, X, Bookmark } from "lucide-react";
 import type { Status, Member, Label, Epic, MilestoneWithProgress } from "@/types";
 
 export interface Filters {
@@ -18,12 +19,16 @@ interface FilterBarProps {
   milestones?: MilestoneWithProgress[];
   filters: Filters;
   onFiltersChange: (filters: Filters) => void;
+  onSaveView?: (name: string) => void;
+  viewMode?: string;
 }
 
 const selectClass = "rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs outline-none hover:bg-muted border-none cursor-pointer transition-colors text-muted-foreground hover:text-foreground";
 
-export function FilterBar({ statuses, members, labels, epics, milestones, filters, onFiltersChange }: FilterBarProps) {
+export function FilterBar({ statuses, members, labels, epics: _epics, milestones: _milestones, filters, onFiltersChange, onSaveView }: FilterBarProps) {
   const hasFilters = Object.values(filters).some(v => v !== undefined);
+  const [showSaveInput, setShowSaveInput] = useState(false);
+  const [viewName, setViewName] = useState("");
 
   return (
     <div className="flex items-center gap-2 px-4 py-2">
@@ -69,28 +74,6 @@ export function FilterBar({ statuses, members, labels, epics, milestones, filter
         {labels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
       </select>
 
-      {epics && epics.length > 0 && (
-        <select
-          value={filters.epic_id ?? ""}
-          onChange={e => onFiltersChange({ ...filters, epic_id: e.target.value ? Number(e.target.value) : undefined })}
-          className={selectClass}
-        >
-          <option value="">All epics</option>
-          {epics.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
-        </select>
-      )}
-
-      {milestones && milestones.length > 0 && (
-        <select
-          value={filters.milestone_id ?? ""}
-          onChange={e => onFiltersChange({ ...filters, milestone_id: e.target.value ? Number(e.target.value) : undefined })}
-          className={selectClass}
-        >
-          <option value="">All milestones</option>
-          {milestones.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
-        </select>
-      )}
-
       {hasFilters && (
         <button
           onClick={() => onFiltersChange({})}
@@ -99,6 +82,57 @@ export function FilterBar({ statuses, members, labels, epics, milestones, filter
           <X className="h-3 w-3" />
           Clear
         </button>
+      )}
+
+      {hasFilters && onSaveView && !showSaveInput && (
+        <button
+          onClick={() => setShowSaveInput(true)}
+          className="ml-1 flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          <Bookmark className="h-3 w-3" />
+          Save View
+        </button>
+      )}
+
+      {showSaveInput && (
+        <div className="ml-1 flex items-center gap-1.5">
+          <input
+            autoFocus
+            value={viewName}
+            onChange={(e) => setViewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && viewName.trim()) {
+                onSaveView?.(viewName.trim());
+                setViewName("");
+                setShowSaveInput(false);
+              }
+              if (e.key === "Escape") {
+                setViewName("");
+                setShowSaveInput(false);
+              }
+            }}
+            placeholder="View name..."
+            className="rounded-lg bg-muted/50 px-2.5 py-1.5 text-xs outline-none w-32"
+          />
+          <button
+            onClick={() => {
+              if (viewName.trim()) {
+                onSaveView?.(viewName.trim());
+                setViewName("");
+                setShowSaveInput(false);
+              }
+            }}
+            className="rounded-lg bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Save
+          </button>
+          <button
+            onClick={() => { setViewName(""); setShowSaveInput(false); }}
+            className="rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
       )}
     </div>
   );

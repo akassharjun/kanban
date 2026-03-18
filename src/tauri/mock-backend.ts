@@ -8,7 +8,7 @@ import type {
   Notification, Agent, AgentMetrics,
   ProjectMetrics, Hook,
   ProjectAgentConfig, ExecutionLog, TaskGraph,
-  IssueWithLabels, Epic, Milestone, MilestoneWithProgress,
+  IssueWithLabels, Epic, Milestone, MilestoneWithProgress, SavedView,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -127,6 +127,25 @@ const milestones: Milestone[] = [
   { id: 1, project_id: 1, title: "v1.0 Release", description: "First stable release", due_date: "2026-04-01", status: "open", created_at: ago(9000), updated_at: ago(100) },
   { id: 2, project_id: 1, title: "v1.1 Polish", description: "UX improvements and bug fixes", due_date: "2026-05-01", status: "open", created_at: ago(5000), updated_at: ago(200) },
   { id: 3, project_id: 2, title: "Agent MVP", description: null, due_date: "2026-04-15", status: "open", created_at: ago(3000), updated_at: ago(300) },
+];
+
+const savedViews: SavedView[] = [
+  { id: 1, project_id: 1, name: "My Open Issues", filters: '{"assignee_id":1}', sort_by: "priority", sort_direction: "desc", view_mode: "board", created_at: ago(2000), updated_at: ago(100) },
+  { id: 2, project_id: 1, name: "Urgent & High Priority", filters: '{"priority":"urgent"}', sort_by: null, sort_direction: "asc", view_mode: "list", created_at: ago(1500), updated_at: ago(50) },
+];
+
+const starredIssues: { issue_id: number; member_id: number }[] = [
+  { issue_id: 6, member_id: 1 },
+  { issue_id: 7, member_id: 1 },
+  { issue_id: 3, member_id: 1 },
+];
+
+const recentlyViewed: { issue_id: number; member_id: number; viewed_at: string }[] = [
+  { issue_id: 6, member_id: 1, viewed_at: ago(2) },
+  { issue_id: 7, member_id: 1, viewed_at: ago(10) },
+  { issue_id: 9, member_id: 1, viewed_at: ago(30) },
+  { issue_id: 3, member_id: 1, viewed_at: ago(60) },
+  { issue_id: 4, member_id: 1, viewed_at: ago(120) },
 ];
 
 const notifications: Notification[] = [
@@ -415,6 +434,66 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "create_milestone": { const m: Milestone = { id: id(), ...args!.input, status: "open", created_at: now, updated_at: now }; milestones.push(m); return m; }
     case "update_milestone": { const m = milestones.find(x => x.id === args?.id); if (m) Object.assign(m, args!.input, { updated_at: now }); return m; }
     case "delete_milestone": { const idx = milestones.findIndex(x => x.id === args?.id); if (idx >= 0) { issues.forEach(i => { if (i.milestone_id === args?.id) i.milestone_id = null; }); milestones.splice(idx, 1); } return; }
+
+    // Saved Views
+    case "list_saved_views": return savedViews.filter(v => v.project_id === args?.projectId);
+    case "create_saved_view": {
+      const sv: SavedView = { id: id(), ...args!.input, filters: args!.input.filters ?? '{}', sort_direction: args!.input.sort_direction ?? 'asc', view_mode: args!.input.view_mode ?? 'board', created_at: now, updated_at: now };
+      savedViews.push(sv);
+      return sv;
+    }
+    case "update_saved_view": {
+      const sv = savedViews.find(v => v.id === args?.id);
+      if (sv) Object.assign(sv, args!.input, { updated_at: now });
+      return sv;
+    }
+    case "delete_saved_view": {
+      const idx = savedViews.findIndex(v => v.id === args?.id);
+      if (idx >= 0) savedViews.splice(idx, 1);
+      return;
+    }
+
+    // Starred Issues
+    case "star_issue": {
+      const exists = starredIssues.find(s => s.issue_id === args?.issueId && s.member_id === args?.memberId);
+      if (!exists) starredIssues.push({ issue_id: args!.issueId, member_id: args!.memberId });
+      return;
+    }
+    case "unstar_issue": {
+      const idx = starredIssues.findIndex(s => s.issue_id === args?.issueId && s.member_id === args?.memberId);
+      if (idx >= 0) starredIssues.splice(idx, 1);
+      return;
+    }
+    case "list_starred": {
+      const starred = starredIssues.filter(s => s.member_id === args?.memberId);
+      return starred.map(s => issues.find(i => i.id === s.issue_id)).filter(Boolean);
+    }
+    case "is_starred": {
+      return starredIssues.some(s => s.issue_id === args?.issueId && s.member_id === args?.memberId);
+    }
+
+    // Recently Viewed
+    case "record_view": {
+      const existing = recentlyViewed.find(r => r.issue_id === args?.issueId && r.member_id === args?.memberId);
+      if (existing) { existing.viewed_at = now; }
+      else { recentlyViewed.push({ issue_id: args!.issueId, member_id: args!.memberId, viewed_at: now }); }
+      return;
+    }
+    case "list_recently_viewed": {
+      const limit = args?.limit ?? 10;
+      const entries = recentlyViewed
+        .filter(r => r.member_id === args?.memberId)
+        .sort((a, b) => new Date(b.viewed_at).getTime() - new Date(a.viewed_at).getTime())
+        .slice(0, limit);
+      return entries.map(r => issues.find(i => i.id === r.issue_id)).filter(Boolean);
+    }
+
+    // Advanced Search
+    case "advanced_search": {
+      const q = (args?.queryString ?? "").toLowerCase();
+      // Simple mock: just match title/identifier
+      return issues.filter(i => i.project_id === args?.projectId && (i.title.toLowerCase().includes(q) || i.identifier.toLowerCase().includes(q)));
+    }
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);

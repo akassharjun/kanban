@@ -253,6 +253,43 @@ CREATE TABLE IF NOT EXISTS execution_logs (
 CREATE INDEX IF NOT EXISTS idx_execution_logs_issue ON execution_logs(issue_id);
 CREATE INDEX IF NOT EXISTS idx_execution_logs_agent ON execution_logs(agent_id);
 
+-- Saved Views (per-project custom filter/sort/view combos)
+CREATE TABLE IF NOT EXISTS saved_views (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    filters TEXT NOT NULL DEFAULT '{}',
+    sort_by TEXT,
+    sort_direction TEXT DEFAULT 'asc',
+    view_mode TEXT DEFAULT 'board',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_views_project ON saved_views(project_id);
+
+-- Starred Issues (per-member favorites)
+CREATE TABLE IF NOT EXISTS starred_issues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(issue_id, member_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_starred_issues_member ON starred_issues(member_id);
+
+-- Recently Viewed Issues (per-member history)
+CREATE TABLE IF NOT EXISTS recently_viewed (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+    member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    viewed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(issue_id, member_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_recently_viewed_member ON recently_viewed(member_id);
+
 -- Project agent configuration
 CREATE TABLE IF NOT EXISTS project_agent_config (
     project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,

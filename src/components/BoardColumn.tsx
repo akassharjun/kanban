@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { SortableIssueCard } from "./SortableIssueCard";
 import type { Issue, Status, Member, Label, Epic } from "@/types";
 
-interface BoardColumnProps {
+export interface BoardColumnProps {
   status: Status;
   issues: Issue[];
   allIssues?: Issue[];
@@ -15,9 +15,11 @@ interface BoardColumnProps {
   getLabelsForIssue: (issueId: number) => Label[];
   onClickIssue: (issue: Issue) => void;
   onQuickCreate: (title: string) => Promise<unknown>;
+  isStarred?: (issueId: number) => boolean;
+  onToggleStar?: (issueId: number) => void;
 }
 
-export function BoardColumn({ status, issues, allIssues, members, epics, getLabelsForIssue, onClickIssue, onQuickCreate }: BoardColumnProps) {
+export function BoardColumn({ status, issues, allIssues, members, epics: _epics, getLabelsForIssue, onClickIssue, onQuickCreate, isStarred, onToggleStar }: BoardColumnProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -77,9 +79,10 @@ export function BoardColumn({ status, issues, allIssues, members, epics, getLabe
                 issue={issue}
                 member={getMember(issue.assignee_id)}
                 labels={getLabelsForIssue(issue.id)}
-                epic={issue.epic_id ? epics?.find(e => e.id === issue.epic_id) : undefined}
                 issues={allIssues}
                 onClick={() => onClickIssue(issue)}
+                isStarred={isStarred?.(issue.id)}
+                onToggleStar={onToggleStar}
               />
             ))}
           </SortableContext>
