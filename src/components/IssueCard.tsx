@@ -1,7 +1,12 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, Calendar, AlertTriangle, XCircle } from "lucide-react";
-import type { Issue, Member, Label, SlaStatus } from "@/types";
+import { EpicArcRing } from "./EpicArcRing";
+import { AgentPresence } from "./AgentPresence";
+import { ConfidenceBadge } from "./ConfidenceBadge";
+import { CostBadge } from "./CostBadge";
+import { PredictiveStatus } from "./PredictiveStatus";
+import type { Issue, Member, Label, SlaStatus, AgentPresenceData, FullTaskContract, TaskCostSummary, Epic } from "@/types";
 
 interface IssueCardProps {
   issue: Issue;
@@ -11,6 +16,11 @@ interface IssueCardProps {
   onClick: () => void;
   isDragging?: boolean;
   slaStatus?: SlaStatus;
+  epic?: Epic;
+  epicProgress?: { total: number; completed: number };
+  agentPresence?: AgentPresenceData[];
+  taskContract?: FullTaskContract;
+  costSummary?: TaskCostSummary | null;
 }
 
 const priorityConfig: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
@@ -32,7 +42,7 @@ function formatDueDate(dateStr: string): { text: string; urgent: boolean } {
   return { text: dateStr, urgent: false };
 }
 
-export function IssueCard({ issue, member, labels, issues, onClick, isDragging, slaStatus }: IssueCardProps) {
+export function IssueCard({ issue, member, labels, issues, onClick, isDragging, slaStatus, epic, epicProgress, agentPresence, taskContract, costSummary }: IssueCardProps) {
   const priority = priorityConfig[issue.priority] || priorityConfig.none;
   const PriorityIcon = priority.icon;
   const parent = issue.parent_id ? issues?.find(i => i.id === issue.parent_id) : undefined;
@@ -42,12 +52,24 @@ export function IssueCard({ issue, member, labels, issues, onClick, isDragging, 
       onClick={onClick}
       className={cn(
         "group cursor-pointer rounded-lg border border-border/60 bg-card p-3 transition-all",
-        "hover:border-border hover:shadow-sm",
+        "hover:border-border/80 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.3)]",
+        agentPresence?.some(a => a.status === "active") && "border-[hsl(var(--border-elevated))]",
         isDragging && "rotate-2 shadow-xl opacity-95 ring-2 ring-primary/20",
         slaStatus?.status === "breached" && "border-red-500/40",
         slaStatus?.status === "warning" && "border-yellow-500/40"
       )}
     >
+      {agentPresence?.some(a => a.status === "active") && (
+        <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-foreground rounded-t-lg" />
+      )}
+
+      {epic && epicProgress && (
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <EpicArcRing total={epicProgress.total} completed={epicProgress.completed} size="sm" />
+          <span className="text-[9px] font-medium text-muted-foreground truncate">{epic.title}</span>
+        </div>
+      )}
+
       {parent && (
         <div className="flex items-center gap-1 mb-1.5 overflow-hidden">
           <span className="text-[10px] font-mono text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">
@@ -64,6 +86,9 @@ export function IssueCard({ issue, member, labels, issues, onClick, isDragging, 
             <span className="text-[11px] font-mono text-muted-foreground/60">{issue.identifier}</span>
           </div>
           <p className="text-[13px] font-medium leading-snug text-card-foreground/90">{issue.title}</p>
+          {agentPresence && agentPresence.length > 0 && (
+            <AgentPresence agents={agentPresence} />
+          )}
         </div>
 
         <div className="flex flex-col items-end gap-1 shrink-0">
@@ -114,6 +139,16 @@ export function IssueCard({ issue, member, labels, issues, onClick, isDragging, 
               </span>
             );
           })()}
+        </div>
+      )}
+
+      {(taskContract?.confidence != null || (costSummary && costSummary.total_tokens > 0) || (issue.due_date && taskContract)) && (
+        <div className="flex items-center justify-end gap-1.5 mt-2">
+          {taskContract?.confidence != null && <ConfidenceBadge score={taskContract.confidence} />}
+          {costSummary && costSummary.total_tokens > 0 && <CostBadge costs={costSummary} />}
+          {issue.due_date && taskContract && (
+            <PredictiveStatus issueId={issue.id} dueDate={issue.due_date} agentId={taskContract.claimed_by} />
+          )}
         </div>
       )}
     </div>
