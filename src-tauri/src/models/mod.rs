@@ -302,6 +302,8 @@ pub struct RecentlyViewed {
     pub member_id: i64,
     pub viewed_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct GitLink {
     pub id: i64,
     pub issue_id: i64,
