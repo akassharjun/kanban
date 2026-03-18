@@ -113,6 +113,28 @@ export function BoardView({
         status_id: targetStatusId,
         position: targetPosition,
       });
+
+      // Re-index if float positions have collapsed (gap < 0.001)
+      const columnIssues = (issuesByStatus.get(targetStatusId) || [])
+        .filter(i => i.id !== draggedIssue.id);
+      const allPositions = [...columnIssues.map(i => i.position), targetPosition].sort((a, b) => a - b);
+      let needsReindex = false;
+      for (let i = 1; i < allPositions.length; i++) {
+        if (Math.abs(allPositions[i] - allPositions[i - 1]) < 0.001) {
+          needsReindex = true;
+          break;
+        }
+      }
+      if (needsReindex) {
+        // Re-assign integer positions to all issues in this status column
+        const sorted = [...columnIssues, { ...draggedIssue, position: targetPosition }]
+          .sort((a, b) => a.position - b.position);
+        for (let i = 0; i < sorted.length; i++) {
+          if (sorted[i].position !== i + 1) {
+            await onUpdateIssue(sorted[i].id, { position: i + 1 });
+          }
+        }
+      }
     }
   };
 

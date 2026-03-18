@@ -39,6 +39,7 @@ export function SearchDialog({ projects, currentProjectId: _currentProjectId, on
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [searching, setSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -74,8 +75,9 @@ export function SearchDialog({ projects, currentProjectId: _currentProjectId, on
   }, [query, statuses, members, labels]);
 
   useEffect(() => {
-    if (!query.trim()) { setResults([]); return; }
+    if (!query.trim()) { setResults([]); setSearching(false); return; }
     const timeout = setTimeout(async () => {
+      setSearching(true);
       try {
         if (hasAdvancedSyntax(query)) {
           const allResults = await Promise.all(
@@ -91,6 +93,8 @@ export function SearchDialog({ projects, currentProjectId: _currentProjectId, on
         setSelectedIndex(0);
       } catch (e) {
         console.error("Search failed", e);
+      } finally {
+        setSearching(false);
       }
     }, 200);
     return () => clearTimeout(timeout);
@@ -146,6 +150,9 @@ export function SearchDialog({ projects, currentProjectId: _currentProjectId, on
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/40"
             onKeyDown={handleKeyDown}
           />
+          {searching && (
+            <span className="text-xs text-muted-foreground/60 animate-pulse">Searching...</span>
+          )}
           <button
             onClick={() => setShowHelp(!showHelp)}
             className="rounded-md p-1 hover:bg-muted transition-colors"

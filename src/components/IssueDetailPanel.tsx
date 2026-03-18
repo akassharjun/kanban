@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Issue, IssueWithLabels, Status, Member, Label, ActivityLogEntry, Comment, Epic, MilestoneWithProgress, GitLink, IssueFileLink, HandoffNote, TaskLearning } from "@/types";
 import * as api from "@/tauri/commands";
+import { useToast } from "./Toast";
 import { TaskContractDialog } from "./TaskContractDialog";
 import { IssueHistoryPanel } from "./IssueHistoryPanel";
 import { MentionInput, MentionText } from "./MentionInput";
@@ -84,6 +85,7 @@ export function IssueDetailPanel({
   onRecordView,
   onShowDependencies,
 }: IssueDetailPanelProps) {
+  const { showToast } = useToast();
   const [issue, setIssue] = useState<IssueWithLabels | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [title, setTitle] = useState("");
@@ -98,6 +100,7 @@ export function IssueDetailPanel({
   const [editingCommentContent, setEditingCommentContent] = useState("");
   const [showTaskContractDialog, setShowTaskContractDialog] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [activityLimit, setActivityLimit] = useState(50);
   const isSavingRef = useRef(false);
   const [activeTab, setActiveTab] = useState<"comments" | "history" | "activity">("comments");
@@ -203,12 +206,18 @@ export function IssueDetailPanel({
     try {
       await api.createComment({ issue_id: issueId, content: newComment.trim() });
       setNewComment("");
+      showToast("Comment added");
       await loadIssue();
     } catch (e) {
       console.error("Failed to add comment", e);
       setCommentError("Failed to add comment. Please try again.");
     }
   };
+
+  // Reset delete confirmation when issue changes or panel reopens
+  useEffect(() => {
+    setShowDeleteConfirm(false);
+  }, [issueId]);
 
   const handleUpdateComment = async (commentId: number) => {
     if (!editingCommentContent.trim()) return;
@@ -261,7 +270,7 @@ export function IssueDetailPanel({
   const currentPriority = priorities.find(p => p.value === issue.priority) || priorities[4];
 
   return (
-    <div className="flex h-full w-[480px] flex-col border-l border-border/50 bg-card">
+    <div className="flex h-full w-full sm:w-[480px] flex-col border-l border-border/50 bg-card">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3">
         <span className="text-xs font-mono text-muted-foreground/60">{issue.identifier}</span>
@@ -281,9 +290,15 @@ export function IssueDetailPanel({
           <button onClick={() => onDuplicate(issueId)} className="rounded-md p-1.5 hover:bg-muted transition-colors" title="Duplicate">
             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
-          <button onClick={() => { onDelete(issueId); onClose(); }} className="rounded-md p-1.5 hover:bg-red-500/10 transition-colors" title="Delete">
-            <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
+          {showDeleteConfirm ? (
+            <button onClick={() => { onDelete(issueId); onClose(); }} className="rounded-md px-2 py-1 text-xs font-medium text-red-500 hover:bg-red-500/10 transition-colors" title="Confirm Delete">
+              Confirm?
+            </button>
+          ) : (
+            <button onClick={() => setShowDeleteConfirm(true)} className="rounded-md p-1.5 hover:bg-red-500/10 transition-colors" title="Delete">
+              <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          )}
           <button onClick={onClose} className="rounded-md p-1.5 hover:bg-muted transition-colors" title="Close (Esc)">
             <X className="h-3.5 w-3.5 text-muted-foreground" />
           </button>

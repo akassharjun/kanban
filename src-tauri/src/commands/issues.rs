@@ -359,6 +359,19 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
         if let Some(epic_id) = input.epic_id {
             let val = if epic_id <= 0 { None } else { Some(epic_id) };
             if let Some(v) = val {
+                // Validate epic belongs to the same project
+                let epic_project_id: Option<i64> = sqlx::query_scalar(
+                    "SELECT project_id FROM epics WHERE id = $1"
+                ).bind(v).fetch_optional(&state.pool).await?;
+                match epic_project_id {
+                    Some(pid) if pid != old_issue.project_id => {
+                        return Err(sqlx::Error::Protocol("Epic does not belong to the same project as the issue".to_string()));
+                    }
+                    None => {
+                        return Err(sqlx::Error::Protocol("Epic not found".to_string()));
+                    }
+                    _ => {}
+                }
                 sqlx::query("UPDATE issues SET epic_id = $1, updated_at = $2 WHERE id = $3")
                     .bind(v).bind(&now).bind(id).execute(&state.pool).await?;
             } else {
@@ -370,6 +383,19 @@ pub fn update_issue(state: State<AppState>, id: i64, input: UpdateIssueInput) ->
         if let Some(milestone_id) = input.milestone_id {
             let val = if milestone_id <= 0 { None } else { Some(milestone_id) };
             if let Some(v) = val {
+                // Validate milestone belongs to the same project
+                let milestone_project_id: Option<i64> = sqlx::query_scalar(
+                    "SELECT project_id FROM milestones WHERE id = $1"
+                ).bind(v).fetch_optional(&state.pool).await?;
+                match milestone_project_id {
+                    Some(pid) if pid != old_issue.project_id => {
+                        return Err(sqlx::Error::Protocol("Milestone does not belong to the same project as the issue".to_string()));
+                    }
+                    None => {
+                        return Err(sqlx::Error::Protocol("Milestone not found".to_string()));
+                    }
+                    _ => {}
+                }
                 sqlx::query("UPDATE issues SET milestone_id = $1, updated_at = $2 WHERE id = $3")
                     .bind(v).bind(&now).bind(id).execute(&state.pool).await?;
             } else {

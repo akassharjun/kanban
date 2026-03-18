@@ -36,6 +36,7 @@ import { useSavedViews } from "./hooks/use-saved-views";
 import { useStarred } from "./hooks/use-starred";
 import { useRecentlyViewed } from "./hooks/use-recently-viewed";
 import * as api from "./tauri/commands";
+import { useToast } from "./components/Toast";
 import type { IssueTemplate, SavedView } from "./types";
 
 type Page = "project" | "members" | "settings" | "agents" | "code" | "pipelines";
@@ -57,6 +58,8 @@ function App() {
   const [replayIdentifier, setReplayIdentifier] = useState<string | null>(null);
   const [showDepGraph, setShowDepGraph] = useState(false);
   const [depGraphFocusId, setDepGraphFocusId] = useState<number | undefined>(undefined);
+
+  const { showToast } = useToast();
 
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return document.documentElement.classList.contains("dark") ? "dark" : "light";
@@ -144,7 +147,7 @@ function App() {
       if (e.key === "5" && !e.metaKey) {
         setViewMode("gantt");
       }
-      if (e.key === "5" && !e.metaKey) {
+      if (e.key === "6" && !e.metaKey) {
         setViewMode("roadmap");
         setPage("project");
       }
@@ -158,11 +161,11 @@ function App() {
       // Undo/Redo
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
-        api.undo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); });
+        api.undo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); showToast("Undone"); }).catch(() => {});
       }
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
         e.preventDefault();
-        api.redo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); });
+        api.redo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); showToast("Redone"); }).catch(() => {});
       }
     };
     window.addEventListener("keydown", handler);
@@ -406,6 +409,7 @@ function App() {
         )}
 
         {page === "settings" && selectedProject && (
+          <ErrorBoundary>
           <ProjectSettingsView
             project={selectedProject}
             onUpdateProject={updateProject}
@@ -415,8 +419,10 @@ function App() {
               await _removeProject(id);
               setSelectedProjectId(null);
               setPage("project");
+              showToast("Project deleted");
             }}
           />
+          </ErrorBoundary>
         )}
 
         {page === "settings" && !selectedProject && (
@@ -426,15 +432,21 @@ function App() {
         )}
 
         {page === "agents" && (
-          <AgentDashboard projectId={selectedProjectId} projectName={selectedProject?.name ?? null} projectPrefix={selectedProject?.prefix ?? null} onViewReplay={(id) => setReplayIdentifier(id)} />
+          <ErrorBoundary>
+            <AgentDashboard projectId={selectedProjectId} projectName={selectedProject?.name ?? null} projectPrefix={selectedProject?.prefix ?? null} onViewReplay={(id) => setReplayIdentifier(id)} />
+          </ErrorBoundary>
         )}
 
         {page === "code" && (
-          <CodeHeatMap projectId={selectedProjectId} projectName={selectedProject?.name ?? null} />
+          <ErrorBoundary>
+            <CodeHeatMap projectId={selectedProjectId} projectName={selectedProject?.name ?? null} />
+          </ErrorBoundary>
         )}
 
         {page === "pipelines" && (
-          <PipelinesView projectId={selectedProjectId} projectName={selectedProject?.name ?? null} issues={issues} />
+          <ErrorBoundary>
+            <PipelinesView projectId={selectedProjectId} projectName={selectedProject?.name ?? null} issues={issues} />
+          </ErrorBoundary>
         )}
       </div>
 
@@ -448,9 +460,9 @@ function App() {
           epics={epics}
           milestones={milestones}
           onClose={() => setSelectedIssueId(null)}
-          onUpdate={async (id, input) => { await updateIssue(id, input); }}
-          onDelete={async (id) => { await deleteIssue(id); setSelectedIssueId(null); }}
-          onDuplicate={async (id) => { await duplicateIssue(id); }}
+          onUpdate={async (id, input) => { await updateIssue(id, input); showToast("Issue updated"); }}
+          onDelete={async (id) => { await deleteIssue(id); setSelectedIssueId(null); showToast("Issue deleted"); }}
+          onDuplicate={async (id) => { await duplicateIssue(id); showToast("Issue duplicated"); }}
           onClickIssue={(issue) => setSelectedIssueId(issue.id)}
           isStarred={isStarred(selectedIssueId)}
           onToggleStar={toggleStar}
@@ -463,7 +475,7 @@ function App() {
       {showCreateProject && (
         <CreateProjectDialog
           onClose={() => setShowCreateProject(false)}
-          onCreate={createProject}
+          onCreate={async (input) => { const result = await createProject(input); showToast("Project created"); return result; }}
         />
       )}
 
@@ -478,7 +490,7 @@ function App() {
           templates={templates}
           defaultStatusId={createIssueStatusId || statuses.find(s => s.category === "unstarted")?.id}
           onClose={() => setShowCreateIssue(false)}
-          onCreate={createIssue}
+          onCreate={async (input) => { const result = await createIssue(input); showToast("Issue created"); return result; }}
         />
       )}
 

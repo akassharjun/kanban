@@ -1371,7 +1371,6 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     } as SlaDashboard;
 
     default:
-      console.warn(`[mock] Unhandled command: ${cmd}`, args);
-      return null;
+      throw new Error(`Unhandled mock command: ${cmd}`);
   }
 }

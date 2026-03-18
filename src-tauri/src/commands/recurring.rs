@@ -49,11 +49,12 @@ fn render_template(template: &str, count: i64, date: &str, day: &str) -> String 
 fn calculate_next_run(recurrence_type: &str, config: &str, from: &str) -> Result<String, String> {
     let from_dt = NaiveDateTime::parse_from_str(from, "%Y-%m-%d %H:%M:%SZ")
         .or_else(|_| NaiveDateTime::parse_from_str(from, "%Y-%m-%dT%H:%M:%SZ"))
-        .or_else(|_| {
-            NaiveDate::parse_from_str(from, "%Y-%m-%d")
-                .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
+        .ok()
+        .or_else(|| {
+            NaiveDate::parse_from_str(from, "%Y-%m-%d").ok()
+                .and_then(|d| d.and_hms_opt(0, 0, 0))
         })
-        .map_err(|e| format!("Invalid date format '{}': {}", from, e))?;
+        .ok_or_else(|| format!("Invalid date format '{}'", from))?;
 
     let config_json: serde_json::Value = serde_json::from_str(config).unwrap_or(serde_json::json!({}));
 
@@ -69,7 +70,7 @@ fn calculate_next_run(recurrence_type: &str, config: &str, from: &str) -> Result
             NaiveDate::from_ymd_opt(new_year, new_month, day)
                 .unwrap_or(from_dt.date())
                 .and_hms_opt(from_dt.time().hour(), from_dt.time().minute(), from_dt.time().second())
-                .unwrap()
+                .ok_or_else(|| format!("Invalid time for monthly recurrence"))?
         },
         "custom" => {
             let interval = config_json.get("interval_days")
