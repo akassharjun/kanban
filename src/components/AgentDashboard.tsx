@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { listen } from "@/tauri/events";
-import { Trash2, Activity, Bot, Cpu, CheckCircle2, Clock, AlertTriangle, Wifi } from "lucide-react";
-import type { AgentMetrics, ExecutionLog } from "@/types";
+import { Trash2, Activity, Bot, Cpu, CheckCircle2, Clock, AlertTriangle, Wifi, Shield, ShieldCheck, ShieldX, Plus, X, ChevronDown, Search } from "lucide-react";
+import type { AgentMetrics, ExecutionLog, AgentPermission, PermissionPreset, PermissionCheckResult, Agent as AgentType } from "@/types";
 import { useAgents, useProjectMetrics } from "@/hooks/use-agents";
-import { getAgentStats, recentActivity, getIssue, deregisterAgent } from "@/tauri/commands";
+import { getAgentStats, recentActivity, getIssue, deregisterAgent, listAgentPermissions, setAgentPermission, removeAgentPermission, clearAgentPermissions, listPermissionPresets, applyPresetToAgent, checkPermission } from "@/tauri/commands";
 
 export interface AgentDashboardProps {
   projectId: number | null;
@@ -68,6 +68,199 @@ function formatTime(timestamp: string): string {
   return timestamp;
 }
 
+const PERMISSION_TYPES = ["project_access", "file_access", "action", "task_type", "max_cost"] as const;
+
+function AgentPermissionsPanel({ agent }: { agent: AgentType }) {
+  const [permissions, setPermissions] = useState<AgentPermission[]>([]);
+  const [presets, setPresets] = useState<PermissionPreset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newType, setNewType] = useState<string>("project_access");
+  const [newScope, setNewScope] = useState("");
+  const [newAllowed, setNewAllowed] = useState(true);
+  const [showPresets, setShowPresets] = useState(false);
+  // Permission test
+  const [testType, setTestType] = useState<string>("project_access");
+  const [testScope, setTestScope] = useState("");
+  const [testResult, setTestResult] = useState<PermissionCheckResult | null>(null);
+  const [showTest, setShowTest] = useState(false);
+
+  const fetchPermissions = useCallback(async () => {
+    try {
+      const [perms, presetList] = await Promise.all([
+        listAgentPermissions(agent.id),
+        listPermissionPresets(),
+      ]);
+      setPermissions(perms);
+      setPresets(presetList);
+    } catch (e) {
+      console.error("Failed to load permissions", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [agent.id]);
+
+  useEffect(() => { fetchPermissions(); }, [fetchPermissions]);
+
+  const handleAdd = async () => {
+    if (!newScope.trim()) return;
+    try {
+      await setAgentPermission(agent.id, newType, newScope.trim(), newAllowed);
+      setNewScope("");
+      setShowAddForm(false);
+      fetchPermissions();
+    } catch (e) {
+      console.error("Failed to set permission", e);
+    }
+  };
+
+  const handleRemove = async (id: number) => {
+    try {
+      await removeAgentPermission(id);
+      fetchPermissions();
+    } catch (e) {
+      console.error("Failed to remove permission", e);
+    }
+  };
+
+  const handleClear = async () => {
+    if (!window.confirm(`Remove all permissions for "${agent.name}"? This will reset to full access.`)) return;
+    try {
+      await clearAgentPermissions(agent.id);
+      fetchPermissions();
+    } catch (e) {
+      console.error("Failed to clear permissions", e);
+    }
+  };
+
+  const handleApplyPreset = async (presetId: number) => {
+    try {
+      await applyPresetToAgent(agent.id, presetId);
+      setShowPresets(false);
+      fetchPermissions();
+    } catch (e) {
+      console.error("Failed to apply preset", e);
+    }
+  };
+
+  const handleTest = async () => {
+    if (!testScope.trim()) return;
+    try {
+      const result = await checkPermission(agent.id, testType, testScope.trim());
+      setTestResult(result);
+    } catch (e) {
+      console.error("Failed to check permission", e);
+    }
+  };
+
+  if (loading) return <div className="text-[10px] text-muted-foreground/40 py-1">Loading permissions...</div>;
+
+  return (
+    <div className="space-y-2 border-t border-border/30 pt-2 mt-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 flex items-center gap-1">
+          <Shield className="h-3 w-3" /> Permissions
+        </span>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setShowTest(!showTest)} className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground px-1.5 py-0.5 rounded border border-border/50 hover:border-border transition-colors" title="Test permissions">
+            <Search className="h-3 w-3" />
+          </button>
+          <button onClick={() => setShowPresets(!showPresets)} className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground px-1.5 py-0.5 rounded border border-border/50 hover:border-border transition-colors" title="Apply preset">
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          <button onClick={() => setShowAddForm(!showAddForm)} className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground px-1.5 py-0.5 rounded border border-border/50 hover:border-border transition-colors" title="Add rule">
+            <Plus className="h-3 w-3" />
+          </button>
+          {permissions.length > 0 && (
+            <button onClick={handleClear} className="text-[10px] text-muted-foreground/30 hover:text-red-400 px-1.5 py-0.5 rounded border border-border/50 hover:border-red-500/30 transition-colors" title="Clear all">
+              <Trash2 className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Preset dropdown */}
+      {showPresets && (
+        <div className="bg-muted/50 rounded-lg p-2 space-y-1">
+          <div className="text-[10px] font-semibold text-muted-foreground/50 mb-1">Apply Preset</div>
+          {presets.map(preset => (
+            <button key={preset.id} onClick={() => handleApplyPreset(preset.id)} className="w-full text-left text-[11px] px-2 py-1 rounded hover:bg-muted transition-colors">
+              <span className="font-medium text-foreground">{preset.name}</span>
+              {preset.description && <span className="text-muted-foreground/50 ml-1">- {preset.description}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Add form */}
+      {showAddForm && (
+        <div className="bg-muted/50 rounded-lg p-2 space-y-1.5">
+          <div className="flex gap-1.5">
+            <select value={newType} onChange={e => setNewType(e.target.value)} className="text-[11px] bg-background border border-border/50 rounded px-1.5 py-1 flex-shrink-0">
+              {PERMISSION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input type="text" value={newScope} onChange={e => setNewScope(e.target.value)} placeholder="Scope (e.g. src/**/*.ts)" className="text-[11px] bg-background border border-border/50 rounded px-1.5 py-1 flex-1 min-w-0" onKeyDown={e => e.key === "Enter" && handleAdd()} />
+          </div>
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
+              <input type="checkbox" checked={newAllowed} onChange={e => setNewAllowed(e.target.checked)} className="rounded" />
+              {newAllowed ? <span className="text-green-500">Allow</span> : <span className="text-red-500">Deny</span>}
+            </label>
+            <div className="flex gap-1">
+              <button onClick={() => setShowAddForm(false)} className="text-[10px] px-2 py-0.5 rounded text-muted-foreground hover:bg-muted transition-colors">Cancel</button>
+              <button onClick={handleAdd} className="text-[10px] px-2 py-0.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">Add</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Test tool */}
+      {showTest && (
+        <div className="bg-muted/50 rounded-lg p-2 space-y-1.5">
+          <div className="text-[10px] font-semibold text-muted-foreground/50">Permission Test</div>
+          <div className="flex gap-1.5">
+            <select value={testType} onChange={e => setTestType(e.target.value)} className="text-[11px] bg-background border border-border/50 rounded px-1.5 py-1 flex-shrink-0">
+              {PERMISSION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input type="text" value={testScope} onChange={e => setTestScope(e.target.value)} placeholder="Scope to test" className="text-[11px] bg-background border border-border/50 rounded px-1.5 py-1 flex-1 min-w-0" onKeyDown={e => e.key === "Enter" && handleTest()} />
+            <button onClick={handleTest} className="text-[10px] px-2 py-0.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex-shrink-0">Test</button>
+          </div>
+          {testResult && (
+            <div className={`text-[11px] font-mono px-2 py-1 rounded ${testResult.allowed ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
+              {testResult.allowed ? <ShieldCheck className="h-3 w-3 inline mr-1" /> : <ShieldX className="h-3 w-3 inline mr-1" />}
+              {testResult.allowed ? "ALLOWED" : "DENIED"}: {testResult.reason}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Permissions table */}
+      {permissions.length === 0 ? (
+        <div className="text-[10px] text-muted-foreground/40 font-mono">No rules (full access)</div>
+      ) : (
+        <div className="space-y-0.5">
+          {permissions.map(perm => (
+            <div key={perm.id} className="flex items-center justify-between text-[11px] font-mono group">
+              <div className="flex items-center gap-1.5 min-w-0">
+                {perm.allowed ? (
+                  <ShieldCheck className="h-3 w-3 text-green-500 flex-shrink-0" />
+                ) : (
+                  <ShieldX className="h-3 w-3 text-red-500 flex-shrink-0" />
+                )}
+                <span className="text-muted-foreground/60">{perm.permission_type}</span>
+                <span className="text-foreground truncate">{perm.scope}</span>
+              </div>
+              <button onClick={() => handleRemove(perm.id)} className="text-muted-foreground/20 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0 p-0.5">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps) {
   const { agents, loading: agentsLoading, refresh: refreshAgents } = useAgents();
   const { metrics, loading: metricsLoading, refresh: refreshMetrics } = useProjectMetrics(projectId);
@@ -76,6 +269,7 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
   const [activityLoading, setActivityLoading] = useState(true);
   const [issueIdentifiers, setIssueIdentifiers] = useState<Record<number, string>>({});
   const [showInactive, setShowInactive] = useState(false);
+  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
 
   useEffect(() => {
     if (agents.length === 0) return;
@@ -258,9 +452,22 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
                     </div>
                   )}
 
-                  <div className="text-[10px] text-muted-foreground/30 font-mono">
-                    last active: {formatTime(agent.last_activity_at || agent.last_heartbeat)}
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] text-muted-foreground/30 font-mono">
+                      last active: {formatTime(agent.last_activity_at || agent.last_heartbeat)}
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setExpandedAgent(expandedAgent === agent.id ? null : agent.id); }}
+                      className="text-[10px] text-muted-foreground/40 hover:text-muted-foreground flex items-center gap-0.5 transition-colors"
+                    >
+                      <Shield className="h-3 w-3" />
+                      {expandedAgent === agent.id ? "Hide" : "Permissions"}
+                    </button>
                   </div>
+
+                  {expandedAgent === agent.id && (
+                    <AgentPermissionsPanel agent={agent} />
+                  )}
                 </div>
               );
             })}

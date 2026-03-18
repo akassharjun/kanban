@@ -39,6 +39,40 @@ pub fn log_task_activity(state: State<AppState>, input: LogEntryInput) -> Result
 
             let attempt_number = contract.attempt_count + 1;
 
+            // Check file_access permission for file_edit entries
+            if input.entry_type == "file_edit" {
+                if let Some(ref meta) = input.metadata {
+                    let file_path = meta
+                        .get("file")
+                        .or_else(|| meta.get("path"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if !file_path.is_empty() {
+                        let check = crate::commands::permissions::check_permission_async(
+                            &state.pool,
+                            &input.agent_id,
+                            "file_access",
+                            file_path,
+                        )
+                        .await?;
+                        if !check.allowed {
+                            let reason = check.reason.unwrap_or_default();
+                            let _ = crate::commands::permissions::log_permission_denied(
+                                &state.pool,
+                                issue_id,
+                                &input.agent_id,
+                                &format!("File access denied for {}: {}", file_path, reason),
+                            )
+                            .await;
+                            return Err(sqlx::Error::Protocol(format!(
+                                "PERMISSION_DENIED: file access denied for {}: {}",
+                                file_path, reason
+                            )));
+                        }
+                    }
+                }
+            }
+
             let metadata_str = input
                 .metadata
                 .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "{}".to_string()));

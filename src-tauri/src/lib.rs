@@ -197,6 +197,18 @@ pub fn run_gui(database_url: Option<String>) {
             commands::execution_logs::task_replay,
             commands::execution_logs::task_attempts,
             commands::execution_logs::recent_activity,
+            // Permissions
+            commands::permissions::list_agent_permissions,
+            commands::permissions::set_agent_permission,
+            commands::permissions::remove_agent_permission,
+            commands::permissions::clear_agent_permissions,
+            commands::permissions::list_permission_presets,
+            commands::permissions::create_permission_preset,
+            commands::permissions::apply_preset_to_agent,
+            commands::permissions::delete_permission_preset,
+            commands::permissions::check_permission,
+            commands::permissions::check_file_access,
+            commands::permissions::check_task_claim,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

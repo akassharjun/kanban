@@ -295,6 +295,36 @@ pub enum AgentAction {
     Stats {
         id: String,
     },
+    /// List permissions for an agent
+    Permissions {
+        id: String,
+    },
+    /// Grant a permission to an agent
+    Grant {
+        id: String,
+        #[arg(long, name = "type")]
+        permission_type: String,
+        #[arg(long)]
+        scope: String,
+    },
+    /// Deny a permission for an agent
+    Deny {
+        id: String,
+        #[arg(long, name = "type")]
+        permission_type: String,
+        #[arg(long)]
+        scope: String,
+    },
+    /// Remove all permissions for an agent
+    ClearPermissions {
+        id: String,
+    },
+    /// Apply a preset to an agent
+    ApplyPreset {
+        id: String,
+        #[arg(long)]
+        preset: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1329,6 +1359,93 @@ async fn handle_agent(
                 println!("  Avg confidence: {:.2}", avg);
                 println!("  Total time: {}s", stats.total_completion_time_seconds);
             }
+        }
+        AgentAction::Permissions { id } => {
+            use crate::commands::permissions::AgentPermission;
+            let perms = sqlx::query_as::<_, AgentPermission>(
+                "SELECT * FROM agent_permissions WHERE agent_id = $1 ORDER BY permission_type, scope",
+            )
+            .bind(&id)
+            .fetch_all(pool)
+            .await?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&perms)?);
+            } else {
+                if perms.is_empty() {
+                    println!("No permissions configured for agent {} (full access by default)", id);
+                } else {
+                    println!("Permissions for agent {}:", id);
+                    for p in &perms {
+                        let allow_str = if p.allowed { "ALLOW" } else { "DENY" };
+                        println!("  [{}] {} scope={}", allow_str, p.permission_type, p.scope);
+                    }
+                }
+            }
+        }
+        AgentAction::Grant { id, permission_type, scope } => {
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            sqlx::query(
+                "INSERT INTO agent_permissions (agent_id, permission_type, scope, allowed, created_at) VALUES ($1, $2, $3, 1, $4)",
+            )
+            .bind(&id)
+            .bind(&permission_type)
+            .bind(&scope)
+            .bind(&now)
+            .execute(pool)
+            .await?;
+            println!("Granted {} permission for scope '{}' to agent {}", permission_type, scope, id);
+            notify_change();
+        }
+        AgentAction::Deny { id, permission_type, scope } => {
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            sqlx::query(
+                "INSERT INTO agent_permissions (agent_id, permission_type, scope, allowed, created_at) VALUES ($1, $2, $3, 0, $4)",
+            )
+            .bind(&id)
+            .bind(&permission_type)
+            .bind(&scope)
+            .bind(&now)
+            .execute(pool)
+            .await?;
+            println!("Denied {} permission for scope '{}' for agent {}", permission_type, scope, id);
+            notify_change();
+        }
+        AgentAction::ClearPermissions { id } => {
+            sqlx::query("DELETE FROM agent_permissions WHERE agent_id = $1")
+                .bind(&id)
+                .execute(pool)
+                .await?;
+            println!("Cleared all permissions for agent {}", id);
+            notify_change();
+        }
+        AgentAction::ApplyPreset { id, preset } => {
+            use crate::commands::permissions::{AgentPermission, PermissionPreset, PresetPermissionEntry};
+            let preset_row = sqlx::query_as::<_, PermissionPreset>(
+                "SELECT * FROM agent_permission_presets WHERE name = $1",
+            )
+            .bind(&preset)
+            .fetch_one(pool)
+            .await?;
+            let entries: Vec<PresetPermissionEntry> = serde_json::from_str(&preset_row.permissions)?;
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            sqlx::query("DELETE FROM agent_permissions WHERE agent_id = $1")
+                .bind(&id)
+                .execute(pool)
+                .await?;
+            for entry in &entries {
+                sqlx::query(
+                    "INSERT INTO agent_permissions (agent_id, permission_type, scope, allowed, created_at) VALUES ($1, $2, $3, $4, $5)",
+                )
+                .bind(&id)
+                .bind(&entry.permission_type)
+                .bind(&entry.scope)
+                .bind(entry.allowed)
+                .bind(&now)
+                .execute(pool)
+                .await?;
+            }
+            println!("Applied preset '{}' ({} rules) to agent {}", preset, entries.len(), id);
+            notify_change();
         }
     }
     Ok(())

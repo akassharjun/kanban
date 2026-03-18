@@ -23,6 +23,9 @@ import type {
   TaskGraph,
   ProjectAgentConfig,
   Hook,
+  AgentPermission,
+  PermissionPreset,
+  PermissionCheckResult,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -244,3 +247,16 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// Agent Permissions
+export const listAgentPermissions = (agentId: string) => invoke<AgentPermission[]>("list_agent_permissions", { agentId });
+export const setAgentPermission = (agentId: string, permissionType: string, scope: string, allowed: boolean) => invoke<AgentPermission>("set_agent_permission", { agentId, permissionType, scope, allowed });
+export const removeAgentPermission = (id: number) => invoke<void>("remove_agent_permission", { id });
+export const clearAgentPermissions = (agentId: string) => invoke<void>("clear_agent_permissions", { agentId });
+export const listPermissionPresets = () => invoke<PermissionPreset[]>("list_permission_presets");
+export const createPermissionPreset = (name: string, description: string | null, permissions: string) => invoke<PermissionPreset>("create_permission_preset", { name, description, permissions });
+export const applyPresetToAgent = (agentId: string, presetId: number) => invoke<AgentPermission[]>("apply_preset_to_agent", { agentId, presetId });
+export const deletePermissionPreset = (id: number) => invoke<void>("delete_permission_preset", { id });
+export const checkPermission = (agentId: string, permissionType: string, scope: string) => invoke<PermissionCheckResult>("check_permission", { agentId, permissionType, scope });
+export const checkFileAccess = (agentId: string, filePath: string) => invoke<PermissionCheckResult>("check_file_access", { agentId, filePath });
+export const checkTaskClaim = (agentId: string, taskIdentifier: string) => invoke<PermissionCheckResult>("check_task_claim", { agentId, taskIdentifier });
