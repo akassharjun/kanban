@@ -57,6 +57,8 @@ import type {
   HandoffNote,
   TaskLearning,
   SimilarTaskResult,
+  WsjfScore,
+  AutoScoreResult,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -113,25 +115,25 @@ const labels: Record<number, Label[]> = {
 
 const issues: Issue[] = [
   // Kanban Core - Backlog
-  { id: 1, project_id: 1, identifier: "KAN-1", title: "Add dark/light mode toggle animation", description: "Smooth transition between themes", status_id: 1, priority: "low", assignee_id: null, parent_id: null, position: 0, estimate: 2, due_date: "2026-03-28", epic_id: 1, milestone_id: 2, created_at: ago(5000), updated_at: ago(100) },
-  { id: 2, project_id: 1, identifier: "KAN-2", title: "Implement board column resize", description: "Allow users to resize columns by dragging edges", status_id: 1, priority: "medium", assignee_id: null, parent_id: null, position: 1, estimate: 5, due_date: "2026-03-30", epic_id: 1, milestone_id: 2, created_at: ago(4800), updated_at: ago(200) },
+  { id: 1, project_id: 1, identifier: "KAN-1", title: "Add dark/light mode toggle animation", description: "Smooth transition between themes", status_id: 1, priority: "low", assignee_id: null, parent_id: null, position: 0, estimate: 2, due_date: "2026-03-28", epic_id: 1, milestone_id: 2, business_value: 2, time_criticality: 3, risk_reduction: 1, job_size: 2, wsjf_score: 3.0, created_at: ago(5000), updated_at: ago(100) },
+  { id: 2, project_id: 1, identifier: "KAN-2", title: "Implement board column resize", description: "Allow users to resize columns by dragging edges", status_id: 1, priority: "medium", assignee_id: null, parent_id: null, position: 1, estimate: 5, due_date: "2026-03-30", epic_id: 1, milestone_id: 2, business_value: 5, time_criticality: 3, risk_reduction: 3, job_size: 5, wsjf_score: 2.2, created_at: ago(4800), updated_at: ago(200) },
   // Kanban Core - Todo
-  { id: 3, project_id: 1, identifier: "KAN-3", title: "Add keyboard shortcuts help panel", description: "Show a modal with all keyboard shortcuts when user presses ?", status_id: 2, priority: "medium", assignee_id: 1, parent_id: null, position: 0, estimate: 3, due_date: "2026-03-25", epic_id: 2, milestone_id: 1, created_at: ago(3000), updated_at: ago(50) },
-  { id: 4, project_id: 1, identifier: "KAN-4", title: "Issue templates for common workflows", description: "Pre-fill issue fields from templates", status_id: 2, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: 5, due_date: "2026-03-22", epic_id: 2, milestone_id: 1, created_at: ago(2800), updated_at: ago(30) },
-  { id: 5, project_id: 1, identifier: "KAN-5", title: "Export board to CSV/JSON", description: null, status_id: 2, priority: "low", assignee_id: null, parent_id: null, position: 2, estimate: null, due_date: null, epic_id: null, milestone_id: null, created_at: ago(2700), updated_at: ago(500) },
+  { id: 3, project_id: 1, identifier: "KAN-3", title: "Add keyboard shortcuts help panel", description: "Show a modal with all keyboard shortcuts when user presses ?", status_id: 2, priority: "medium", assignee_id: 1, parent_id: null, position: 0, estimate: 3, due_date: "2026-03-25", epic_id: 2, milestone_id: 1, business_value: 5, time_criticality: 7, risk_reduction: 3, job_size: 3, wsjf_score: 5.0, created_at: ago(3000), updated_at: ago(50) },
+  { id: 4, project_id: 1, identifier: "KAN-4", title: "Issue templates for common workflows", description: "Pre-fill issue fields from templates", status_id: 2, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: 5, due_date: "2026-03-22", epic_id: 2, milestone_id: 1, business_value: 8, time_criticality: 7, risk_reduction: 3, job_size: 5, wsjf_score: 3.6, created_at: ago(2800), updated_at: ago(30) },
+  { id: 5, project_id: 1, identifier: "KAN-5", title: "Export board to CSV/JSON", description: null, status_id: 2, priority: "low", assignee_id: null, parent_id: null, position: 2, estimate: null, due_date: null, epic_id: null, milestone_id: null, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(2700), updated_at: ago(500) },
   // Kanban Core - In Progress
-  { id: 6, project_id: 1, identifier: "KAN-6", title: "Fix drag-drop position calculation", description: "Position sometimes becomes NaN when dropping at list boundaries", status_id: 3, priority: "urgent", assignee_id: 2, parent_id: null, position: 0, estimate: 2, due_date: "2026-03-19", epic_id: 1, milestone_id: 1, created_at: ago(1000), updated_at: ago(5) },
-  { id: 7, project_id: 1, identifier: "KAN-7", title: "Improve issue detail panel UX", description: "## Improvements needed\n- Better spacing between sections\n- Collapsible sections\n- Loading states for async ops", status_id: 3, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: 8, due_date: "2026-03-20", epic_id: 1, milestone_id: 1, created_at: ago(800), updated_at: ago(2) },
-  { id: 8, project_id: 1, identifier: "KAN-8", title: "Add comment mentions (@user)", description: null, status_id: 3, priority: "medium", assignee_id: 2, parent_id: 7, position: 0, estimate: 3, due_date: null, epic_id: 1, milestone_id: null, created_at: ago(600), updated_at: ago(15) },
+  { id: 6, project_id: 1, identifier: "KAN-6", title: "Fix drag-drop position calculation", description: "Position sometimes becomes NaN when dropping at list boundaries", status_id: 3, priority: "urgent", assignee_id: 2, parent_id: null, position: 0, estimate: 2, due_date: "2026-03-19", epic_id: 1, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(1000), updated_at: ago(5) },
+  { id: 7, project_id: 1, identifier: "KAN-7", title: "Improve issue detail panel UX", description: "## Improvements needed\n- Better spacing between sections\n- Collapsible sections\n- Loading states for async ops", status_id: 3, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: 8, due_date: "2026-03-20", epic_id: 1, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(800), updated_at: ago(2) },
+  { id: 8, project_id: 1, identifier: "KAN-8", title: "Add comment mentions (@user)", description: null, status_id: 3, priority: "medium", assignee_id: 2, parent_id: 7, position: 0, estimate: 3, due_date: null, epic_id: 1, milestone_id: null, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(600), updated_at: ago(15) },
   // Kanban Core - In Review
-  { id: 9, project_id: 1, identifier: "KAN-9", title: "Implement undo/redo for issue edits", description: "Use Cmd+Z to undo last change", status_id: 4, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: 5, due_date: "2026-03-19", epic_id: 2, milestone_id: 1, created_at: ago(2000), updated_at: ago(60) },
+  { id: 9, project_id: 1, identifier: "KAN-9", title: "Implement undo/redo for issue edits", description: "Use Cmd+Z to undo last change", status_id: 4, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: 5, due_date: "2026-03-19", epic_id: 2, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(2000), updated_at: ago(60) },
   // Kanban Core - Done
-  { id: 10, project_id: 1, identifier: "KAN-10", title: "Setup project with Tauri v2", description: null, status_id: 5, priority: "high", assignee_id: 1, parent_id: null, position: 0, estimate: null, due_date: null, epic_id: null, milestone_id: 1, created_at: ago(9000), updated_at: ago(8000) },
-  { id: 11, project_id: 1, identifier: "KAN-11", title: "Implement board view with drag-drop", description: null, status_id: 5, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: null, due_date: null, epic_id: 1, milestone_id: 1, created_at: ago(8500), updated_at: ago(7000) },
-  { id: 12, project_id: 1, identifier: "KAN-12", title: "Add list and tree views", description: null, status_id: 5, priority: "medium", assignee_id: 1, parent_id: null, position: 2, estimate: null, due_date: null, epic_id: 1, milestone_id: 1, created_at: ago(7000), updated_at: ago(6000) },
+  { id: 10, project_id: 1, identifier: "KAN-10", title: "Setup project with Tauri v2", description: null, status_id: 5, priority: "high", assignee_id: 1, parent_id: null, position: 0, estimate: null, due_date: null, epic_id: null, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(9000), updated_at: ago(8000) },
+  { id: 11, project_id: 1, identifier: "KAN-11", title: "Implement board view with drag-drop", description: null, status_id: 5, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: null, due_date: null, epic_id: 1, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(8500), updated_at: ago(7000) },
+  { id: 12, project_id: 1, identifier: "KAN-12", title: "Add list and tree views", description: null, status_id: 5, priority: "medium", assignee_id: 1, parent_id: null, position: 2, estimate: null, due_date: null, epic_id: 1, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(7000), updated_at: ago(6000) },
   // Agent Platform
-  { id: 13, project_id: 2, identifier: "AGT-1", title: "Design task contract schema", description: null, status_id: 9, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: null, due_date: null, epic_id: 3, milestone_id: 3, created_at: ago(4000), updated_at: ago(3000) },
-  { id: 14, project_id: 2, identifier: "AGT-2", title: "Implement agent heartbeat", description: null, status_id: 8, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: 3, due_date: "2026-03-21", epic_id: 3, milestone_id: 3, created_at: ago(3500), updated_at: ago(100) },
+  { id: 13, project_id: 2, identifier: "AGT-1", title: "Design task contract schema", description: null, status_id: 9, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: null, due_date: null, epic_id: 3, milestone_id: 3, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(4000), updated_at: ago(3000) },
+  { id: 14, project_id: 2, identifier: "AGT-2", title: "Implement agent heartbeat", description: null, status_id: 8, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: 3, due_date: "2026-03-21", epic_id: 3, milestone_id: 3, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(3500), updated_at: ago(100) },
 ];
 
 const issueLabels: Record<number, number[]> = {
@@ -365,6 +367,11 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
         due_date: args!.input.due_date ?? null,
         epic_id: args!.input.epic_id ?? null,
         milestone_id: args!.input.milestone_id ?? null,
+        business_value: args!.input.business_value ?? null,
+        time_criticality: args!.input.time_criticality ?? null,
+        risk_reduction: args!.input.risk_reduction ?? null,
+        job_size: args!.input.job_size ?? null,
+        wsjf_score: null,
         description: args!.input.description ?? null,
         created_at: now, updated_at: now,
       };
@@ -528,13 +535,47 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "task_graph": return { nodes: [], edges: [] } as TaskGraph;
 
     // Agent Config
-    case "get_project_agent_config": return { project_id: args?.projectId, auto_accept_threshold: 0.95, human_review_threshold: 0.7, max_attempts: 3, heartbeat_interval_seconds: 30, missed_heartbeats_before_offline: 3 } as ProjectAgentConfig;
+    case "get_project_agent_config": return { project_id: args?.projectId, auto_accept_threshold: 0.95, human_review_threshold: 0.7, max_attempts: 3, heartbeat_interval_seconds: 30, missed_heartbeats_before_offline: 3, use_wsjf_scoring: false } as ProjectAgentConfig;
     case "update_project_agent_config": return args?.input;
 
     // Hooks
     case "list_hooks": return [] as Hook[];
     case "create_hook": return { id: id(), ...args!.input };
     case "delete_hook": return;
+
+    // WSJF Scoring
+    case "set_wsjf_scores": {
+      const i = issues.find(x => x.id === args?.input?.issue_id);
+      if (i) {
+        const bv = Math.max(1, Math.min(10, args!.input.business_value));
+        const tc = Math.max(1, Math.min(10, args!.input.time_criticality));
+        const rr = Math.max(1, Math.min(10, args!.input.risk_reduction));
+        const size = Math.max(1, Math.min(10, args!.input.job_size));
+        i.business_value = bv; i.time_criticality = tc; i.risk_reduction = rr; i.job_size = size;
+        i.wsjf_score = (bv + tc + rr) / size;
+        return { issue_id: i.id, identifier: i.identifier, title: i.title, business_value: bv, time_criticality: tc, risk_reduction: rr, job_size: size, wsjf_score: i.wsjf_score, priority: i.priority } as WsjfScore;
+      }
+      return null;
+    }
+    case "auto_score_issue": {
+      const i = issues.find(x => x.id === args?.issueId);
+      if (i) {
+        const bv = i.priority === "urgent" ? 10 : i.priority === "high" ? 8 : i.priority === "medium" ? 5 : i.priority === "low" ? 2 : 1;
+        const tc = 3; const rr = 3; const size = 5;
+        i.business_value = bv; i.time_criticality = tc; i.risk_reduction = rr; i.job_size = size;
+        i.wsjf_score = (bv + tc + rr) / size;
+        return { issue_id: i.id, business_value: bv, time_criticality: tc, risk_reduction: rr, job_size: size, wsjf_score: i.wsjf_score, reasoning: `business_value=${bv} (priority=${i.priority})` } as AutoScoreResult;
+      }
+      return null;
+    }
+    case "get_ranked_backlog": {
+      return issues
+        .filter(i => i.project_id === args?.projectId && i.wsjf_score != null)
+        .sort((a, b) => (b.wsjf_score ?? 0) - (a.wsjf_score ?? 0))
+        .map(i => ({ issue_id: i.id, identifier: i.identifier, title: i.title, business_value: i.business_value ?? 0, time_criticality: i.time_criticality ?? 0, risk_reduction: i.risk_reduction ?? 0, job_size: i.job_size ?? 0, wsjf_score: i.wsjf_score ?? 0, priority: i.priority })) as WsjfScore[];
+    }
+    case "auto_score_project": return [] as AutoScoreResult[];
+    case "recalculate_scores": return [] as WsjfScore[];
 
     // Task Contracts
     case "create_task_contract": return { id: id(), ...args!.input, identifier: `TC-${id()}`, task_state: "queued", claimed_by: null, claimed_at: null, attempt_count: 0, created_at: now, updated_at: now };
@@ -783,6 +824,7 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
         status_id: args?.statusId, priority: "medium", assignee_id: null,
         parent_id: null, position: 0, estimate: null, due_date: null,
         epic_id: null, milestone_id: null,
+        business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null,
         created_at: now, updated_at: now,
       };
       issues.push(i);
@@ -893,6 +935,7 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
         due_date: null,
         epic_id: null,
         milestone_id: null,
+        business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null,
         created_at: now,
         updated_at: now,
       };

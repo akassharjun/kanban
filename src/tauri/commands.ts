@@ -55,6 +55,8 @@ import type {
   HandoffNote,
   TaskLearning,
   SimilarTaskResult,
+  WsjfScore,
+  AutoScoreResult,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -552,3 +554,15 @@ export const recordLearning = (input: {
 export const findSimilarLearnings = (projectId: number, title: string, description?: string, tags?: string[], limit?: number) => invoke<SimilarTaskResult[]>("find_similar_learnings", { projectId, title, description, tags: tags ?? [], limit });
 export const listLearnings = (projectId: number, outcome?: string, limit?: number) => invoke<TaskLearning[]>("list_learnings", { projectId, outcome, limit });
 export const getLearningsForTask = (taskIdentifier: string) => invoke<TaskLearning[]>("get_learnings_for_task", { taskIdentifier });
+// WSJF Scoring
+export const setWsjfScores = (input: {
+  issue_id: number;
+  business_value: number;
+  time_criticality: number;
+  risk_reduction: number;
+  job_size: number;
+}) => invoke<WsjfScore>("set_wsjf_scores", { input });
+export const autoScoreIssue = (issueId: number) => invoke<AutoScoreResult>("auto_score_issue", { issueId });
+export const getRankedBacklog = (projectId: number) => invoke<WsjfScore[]>("get_ranked_backlog", { projectId });
+export const autoScoreProject = (projectId: number) => invoke<AutoScoreResult[]>("auto_score_project", { projectId });
+export const recalculateScores = (projectId: number) => invoke<WsjfScore[]>("recalculate_scores", { projectId });

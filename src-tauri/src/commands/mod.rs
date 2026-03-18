@@ -30,6 +30,7 @@ pub mod relations;
 pub mod saved_views;
 pub mod starred_issues;
 pub mod stale_issues;
+pub mod scoring;
 pub mod statuses;
 pub mod task_contracts;
 pub mod templates;

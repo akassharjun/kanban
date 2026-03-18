@@ -239,6 +239,35 @@ pub enum IssueAction {
         description: Option<String>,
         #[arg(long)]
         assignee: Option<i64>,
+    /// Set WSJF scores for an issue
+    Score {
+        identifier: String,
+        /// Business value (1-10)
+        #[arg(long)]
+        bv: i32,
+        /// Time criticality (1-10)
+        #[arg(long)]
+        tc: i32,
+        /// Risk reduction (1-10)
+        #[arg(long)]
+        rr: i32,
+        /// Job size (1-10)
+        #[arg(long)]
+        size: i32,
+    },
+    /// Show ranked backlog by WSJF score
+    Rank {
+        #[arg(short, long)]
+        project: i64,
+    },
+    /// Auto-score an issue using rule-based heuristics
+    AutoScore {
+        identifier: String,
+    },
+    /// Auto-score all unscored issues in a project
+    AutoScoreAll {
+        #[arg(short, long)]
+        project: i64,
     },
 }
 
@@ -1079,6 +1108,7 @@ async fn handle_issue(
             notify_change();
         }
         IssueAction::Triage { identifier, apply } => {
+        IssueAction::Score { identifier, bv, tc, rr, size } => {
             let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                 .bind(&identifier)
                 .fetch_one(pool)
@@ -1254,6 +1284,104 @@ async fn handle_issue(
                 }
                 if let Some(aid) = suggestion.suggested_assignee_id {
                     println!("  Assignee: {}", aid);
+            let bv = bv.max(1).min(10);
+            let tc = tc.max(1).min(10);
+            let rr = rr.max(1).min(10);
+            let size = size.max(1).min(10);
+            let score = (bv as f64 + tc as f64 + rr as f64) / size as f64;
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+            sqlx::query(
+                "UPDATE issues SET business_value = $1, time_criticality = $2, risk_reduction = $3, job_size = $4, wsjf_score = $5, updated_at = $6 WHERE id = $7"
+            )
+            .bind(bv).bind(tc).bind(rr).bind(size).bind(score).bind(&now).bind(issue.id)
+            .execute(pool)
+            .await?;
+
+            if json {
+                println!("{}", serde_json::json!({
+                    "identifier": identifier,
+                    "business_value": bv,
+                    "time_criticality": tc,
+                    "risk_reduction": rr,
+                    "job_size": size,
+                    "wsjf_score": score
+                }));
+            } else {
+                println!("{} | WSJF={:.2} (bv={}, tc={}, rr={}, size={})", identifier, score, bv, tc, rr, size);
+            }
+            notify_change();
+        }
+        IssueAction::Rank { project } => {
+            let issues = sqlx::query_as::<_, Issue>(
+                "SELECT i.* FROM issues i JOIN statuses s ON i.status_id = s.id WHERE i.project_id = $1 AND s.category = 'unstarted' AND i.wsjf_score IS NOT NULL ORDER BY i.wsjf_score DESC"
+            )
+            .bind(project)
+            .fetch_all(pool)
+            .await?;
+
+            if json {
+                let ranked: Vec<serde_json::Value> = issues.iter().map(|i| serde_json::json!({
+                    "identifier": i.identifier,
+                    "title": i.title,
+                    "wsjf_score": i.wsjf_score,
+                    "business_value": i.business_value,
+                    "time_criticality": i.time_criticality,
+                    "risk_reduction": i.risk_reduction,
+                    "job_size": i.job_size,
+                    "priority": i.priority,
+                })).collect();
+                println!("{}", serde_json::to_string_pretty(&ranked)?);
+            } else {
+                println!("{:<10} {:<8} {:<6} {:<6} {:<6} {:<6} {}", "ID", "WSJF", "BV", "TC", "RR", "Size", "Title");
+                println!("{}", "-".repeat(70));
+                for i in &issues {
+                    println!(
+                        "{:<10} {:<8.2} {:<6} {:<6} {:<6} {:<6} {}",
+                        i.identifier,
+                        i.wsjf_score.unwrap_or(0.0),
+                        i.business_value.unwrap_or(0),
+                        i.time_criticality.unwrap_or(0),
+                        i.risk_reduction.unwrap_or(0),
+                        i.job_size.unwrap_or(0),
+                        i.title
+                    );
+                }
+            }
+        }
+        IssueAction::AutoScore { identifier } => {
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
+                .bind(&identifier)
+                .fetch_one(pool)
+                .await?;
+            let result = crate::commands::scoring::auto_score_issue_standalone(pool, issue.id).await?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&result)?);
+            } else {
+                println!("{} | WSJF={:.2} | {}", identifier, result.wsjf_score, result.reasoning);
+            }
+            notify_change();
+        }
+        IssueAction::AutoScoreAll { project } => {
+            let unscored = sqlx::query_as::<_, Issue>(
+                "SELECT * FROM issues WHERE project_id = $1 AND wsjf_score IS NULL"
+            )
+            .bind(project)
+            .fetch_all(pool)
+            .await?;
+
+            let mut results = Vec::new();
+            for issue in &unscored {
+                let result = crate::commands::scoring::auto_score_issue_standalone(pool, issue.id).await?;
+                results.push(result);
+            }
+
+            if json {
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            } else {
+                println!("Auto-scored {} issues:", results.len());
+                for r in &results {
+                    println!("  Issue {} | WSJF={:.2} | {}", r.issue_id, r.wsjf_score, r.reasoning);
                 }
             }
             notify_change();

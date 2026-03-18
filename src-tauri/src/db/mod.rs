@@ -70,6 +70,12 @@ pub async fn init_db(database_url: Option<&str>) -> Result<(AnyPool, DbBackend),
                 "ALTER TABLE issues ADD COLUMN milestone_id INTEGER REFERENCES milestones(id) ON DELETE SET NULL",
                 "ALTER TABLE projects ADD COLUMN stale_days INTEGER DEFAULT NULL",
                 "ALTER TABLE projects ADD COLUMN stale_close_status_id INTEGER REFERENCES statuses(id)",
+                "ALTER TABLE issues ADD COLUMN business_value INTEGER",
+                "ALTER TABLE issues ADD COLUMN time_criticality INTEGER",
+                "ALTER TABLE issues ADD COLUMN risk_reduction INTEGER",
+                "ALTER TABLE issues ADD COLUMN job_size INTEGER",
+                "ALTER TABLE issues ADD COLUMN wsjf_score REAL",
+                "ALTER TABLE project_agent_config ADD COLUMN use_wsjf_scoring INTEGER NOT NULL DEFAULT 0",
             ];
             for stmt in &backfill {
                 let _ = sqlx::query(stmt).execute(&pool).await;

@@ -541,6 +541,32 @@ fn tools_list() -> Vec<Value> {
             json!({
                 "project_id": prop("number", "Project ID"),
                 "limit": prop("number", "Max results (default: 20)")
+        // WSJF Scoring
+        tool_def(
+            "set_wsjf",
+            "Set WSJF scores for an issue (business_value + time_criticality + risk_reduction) / job_size",
+            json!({
+                "identifier": prop("string", "Issue identifier (e.g. KAN-42)"),
+                "business_value": prop("number", "Business value 1-10"),
+                "time_criticality": prop("number", "Time criticality 1-10"),
+                "risk_reduction": prop("number", "Risk reduction / opportunity enablement 1-10"),
+                "job_size": prop("number", "Job size 1-10"),
+            }),
+            vec!["identifier", "business_value", "time_criticality", "risk_reduction", "job_size"],
+        ),
+        tool_def(
+            "auto_score",
+            "Auto-score an issue using rule-based heuristics (priority, due date, labels, estimate)",
+            json!({
+                "identifier": prop("string", "Issue identifier (e.g. KAN-42)"),
+            }),
+            vec!["identifier"],
+        ),
+        tool_def(
+            "ranked_backlog",
+            "Get all unstarted issues ranked by WSJF score (highest first)",
+            json!({
+                "project_id": prop("number", "Project ID"),
             }),
             vec!["project_id"],
         ),
@@ -637,6 +663,13 @@ fn tools_list() -> Vec<Value> {
                 "task_identifier": prop("string", "Task identifier"),
             }),
             vec!["task_identifier"],
+        ),
+            "auto_score_project",
+            "Auto-score all unscored issues in a project",
+            json!({
+                "project_id": prop("number", "Project ID"),
+            }),
+            vec!["project_id"],
         ),
     ]
 }
@@ -2437,6 +2470,14 @@ async fn handle_tool_call(
             let link_type = args.get("link_type").and_then(|v| v.as_str()).unwrap_or("related");
 
             let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
+        "set_wsjf" => {
+            let identifier = args["identifier"].as_str().ok_or("identifier required")?;
+            let bv = args["business_value"].as_i64().ok_or("business_value required")? as i32;
+            let tc = args["time_criticality"].as_i64().ok_or("time_criticality required")? as i32;
+            let rr = args["risk_reduction"].as_i64().ok_or("risk_reduction required")? as i32;
+            let size = args["job_size"].as_i64().ok_or("job_size required")? as i32;
+
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
                 .bind(identifier)
                 .fetch_one(pool)
                 .await
@@ -2739,6 +2780,48 @@ async fn handle_tool_call(
             // Fetch all learnings for the project
             let learnings = sqlx::query_as::<_, agent::TaskLearning>(
                 "SELECT tl.* FROM task_learnings tl JOIN issues i ON tl.task_identifier = i.identifier WHERE i.project_id = $1 ORDER BY tl.created_at DESC"
+            let bv = bv.max(1).min(10);
+            let tc = tc.max(1).min(10);
+            let rr = rr.max(1).min(10);
+            let size = size.max(1).min(10);
+            let score = (bv as f64 + tc as f64 + rr as f64) / size as f64;
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+            sqlx::query(
+                "UPDATE issues SET business_value = $1, time_criticality = $2, risk_reduction = $3, job_size = $4, wsjf_score = $5, updated_at = $6 WHERE id = $7"
+            )
+            .bind(bv).bind(tc).bind(rr).bind(size).bind(score).bind(&now).bind(issue.id)
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            Ok(json!({
+                "identifier": identifier,
+                "business_value": bv,
+                "time_criticality": tc,
+                "risk_reduction": rr,
+                "job_size": size,
+                "wsjf_score": score
+            }))
+        }
+        "auto_score" => {
+            let identifier = args["identifier"].as_str().ok_or("identifier required")?;
+            let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
+                .bind(identifier)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let result = crate::commands::scoring::auto_score_issue_standalone(pool, issue.id)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            Ok(json!(result))
+        }
+        "ranked_backlog" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let issues = sqlx::query_as::<_, Issue>(
+                "SELECT i.* FROM issues i JOIN statuses s ON i.status_id = s.id WHERE i.project_id = $1 AND s.category = 'unstarted' AND i.wsjf_score IS NOT NULL ORDER BY i.wsjf_score DESC"
             )
             .bind(project_id)
             .fetch_all(pool)
@@ -2810,6 +2893,38 @@ async fn handle_tool_call(
             .await
             .map_err(|e| e.to_string())?;
             Ok(json!(learnings))
+            let ranked: Vec<Value> = issues.iter().map(|i| json!({
+                "identifier": i.identifier,
+                "title": i.title,
+                "wsjf_score": i.wsjf_score,
+                "business_value": i.business_value,
+                "time_criticality": i.time_criticality,
+                "risk_reduction": i.risk_reduction,
+                "job_size": i.job_size,
+                "priority": i.priority,
+            })).collect();
+
+            Ok(json!(ranked))
+        }
+        "auto_score_project" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let unscored = sqlx::query_as::<_, Issue>(
+                "SELECT * FROM issues WHERE project_id = $1 AND wsjf_score IS NULL"
+            )
+            .bind(project_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let mut results = Vec::new();
+            for issue in &unscored {
+                let result = crate::commands::scoring::auto_score_issue_standalone(pool, issue.id)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                results.push(json!(result));
+            }
+
+            Ok(json!(results))
         }
         _ => Err(format!("Unknown tool: {}", name)),
     }
