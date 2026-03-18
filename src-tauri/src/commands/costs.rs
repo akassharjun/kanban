@@ -355,10 +355,11 @@ pub fn delete_budget(state: State<AppState>, id: i64) -> Result<(), String> {
         let result = sqlx::query("DELETE FROM cost_budgets WHERE id = $1")
             .bind(id)
             .execute(&state.pool)
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
         if result.rows_affected() == 0 {
-            return Err(sqlx::Error::RowNotFound);
+            return Err("Budget not found".to_string());
         }
         Ok(())
-    }).map_err(|e: sqlx::Error| e.to_string())
+    })
 }

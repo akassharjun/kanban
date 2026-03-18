@@ -92,37 +92,39 @@ pub fn update_automation_rule(state: State<AppState>, id: i64, input: UpdateAuto
         let existing = sqlx::query_as::<_, AutomationRule>("SELECT * FROM automation_rules WHERE id = $1")
             .bind(id)
             .fetch_optional(&state.pool)
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
         if existing.is_none() {
-            return Err(sqlx::Error::RowNotFound);
+            return Err("Automation rule not found".to_string());
         }
 
         if let Some(ref name) = input.name {
             sqlx::query("UPDATE automation_rules SET name = $1, updated_at = $2 WHERE id = $3")
-                .bind(name).bind(&now).bind(id).execute(&state.pool).await?;
+                .bind(name).bind(&now).bind(id).execute(&state.pool).await.map_err(|e| e.to_string())?;
         }
         if let Some(ref trigger_type) = input.trigger_type {
             sqlx::query("UPDATE automation_rules SET trigger_type = $1, updated_at = $2 WHERE id = $3")
-                .bind(trigger_type).bind(&now).bind(id).execute(&state.pool).await?;
+                .bind(trigger_type).bind(&now).bind(id).execute(&state.pool).await.map_err(|e| e.to_string())?;
         }
         if let Some(ref trigger_config) = input.trigger_config {
             sqlx::query("UPDATE automation_rules SET trigger_config = $1, updated_at = $2 WHERE id = $3")
-                .bind(trigger_config).bind(&now).bind(id).execute(&state.pool).await?;
+                .bind(trigger_config).bind(&now).bind(id).execute(&state.pool).await.map_err(|e| e.to_string())?;
         }
         if let Some(ref conditions) = input.conditions {
             sqlx::query("UPDATE automation_rules SET conditions = $1, updated_at = $2 WHERE id = $3")
-                .bind(conditions).bind(&now).bind(id).execute(&state.pool).await?;
+                .bind(conditions).bind(&now).bind(id).execute(&state.pool).await.map_err(|e| e.to_string())?;
         }
         if let Some(ref actions) = input.actions {
             sqlx::query("UPDATE automation_rules SET actions = $1, updated_at = $2 WHERE id = $3")
-                .bind(actions).bind(&now).bind(id).execute(&state.pool).await?;
+                .bind(actions).bind(&now).bind(id).execute(&state.pool).await.map_err(|e| e.to_string())?;
         }
 
         sqlx::query_as::<_, AutomationRule>("SELECT * FROM automation_rules WHERE id = $1")
             .bind(id)
             .fetch_one(&state.pool)
             .await
-    }).map_err(|e: sqlx::Error| e.to_string())
+            .map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]
@@ -131,12 +133,13 @@ pub fn delete_automation_rule(state: State<AppState>, id: i64) -> Result<(), Str
         let result = sqlx::query("DELETE FROM automation_rules WHERE id = $1")
             .bind(id)
             .execute(&state.pool)
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
         if result.rows_affected() == 0 {
-            return Err(sqlx::Error::RowNotFound);
+            return Err("Automation rule not found".to_string());
         }
         Ok(())
-    }).map_err(|e: sqlx::Error| e.to_string())
+    })
 }
 
 #[tauri::command]
@@ -148,15 +151,17 @@ pub fn toggle_automation_rule(state: State<AppState>, id: i64, enabled: bool) ->
             .bind(&now)
             .bind(id)
             .execute(&state.pool)
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
         if result.rows_affected() == 0 {
-            return Err(sqlx::Error::RowNotFound);
+            return Err("Automation rule not found".to_string());
         }
         sqlx::query_as::<_, AutomationRule>("SELECT * FROM automation_rules WHERE id = $1")
             .bind(id)
             .fetch_one(&state.pool)
             .await
-    }).map_err(|e: sqlx::Error| e.to_string())
+            .map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command]

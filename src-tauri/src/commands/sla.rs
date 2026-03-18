@@ -158,12 +158,13 @@ pub fn delete_sla_policy(state: State<AppState>, id: i64) -> Result<(), String> 
         let result = sqlx::query("DELETE FROM sla_policies WHERE id = $1")
             .bind(id)
             .execute(&state.pool)
-            .await?;
+            .await
+            .map_err(|e| e.to_string())?;
         if result.rows_affected() == 0 {
-            return Err(sqlx::Error::RowNotFound);
+            return Err("SLA policy not found".to_string());
         }
         Ok(())
-    }).map_err(|e: sqlx::Error| e.to_string())
+    })
 }
 
 /// Calculate SLA status for in-progress issues against applicable policies.
@@ -258,7 +259,7 @@ pub fn check_sla_compliance(state: State<AppState>, project_id: i64) -> Result<V
 pub fn enforce_sla(state: State<AppState>, project_id: i64) -> Result<Vec<SlaEvent>, String> {
     state.rt.block_on(async {
         enforce_sla_async(&state.pool, project_id).await
-    }).map_err(|e: sqlx::Error| e.to_string())
+    })
 }
 
 /// Enforce SLA across all active projects (called from background thread).
