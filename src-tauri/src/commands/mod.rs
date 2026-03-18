@@ -8,6 +8,7 @@ pub mod issues;
 pub mod labels;
 pub mod members;
 pub mod notifications;
+pub mod pipelines;
 pub mod projects;
 pub mod relations;
 pub mod statuses;

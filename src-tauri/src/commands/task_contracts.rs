@@ -628,6 +628,12 @@ pub fn complete_task(
             // Auto-unblock downstream tasks when completed
             if new_state == TaskState::Completed {
                 let _ = crate::orchestration::dependency::resolve_downstream(&state.pool, issue_id).await;
+                // Check if this task is part of a pipeline and auto-advance
+                let _ = crate::commands::pipelines::check_pipeline_advancement(
+                    &state.pool,
+                    &state.backend,
+                    &input.identifier,
+                ).await;
             }
 
             let _ = app.emit("db-changed", ());
@@ -773,6 +779,14 @@ pub fn fail_task(
             }
 
             let _ = auto_comment(&state.pool, issue_id, &agent_id, &format!("\u{274C} Task failed: {}", reason)).await;
+
+            // Check if this task is part of a pipeline and mark the run as failed
+            if new_state_str == "blocked" {
+                let _ = crate::commands::pipelines::check_pipeline_failure(
+                    &state.pool,
+                    &identifier,
+                ).await;
+            }
 
             let _ = app.emit("db-changed", ());
             Ok(serde_json::json!({

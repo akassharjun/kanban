@@ -17,6 +17,7 @@ import { ProjectSettingsView } from "./components/ProjectSettingsView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AgentDashboard } from "@/components/AgentDashboard";
 import { ReplayViewer } from "@/components/ReplayViewer";
+import { PipelinesView } from "@/components/PipelinesView";
 import { useProjects } from "./hooks/use-projects";
 import { useIssues } from "./hooks/use-issues";
 import { useMembers } from "./hooks/use-members";
@@ -27,7 +28,7 @@ import { useAgents } from "./hooks/use-agents";
 import * as api from "./tauri/commands";
 import type { IssueTemplate } from "./types";
 
-type Page = "project" | "members" | "settings" | "agents";
+type Page = "project" | "members" | "settings" | "agents" | "pipelines";
 
 function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
@@ -190,6 +191,7 @@ function App() {
         onOpenMembers={() => { setPage("members"); setSelectedIssueId(null); }}
         onOpenSettings={() => setPage("settings")}
         onOpenAgents={() => setPage("agents")}
+        onOpenPipelines={() => setPage("pipelines")}
         agentCount={onlineAgentCount}
         collapsed={sidebarCollapsed}
       />
@@ -295,6 +297,10 @@ function App() {
 
         {page === "agents" && (
           <AgentDashboard projectId={selectedProjectId} projectName={selectedProject?.name ?? null} projectPrefix={selectedProject?.prefix ?? null} onViewReplay={(id) => setReplayIdentifier(id)} />
+        )}
+
+        {page === "pipelines" && (
+          <PipelinesView projectId={selectedProjectId} projectName={selectedProject?.name ?? null} issues={issues} />
         )}
       </div>
 

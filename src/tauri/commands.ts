@@ -23,6 +23,8 @@ import type {
   TaskGraph,
   ProjectAgentConfig,
   Hook,
+  Pipeline,
+  PipelineRun,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -244,3 +246,25 @@ export const approveTask = (identifier: string) => invoke<void>("approve_task", 
 export const rejectTask = (identifier: string, reason?: string) => invoke<void>("reject_task", { identifier, reason });
 export const unclaimTask = (identifier: string, agentId: string) => invoke<void>("unclaim_task", { identifier, agentId });
 export const logTaskActivity = (identifier: string, agentId: string, entryType: string, message: string, metadata?: Record<string, unknown>) => invoke<void>("log_task_activity", { identifier, agentId, entryType, message, metadata });
+
+// Pipelines
+export const listPipelines = (projectId: number) => invoke<Pipeline[]>("list_pipelines", { projectId });
+export const getPipeline = (id: number) => invoke<Pipeline>("get_pipeline", { id });
+export const createPipeline = (input: {
+  project_id: number;
+  name: string;
+  description?: string;
+  stages: unknown[];
+}) => invoke<Pipeline>("create_pipeline", { input });
+export const updatePipeline = (id: number, input: {
+  name?: string;
+  description?: string;
+  stages?: unknown[];
+  enabled?: boolean;
+}) => invoke<Pipeline>("update_pipeline", { id, input });
+export const deletePipeline = (id: number) => invoke<void>("delete_pipeline", { id });
+export const triggerPipeline = (pipelineId: number, triggerIssueId?: number, context?: string) => invoke<PipelineRun>("trigger_pipeline", { pipelineId, triggerIssueId, context });
+export const advancePipeline = (runId: number) => invoke<PipelineRun>("advance_pipeline", { runId });
+export const cancelPipeline = (runId: number) => invoke<PipelineRun>("cancel_pipeline", { runId });
+export const getPipelineRun = (runId: number) => invoke<PipelineRun>("get_pipeline_run", { runId });
+export const listPipelineRuns = (pipelineId: number) => invoke<PipelineRun[]>("list_pipeline_runs", { pipelineId });

@@ -7,7 +7,7 @@ import type {
   ActivityLogEntry, Notification, Agent, AgentMetrics,
   ProjectMetrics, CustomField, IssueTemplate, Hook,
   ProjectAgentConfig, FullTaskContract, ExecutionLog, TaskGraph,
-  IssueWithLabels, UndoLogEntry,
+  IssueWithLabels, UndoLogEntry, Pipeline, PipelineRun,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -114,6 +114,59 @@ const agents: Agent[] = [
   { id: "claude-opus-1", name: "Claude Opus", agent_type: "implementation", skills: ["rust", "typescript", "react", "sql"], task_types: ["implementation", "review"], max_concurrent: 3, max_complexity: "high", member_id: 2, worktree_path: "/tmp/kanban-wt-1", status: "busy", registered_at: ago(5000), last_heartbeat: ago(1), last_activity_at: ago(2) },
   { id: "review-bot-1", name: "Review Bot", agent_type: "review", skills: ["code-review", "testing"], task_types: ["review", "testing"], max_concurrent: 5, max_complexity: "medium", member_id: 3, worktree_path: null, status: "idle", registered_at: ago(3000), last_heartbeat: ago(5), last_activity_at: ago(60) },
   { id: "research-agent-1", name: "Research Agent", agent_type: "research", skills: ["analysis", "documentation"], task_types: ["research", "decomposition"], max_concurrent: 2, max_complexity: "low", member_id: null, worktree_path: null, status: "offline", registered_at: ago(2000), last_heartbeat: ago(600), last_activity_at: ago(500) },
+];
+
+const pipelines: Pipeline[] = [
+  {
+    id: 1, project_id: 1, name: "SDLC Pipeline", description: "Implement, Test, Review, Deploy",
+    stages: JSON.stringify([
+      { name: "Implement", task_type: "implementation", required_skills: ["rust", "react"], max_complexity: "large", timeout_minutes: 60, title_template: "{{pipeline.name}}: {{stage.name}} - {{trigger.title}}", objective_template: "Implement the changes described in: {{trigger.description}}", success_criteria: ["code compiles", "tests pass"], auto_advance: true },
+      { name: "Test", task_type: "testing", required_skills: ["testing"], max_complexity: "medium", timeout_minutes: 30, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Write and run tests for the implementation", success_criteria: ["all tests pass", "coverage > 80%"], auto_advance: true },
+      { name: "Review", task_type: "review", required_skills: ["code-review"], max_complexity: "medium", timeout_minutes: 30, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Review the implementation and tests", success_criteria: ["code quality approved"], auto_advance: true },
+      { name: "Deploy", task_type: "implementation", required_skills: ["devops"], max_complexity: "small", timeout_minutes: 15, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Deploy the changes", success_criteria: ["deployment successful"], auto_advance: false },
+    ]),
+    enabled: true, total_runs: 3, created_at: ago(2000), updated_at: ago(100),
+  },
+  {
+    id: 2, project_id: 1, name: "Bug Fix Pipeline", description: "Reproduce, Fix, Test, Review",
+    stages: JSON.stringify([
+      { name: "Reproduce", task_type: "research", required_skills: ["debugging"], max_complexity: "small", timeout_minutes: 15, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Reproduce the bug", success_criteria: ["bug reproduced"], auto_advance: true },
+      { name: "Fix", task_type: "implementation", required_skills: ["rust", "react"], max_complexity: "medium", timeout_minutes: 45, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Fix the bug", success_criteria: ["bug fixed"], auto_advance: true },
+      { name: "Test", task_type: "testing", required_skills: ["testing"], max_complexity: "small", timeout_minutes: 20, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Verify the fix", success_criteria: ["regression test passes"], auto_advance: true },
+      { name: "Review", task_type: "review", required_skills: ["code-review"], max_complexity: "small", timeout_minutes: 15, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Review the fix", success_criteria: ["approved"], auto_advance: false },
+    ]),
+    enabled: true, total_runs: 1, created_at: ago(1500), updated_at: ago(200),
+  },
+  {
+    id: 3, project_id: 2, name: "Research Pipeline", description: "Research, Document, Review",
+    stages: JSON.stringify([
+      { name: "Research", task_type: "research", required_skills: ["analysis"], max_complexity: "medium", timeout_minutes: 60, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Research the topic", success_criteria: ["findings documented"], auto_advance: true },
+      { name: "Document", task_type: "implementation", required_skills: ["documentation"], max_complexity: "small", timeout_minutes: 30, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Write documentation", success_criteria: ["docs complete"], auto_advance: true },
+      { name: "Review", task_type: "review", required_skills: ["code-review"], max_complexity: "small", timeout_minutes: 15, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Review documentation", success_criteria: ["approved"], auto_advance: false },
+    ]),
+    enabled: true, total_runs: 0, created_at: ago(1000), updated_at: ago(500),
+  },
+];
+
+const pipelineRuns: PipelineRun[] = [
+  {
+    id: 1, pipeline_id: 1, trigger_issue_id: 6, status: "completed", current_stage: 3,
+    stage_tasks: JSON.stringify([
+      { stage_index: 0, task_identifier: "KAN-20", status: "completed" },
+      { stage_index: 1, task_identifier: "KAN-21", status: "completed" },
+      { stage_index: 2, task_identifier: "KAN-22", status: "completed" },
+      { stage_index: 3, task_identifier: "KAN-23", status: "completed" },
+    ]),
+    context: "{}", started_at: ago(500), completed_at: ago(100), error_message: null,
+  },
+  {
+    id: 2, pipeline_id: 1, trigger_issue_id: 7, status: "running", current_stage: 1,
+    stage_tasks: JSON.stringify([
+      { stage_index: 0, task_identifier: "KAN-24", status: "completed" },
+      { stage_index: 1, task_identifier: "KAN-25", status: "queued" },
+    ]),
+    context: "{}", started_at: ago(50), completed_at: null, error_message: null,
+  },
 ];
 
 const notifications: Notification[] = [
@@ -356,6 +409,55 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "reject_task": return;
     case "unclaim_task": return;
     case "log_task_activity": return;
+
+    // Pipelines
+    case "list_pipelines": return pipelines.filter(p => p.project_id === args?.projectId);
+    case "get_pipeline": return pipelines.find(p => p.id === args?.id) ?? null;
+    case "create_pipeline": {
+      const p: Pipeline = {
+        id: id(), ...args!.input,
+        stages: JSON.stringify(args!.input.stages),
+        enabled: true, total_runs: 0, created_at: now, updated_at: now,
+      };
+      pipelines.push(p);
+      return p;
+    }
+    case "update_pipeline": {
+      const p = pipelines.find(x => x.id === args?.id);
+      if (p) {
+        if (args!.input.stages) args!.input.stages = JSON.stringify(args!.input.stages);
+        Object.assign(p, args!.input, { updated_at: now });
+      }
+      return p;
+    }
+    case "delete_pipeline": {
+      const idx = pipelines.findIndex(p => p.id === args?.id);
+      if (idx >= 0) pipelines.splice(idx, 1);
+      return;
+    }
+    case "trigger_pipeline": {
+      const run: PipelineRun = {
+        id: id(), pipeline_id: args?.pipelineId, trigger_issue_id: args?.triggerIssueId ?? null,
+        status: "running", current_stage: 0, stage_tasks: JSON.stringify([{ stage_index: 0, task_identifier: `KAN-${id()}`, status: "queued" }]),
+        context: args?.context ?? "{}", started_at: now, completed_at: null, error_message: null,
+      };
+      pipelineRuns.push(run);
+      const p = pipelines.find(x => x.id === args?.pipelineId);
+      if (p) p.total_runs++;
+      return run;
+    }
+    case "advance_pipeline": {
+      const r = pipelineRuns.find(x => x.id === args?.runId);
+      if (r) { r.current_stage++; }
+      return r;
+    }
+    case "cancel_pipeline": {
+      const r = pipelineRuns.find(x => x.id === args?.runId);
+      if (r) { r.status = "cancelled"; r.completed_at = now; }
+      return r;
+    }
+    case "get_pipeline_run": return pipelineRuns.find(r => r.id === args?.runId) ?? null;
+    case "list_pipeline_runs": return pipelineRuns.filter(r => r.pipeline_id === args?.pipelineId);
 
     default:
       console.warn(`[mock] Unhandled command: ${cmd}`, args);

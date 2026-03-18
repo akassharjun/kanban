@@ -268,3 +268,42 @@ export interface ProjectAgentConfig {
   heartbeat_interval_seconds: number;
   missed_heartbeats_before_offline: number;
 }
+
+// Pipeline Types
+
+export interface PipelineStage {
+  name: string;
+  task_type: string;
+  required_skills: string[];
+  max_complexity: string;
+  timeout_minutes: number;
+  title_template: string;
+  objective_template: string;
+  success_criteria: string[];
+  auto_advance: boolean;
+}
+
+export interface Pipeline {
+  id: number;
+  project_id: number;
+  name: string;
+  description: string | null;
+  stages: string; // JSON string of PipelineStage[]
+  enabled: boolean;
+  total_runs: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PipelineRun {
+  id: number;
+  pipeline_id: number;
+  trigger_issue_id: number | null;
+  status: "running" | "completed" | "failed" | "cancelled";
+  current_stage: number;
+  stage_tasks: string; // JSON string of stage task info
+  context: string; // JSON string
+  started_at: string;
+  completed_at: string | null;
+  error_message: string | null;
+}
