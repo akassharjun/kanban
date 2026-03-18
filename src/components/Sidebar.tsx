@@ -6,6 +6,7 @@ import type { Project } from "@/types";
 interface SidebarProps {
   projects: Project[];
   selectedProjectId: number | null;
+  activePage?: string;
   onSelectProject: (id: number) => void;
   onCreateProject: () => void;
   onOpenMembers: () => void;
@@ -15,9 +16,14 @@ interface SidebarProps {
   collapsed: boolean;
 }
 
+const navItemBase = "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors";
+const navItemActive = "bg-primary/10 text-primary font-medium";
+const navItemInactive = "text-muted-foreground hover:bg-muted hover:text-foreground";
+
 export function Sidebar({
   projects,
   selectedProjectId,
+  activePage,
   onSelectProject,
   onCreateProject,
   onOpenMembers,
@@ -57,9 +63,9 @@ export function Sidebar({
                 key={project.id}
                 onClick={() => onSelectProject(project.id)}
                 className={cn(
-                  "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all",
-                  selectedProjectId === project.id
-                    ? "bg-primary/10 text-primary shadow-sm"
+                  navItemBase, "font-medium",
+                  selectedProjectId === project.id && activePage === "project"
+                    ? navItemActive
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
@@ -69,7 +75,7 @@ export function Sidebar({
             ))}
             <button
               onClick={onCreateProject}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-muted-foreground/60 hover:bg-muted hover:text-foreground transition-colors"
+              className={cn(navItemBase, "text-muted-foreground/60 hover:bg-muted hover:text-foreground")}
             >
               <Plus className="h-4 w-4" />
               <span>New project</span>
@@ -82,14 +88,14 @@ export function Sidebar({
       <div className="border-t border-border/50 p-3 space-y-0.5">
         <button
           onClick={onOpenMembers}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          className={cn(navItemBase, activePage === "members" ? navItemActive : navItemInactive)}
         >
           <Users className="h-4 w-4" />
           Members
         </button>
         <button
           onClick={onOpenAgents}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          className={cn(navItemBase, activePage === "agents" ? navItemActive : navItemInactive)}
         >
           <Bot className="h-4 w-4" />
           Agent Ops
@@ -101,7 +107,7 @@ export function Sidebar({
         </button>
         <button
           onClick={onOpenSettings}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          className={cn(navItemBase, activePage === "settings" ? navItemActive : navItemInactive)}
         >
           <Settings className="h-4 w-4" />
           Settings

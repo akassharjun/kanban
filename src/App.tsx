@@ -184,6 +184,7 @@ function App() {
       <Sidebar
         projects={projects}
         selectedProjectId={selectedProjectId}
+        activePage={page}
         onSelectProject={handleSelectProject}
         onCreateProject={() => setShowCreateProject(true)}
         onOpenMembers={() => { setPage("members"); setSelectedIssueId(null); }}
