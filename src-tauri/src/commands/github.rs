@@ -767,16 +767,6 @@ pub fn get_ci_status(state: State<AppState>, project_id: i64, issue_identifier: 
 }
 
 #[tauri::command]
-pub fn list_git_links(state: State<AppState>, issue_id: i64) -> Result<Vec<GitLink>, String> {
-    state.rt.block_on(async {
-        sqlx::query_as::<_, GitLink>("SELECT * FROM git_links WHERE issue_id = $1 ORDER BY created_at DESC")
-            .bind(issue_id)
-            .fetch_all(&state.pool)
-            .await
-    }).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
 pub fn list_github_events(state: State<AppState>, project_id: i64) -> Result<Vec<GithubEvent>, String> {
     state.rt.block_on(async {
         sqlx::query_as::<_, GithubEvent>("SELECT * FROM github_events WHERE project_id = $1 ORDER BY created_at DESC LIMIT 50")
