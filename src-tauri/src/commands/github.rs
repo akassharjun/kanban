@@ -136,7 +136,7 @@ pub fn get_github_config(state: State<AppState>, project_id: i64) -> Result<Opti
             .bind(project_id)
             .fetch_optional(&state.pool)
             .await
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -773,5 +773,5 @@ pub fn list_github_events(state: State<AppState>, project_id: i64) -> Result<Vec
             .bind(project_id)
             .fetch_all(&state.pool)
             .await
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }

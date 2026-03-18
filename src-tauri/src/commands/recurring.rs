@@ -92,7 +92,7 @@ pub fn list_recurring(state: State<AppState>, project_id: i64) -> Result<Vec<Rec
         .bind(project_id)
         .fetch_all(&state.pool)
         .await
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]

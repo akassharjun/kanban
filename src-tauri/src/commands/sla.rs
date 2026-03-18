@@ -82,7 +82,7 @@ pub fn list_sla_policies(state: State<AppState>, project_id: i64) -> Result<Vec<
         .bind(project_id)
         .fetch_all(&state.pool)
         .await
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -251,14 +251,14 @@ async fn compute_sla_compliance(pool: &sqlx::AnyPool, project_id: i64) -> Result
 pub fn check_sla_compliance(state: State<AppState>, project_id: i64) -> Result<Vec<SlaStatus>, String> {
     state.rt.block_on(async {
         compute_sla_compliance(&state.pool, project_id).await
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
 pub fn enforce_sla(state: State<AppState>, project_id: i64) -> Result<Vec<SlaEvent>, String> {
     state.rt.block_on(async {
         enforce_sla_async(&state.pool, project_id).await
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 /// Enforce SLA across all active projects (called from background thread).
@@ -423,7 +423,7 @@ pub fn get_sla_events(state: State<AppState>, issue_id: i64) -> Result<Vec<SlaEv
         .bind(issue_id)
         .fetch_all(&state.pool)
         .await
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]

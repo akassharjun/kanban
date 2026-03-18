@@ -177,7 +177,7 @@ pub fn get_agent_performance(state: State<AppState>, agent_id: String) -> Result
             tasks_by_complexity,
             daily_completions,
         })
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -230,7 +230,7 @@ pub fn get_project_agent_summary(state: State<AppState>, _project_id: i64) -> Re
             task_type_distribution,
             completion_trend,
         })
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 async fn compute_leaderboard(pool: &sqlx::AnyPool) -> Result<Vec<AgentRanking>, sqlx::Error> {

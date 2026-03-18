@@ -70,7 +70,7 @@ pub fn list_handoff_notes(state: State<AppState>, task_identifier: String) -> Re
         .bind(&task_identifier)
         .fetch_all(&state.pool)
         .await
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -83,5 +83,5 @@ pub fn get_handoff_for_agent(state: State<AppState>, agent_id: String, task_iden
         .bind(&agent_id)
         .fetch_all(&state.pool)
         .await
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }

@@ -119,7 +119,7 @@ pub fn marketplace_register(app: tauri::AppHandle, state: State<AppState>, input
 
         let _ = app.emit("db-changed", ());
         Ok(entry)
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -170,7 +170,7 @@ pub fn marketplace_update(app: tauri::AppHandle, state: State<AppState>, agent_i
 
         let _ = app.emit("db-changed", ());
         Ok(entry)
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -189,7 +189,7 @@ pub fn marketplace_deregister(app: tauri::AppHandle, state: State<AppState>, age
             .map_err(|e| e.to_string())?;
         let _ = app.emit("db-changed", ());
         Ok(())
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -233,7 +233,7 @@ pub fn marketplace_search(state: State<AppState>, skills: Vec<String>, max_compl
         }).collect();
 
         Ok(results)
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -276,7 +276,7 @@ pub fn update_agent_proficiency(state: State<AppState>, agent_id: String, capabi
             .bind(avg_prof).bind(&agent_id).execute(&state.pool).await.map_err(|e| e.to_string())?;
 
         Ok(())
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -365,5 +365,5 @@ pub fn find_best_agent(state: State<AppState>, task_skills: Vec<String>, complex
 
         matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         Ok(matches)
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }

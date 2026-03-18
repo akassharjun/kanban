@@ -190,7 +190,7 @@ pub fn list_learnings(
             .fetch_all(&state.pool)
             .await
         }
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
 
 #[tauri::command]
@@ -202,5 +202,5 @@ pub fn get_learnings_for_task(state: State<AppState>, task_identifier: String) -
         .bind(&task_identifier)
         .fetch_all(&state.pool)
         .await
-    }).map_err(|e| e.to_string())
+    }).map_err(|e: sqlx::Error| e.to_string())
 }
