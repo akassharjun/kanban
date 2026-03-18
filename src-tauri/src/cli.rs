@@ -70,6 +70,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: TaskAction,
     },
+    /// Code analysis and heat maps
+    Code {
+        #[command(subcommand)]
+        action: CodeAction,
+    },
     /// View system metrics
     Metrics {
         #[arg(long)]
@@ -213,6 +218,23 @@ pub enum IssueAction {
         #[arg(short, long)]
         status: i64,
     },
+    /// Create an issue from a code diff finding
+    FromDiff {
+        #[arg(long)]
+        project: i64,
+        #[arg(long)]
+        title: String,
+        #[arg(long)]
+        file: String,
+        #[arg(long)]
+        line: Option<String>,
+        #[arg(long)]
+        severity: String,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        assignee: Option<i64>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -319,6 +341,52 @@ pub enum AgentAction {
     /// Show stats for an agent
     Stats {
         id: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum CodeAction {
+    /// Show file heat map for a project
+    HeatMap {
+        #[arg(long)]
+        project: i64,
+        #[arg(long, default_value = "20")]
+        limit: i32,
+    },
+    /// Show directory heat map for a project
+    DirHeatMap {
+        #[arg(long)]
+        project: i64,
+        #[arg(long, default_value = "2")]
+        depth: i32,
+    },
+    /// Link a file to an issue
+    Link {
+        /// Issue identifier (e.g. KAN-42)
+        identifier: String,
+        /// File path
+        file_path: String,
+        /// Link type: related, cause, fix
+        #[arg(long, default_value = "related")]
+        link_type: String,
+    },
+    /// Unlink a file from an issue
+    Unlink {
+        /// Issue identifier (e.g. KAN-42)
+        identifier: String,
+        /// File path
+        file_path: String,
+    },
+    /// List files linked to an issue
+    Files {
+        /// Issue identifier (e.g. KAN-42)
+        identifier: String,
+    },
+    /// List issues linked to a file
+    Issues {
+        file_path: String,
+        #[arg(long)]
+        project: i64,
     },
 }
 
@@ -485,6 +553,10 @@ pub enum TaskAction {
     Decompose {
         identifier: String,
     },
+    /// Get full assembled context for a task
+    Context {
+        identifier: String,
+    },
 }
 
 #[derive(sqlx::FromRow, serde::Serialize, serde::Deserialize)]
@@ -520,6 +592,7 @@ pub async fn run(
         Commands::Comment { action } => handle_comment(pool, action, json).await?,
         Commands::Agent { action } => handle_agent(pool, backend, action, json).await?,
         Commands::Task { action } => handle_task(pool, backend, action, json).await?,
+        Commands::Code { action } => handle_code(pool, action, json).await?,
         Commands::Metrics { project, agent } => handle_metrics(pool, backend, project, agent, json).await?,
         Commands::Export { output } => handle_export(pool, output).await?,
         Commands::Import { file } => handle_import(pool, file).await?,
@@ -1084,6 +1157,27 @@ async fn handle_issue(
                 if let Some(aid) = suggestion.suggested_assignee_id {
                     println!("  Assignee: {}", aid);
                 }
+            }
+            notify_change();
+        }
+        IssueAction::FromDiff { project, title, file, line, severity, description, assignee } => {
+            let issue = crate::commands::diff_issues::create_issue_from_diff_async(
+                pool,
+                crate::commands::diff_issues::DiffIssueInput {
+                    project_id: project,
+                    title,
+                    description,
+                    file_path: file,
+                    line_range: line,
+                    severity,
+                    status_id: None,
+                    assignee_id: assignee,
+                },
+            ).await.map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&issue)?);
+            } else {
+                println!("{} | {} | {}", issue.identifier, issue.title, issue.priority);
             }
             notify_change();
         }
@@ -2386,6 +2480,72 @@ async fn handle_task(
             }
             notify_change();
         }
+        TaskAction::Context { identifier } => {
+            let ctx = crate::commands::context::get_task_context_async(pool, &identifier)
+                .await
+                .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&ctx)?);
+            } else {
+                println!("=== Task Context: {} ===", ctx.issue.identifier);
+                println!("Title: {}", ctx.issue.title);
+                println!("Priority: {} | Status ID: {}", ctx.issue.priority, ctx.issue.status_id);
+                if let Some(ref desc) = ctx.issue.description {
+                    println!("Description: {}", desc);
+                }
+                if let Some(ref path) = ctx.project_path {
+                    println!("Project path: {}", path);
+                }
+                if !ctx.context_files.is_empty() {
+                    println!("\nContext files:");
+                    for f in &ctx.context_files {
+                        println!("  - {}", f);
+                    }
+                }
+                if !ctx.labels.is_empty() {
+                    println!("\nLabels: {}", ctx.labels.iter().map(|l| l.name.as_str()).collect::<Vec<_>>().join(", "));
+                }
+                if let Some(ref parent) = ctx.parent_issue {
+                    println!("\nParent: {} - {}", parent.identifier, parent.title);
+                }
+                if !ctx.sub_issues.is_empty() {
+                    println!("\nSub-issues:");
+                    for s in &ctx.sub_issues {
+                        println!("  {} - {}", s.identifier, s.title);
+                    }
+                }
+                if !ctx.blocking_issues.is_empty() {
+                    println!("\nBlocked by:");
+                    for b in &ctx.blocking_issues {
+                        println!("  {} - {}", b.identifier, b.title);
+                    }
+                }
+                if !ctx.blocked_issues.is_empty() {
+                    println!("\nBlocks:");
+                    for b in &ctx.blocked_issues {
+                        println!("  {} - {}", b.identifier, b.title);
+                    }
+                }
+                if !ctx.prior_attempts.is_empty() {
+                    println!("\nPrior attempts:");
+                    for a in &ctx.prior_attempts {
+                        println!("  #{} by {} -> {} {}", a.attempt_number, a.agent_name, a.result, a.reason.as_deref().unwrap_or(""));
+                    }
+                }
+                if !ctx.similar_completed_issues.is_empty() {
+                    println!("\nSimilar completed issues:");
+                    for s in &ctx.similar_completed_issues {
+                        println!("  {} - {}", s.identifier, s.title);
+                    }
+                }
+                if !ctx.comments.is_empty() {
+                    println!("\nComments ({}):", ctx.comments.len());
+                    for c in &ctx.comments {
+                        println!("  [{}] {}", c.created_at, c.content);
+                    }
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -2589,5 +2749,94 @@ async fn handle_import(
         data.issue_templates.len()
     );
     notify_change();
+    Ok(())
+}
+
+async fn handle_code(
+    pool: &AnyPool,
+    action: CodeAction,
+    json: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        CodeAction::HeatMap { project, limit } => {
+            let entries = crate::commands::code_analysis::get_file_heat_map_async(pool, project, limit)
+                .await
+                .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&entries)?);
+            } else {
+                println!("{:<60} {:>6} {:>6} {}", "FILE", "ISSUES", "BUGS", "LAST");
+                println!("{}", "-".repeat(90));
+                for e in &entries {
+                    println!("{:<60} {:>6} {:>6} {}", e.file_path, e.issue_count, e.bug_count, e.last_issue_at);
+                }
+            }
+        }
+        CodeAction::DirHeatMap { project, depth } => {
+            let entries = crate::commands::code_analysis::get_directory_heat_map_async(pool, project, depth)
+                .await
+                .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&entries)?);
+            } else {
+                println!("{:<50} {:>6} {:>6}", "DIRECTORY", "ISSUES", "FILES");
+                println!("{}", "-".repeat(66));
+                for e in &entries {
+                    println!("{:<50} {:>6} {:>6}", e.directory, e.issue_count, e.file_count);
+                }
+            }
+        }
+        CodeAction::Link { identifier, file_path, link_type } => {
+            let issue = resolve_issue(pool, &identifier).await?;
+            sqlx::query(
+                "INSERT INTO issue_file_links (issue_id, file_path, link_type) VALUES ($1, $2, $3)",
+            )
+            .bind(issue.id)
+            .bind(&file_path)
+            .bind(&link_type)
+            .execute(pool)
+            .await?;
+            println!("Linked {} to {} ({})", file_path, identifier, link_type);
+            notify_change();
+        }
+        CodeAction::Unlink { identifier, file_path } => {
+            let issue = resolve_issue(pool, &identifier).await?;
+            sqlx::query("DELETE FROM issue_file_links WHERE issue_id = $1 AND file_path = $2")
+                .bind(issue.id)
+                .bind(&file_path)
+                .execute(pool)
+                .await?;
+            println!("Unlinked {} from {}", file_path, identifier);
+            notify_change();
+        }
+        CodeAction::Files { identifier } => {
+            let issue = resolve_issue(pool, &identifier).await?;
+            let links = sqlx::query_as::<_, crate::models::IssueFileLink>(
+                "SELECT * FROM issue_file_links WHERE issue_id = $1 ORDER BY created_at ASC",
+            )
+            .bind(issue.id)
+            .fetch_all(pool)
+            .await?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&links)?);
+            } else {
+                for link in &links {
+                    println!("{} [{}] {}", link.file_path, link.link_type, link.created_at);
+                }
+            }
+        }
+        CodeAction::Issues { file_path, project } => {
+            let issues = crate::commands::code_analysis::get_issues_for_file_async(pool, &file_path, project)
+                .await
+                .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&issues)?);
+            } else {
+                for i in &issues {
+                    println!("{} | {} | {}", i.identifier, i.title, i.priority);
+                }
+            }
+        }
+    }
     Ok(())
 }

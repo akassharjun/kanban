@@ -13,6 +13,8 @@ import type {
   GithubConfig, GithubEvent, CIStatus, PRStatus,
   ConnectionTestResult, BranchNamePreview,
   TriageSuggestion, DecomposedTask, ParsedIssue,
+  IssueFileLink, FileHeatEntry,
+  DirectoryHeatEntry, TaskContext,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -158,6 +160,20 @@ const gitLinks: Record<number, GitLink[]> = {
   9: [
     { id: 2, issue_id: 9, link_type: "pr", url: "https://github.com/akassharjun/kanban/pull/42", ref_name: "#42", pr_number: 42, pr_state: "closed", pr_merged: true, ci_status: "success", review_status: "approved", created_at: ago(70), updated_at: ago(60) },
     { id: 3, issue_id: 9, link_type: "branch", url: null, ref_name: "feat/undo-redo", pr_number: null, pr_state: null, pr_merged: false, ci_status: null, review_status: null, created_at: ago(80), updated_at: ago(60) },
+  ],
+};
+
+const fileLinks: Record<number, IssueFileLink[]> = {
+  6: [
+    { id: 1, issue_id: 6, file_path: "src/components/BoardView.tsx", link_type: "cause", created_at: ago(100) },
+    { id: 2, issue_id: 6, file_path: "src/lib/utils.ts", link_type: "related", created_at: ago(90) },
+  ],
+  7: [
+    { id: 3, issue_id: 7, file_path: "src/components/IssueDetailPanel.tsx", link_type: "related", created_at: ago(200) },
+  ],
+  9: [
+    { id: 4, issue_id: 9, file_path: "src-tauri/src/commands/undo.rs", link_type: "fix", created_at: ago(60) },
+    { id: 5, issue_id: 9, file_path: "src/tauri/commands.ts", link_type: "related", created_at: ago(55) },
   ],
 };
 
@@ -693,6 +709,124 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
         created_at: now, updated_at: now,
       };
       issues.push(i);
+      return i;
+    }
+
+    // Context Assembly
+    case "get_task_context": {
+      const i = issues.find(x => x.identifier === args?.identifier);
+      if (!i) return null;
+      const il = (issueLabels[i.id] ?? []).map(lid => {
+        for (const arr of Object.values(labels)) {
+          const l = arr.find(x => x.id === lid);
+          if (l) return l;
+        }
+        return null;
+      }).filter(Boolean);
+      return {
+        issue: i,
+        labels: il,
+        parent_issue: i.parent_id ? issues.find(x => x.id === i.parent_id) ?? null : null,
+        sub_issues: issues.filter(x => x.parent_id === i.id),
+        related_issues: [],
+        blocking_issues: [],
+        blocked_issues: [],
+        comments: comments[i.id] ?? [],
+        activity_log: [],
+        prior_attempts: [],
+        similar_completed_issues: [],
+        project_path: null,
+        context_files: [],
+      } as TaskContext;
+    }
+    case "get_similar_issues": return [];
+
+    // Code Analysis
+    case "link_file_to_issue": {
+      const link: IssueFileLink = { id: id(), issue_id: args!.input.issue_id, file_path: args!.input.file_path, link_type: args!.input.link_type ?? "related", created_at: now };
+      (fileLinks[args!.input.issue_id] ??= []).push(link);
+      return link;
+    }
+    case "unlink_file_from_issue": {
+      const arr = fileLinks[args?.issueId];
+      if (arr) {
+        const idx = arr.findIndex(l => l.file_path === args?.filePath);
+        if (idx >= 0) arr.splice(idx, 1);
+      }
+      return;
+    }
+    case "list_file_links": return fileLinks[args?.issueId] ?? [];
+    case "get_file_heat_map": {
+      const allLinks: IssueFileLink[] = Object.values(fileLinks).flat();
+      const pathMap: Record<string, { count: number; bugCount: number; last: string }> = {};
+      for (const link of allLinks) {
+        const i = issues.find(x => x.id === link.issue_id);
+        if (!i || i.project_id !== args?.projectId) continue;
+        if (!pathMap[link.file_path]) pathMap[link.file_path] = { count: 0, bugCount: 0, last: link.created_at };
+        pathMap[link.file_path].count++;
+        const iLabels = issueLabels[i.id] ?? [];
+        const bugLabel = (labels[i.project_id] ?? []).find(l => l.name === "bug");
+        if (bugLabel && iLabels.includes(bugLabel.id)) pathMap[link.file_path].bugCount++;
+        if (link.created_at > pathMap[link.file_path].last) pathMap[link.file_path].last = link.created_at;
+      }
+      return Object.entries(pathMap)
+        .map(([file_path, v]) => ({ file_path, issue_count: v.count, bug_count: v.bugCount, last_issue_at: v.last } as FileHeatEntry))
+        .sort((a, b) => b.issue_count - a.issue_count)
+        .slice(0, args?.limit ?? 20);
+    }
+    case "get_directory_heat_map": {
+      const allLinks2: IssueFileLink[] = Object.values(fileLinks).flat();
+      const dirMap: Record<string, Set<string>> = {};
+      for (const link of allLinks2) {
+        const i = issues.find(x => x.id === link.issue_id);
+        if (!i || i.project_id !== args?.projectId) continue;
+        const parts = link.file_path.split("/");
+        const dir = parts.slice(0, Math.min(args?.depth ?? 2, parts.length - 1)).join("/") || ".";
+        if (!dirMap[dir]) dirMap[dir] = new Set();
+        dirMap[dir].add(link.file_path);
+      }
+      return Object.entries(dirMap)
+        .map(([directory, files]) => ({ directory, issue_count: files.size, file_count: files.size } as DirectoryHeatEntry))
+        .sort((a, b) => b.issue_count - a.issue_count);
+    }
+    case "get_issues_for_file": {
+      const linkedIssueIds = (Object.values(fileLinks).flat())
+        .filter(l => l.file_path === args?.filePath)
+        .map(l => l.issue_id);
+      return issues.filter(i => linkedIssueIds.includes(i.id) && i.project_id === args?.projectId);
+    }
+
+    // Diff Issues
+    case "create_issue_from_diff": {
+      const proj = projects.find(p => p.id === args!.input.project_id);
+      const counter = proj ? ++proj.issue_counter : id();
+      const prefix = proj?.prefix ?? "ISS";
+      const i: Issue = {
+        id: id(),
+        project_id: args!.input.project_id,
+        identifier: `${prefix}-${counter}`,
+        title: args!.input.title,
+        description: `**File:** \`${args!.input.file_path}\`\n${args!.input.line_range ? `**Lines:** ${args!.input.line_range}\n` : ""}**Severity:** ${args!.input.severity}\n\n---\n\n${args!.input.description ?? ""}`,
+        status_id: args!.input.status_id ?? 1,
+        priority: args!.input.severity === "bug" ? "high" : args!.input.severity === "improvement" ? "medium" : "low",
+        assignee_id: args!.input.assignee_id ?? null,
+        parent_id: null,
+        position: issues.filter(x => x.project_id === args!.input.project_id).length,
+        estimate: null,
+        due_date: null,
+        epic_id: null,
+        milestone_id: null,
+        created_at: now,
+        updated_at: now,
+      };
+      issues.push(i);
+      (fileLinks[i.id] ??= []).push({
+        id: id(),
+        issue_id: i.id,
+        file_path: args!.input.file_path,
+        link_type: args!.input.severity === "bug" ? "cause" : "related",
+        created_at: now,
+      });
       return i;
     }
 

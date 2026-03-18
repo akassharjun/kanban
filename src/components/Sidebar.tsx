@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Users, Settings, ChevronDown, FolderKanban, Bot, Star, Clock, Bookmark, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Plus, Users, Settings, ChevronDown, FolderKanban, Bot, Star, Clock, Bookmark, MoreHorizontal, Pencil, Trash2, Flame } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Project, Issue, SavedView } from "@/types";
 
@@ -12,6 +12,7 @@ interface SidebarProps {
   onOpenMembers: () => void;
   onOpenSettings: () => void;
   onOpenAgents?: () => void;
+  onOpenCode?: () => void;
   agentCount?: number;
   collapsed: boolean;
   starredIssues?: Issue[];
@@ -36,6 +37,7 @@ export function Sidebar({
   onOpenMembers,
   onOpenSettings,
   onOpenAgents,
+  onOpenCode,
   agentCount,
   collapsed,
   starredIssues = [],
@@ -259,6 +261,13 @@ export function Sidebar({
               {agentCount}
             </span>
           )}
+        </button>
+        <button
+          onClick={onOpenCode}
+          className={cn(navItemBase, activePage === "code" ? navItemActive : navItemInactive)}
+        >
+          <Flame className="h-4 w-4" />
+          Code Heat Map
         </button>
         <button
           onClick={onOpenSettings}

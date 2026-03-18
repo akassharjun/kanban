@@ -479,6 +479,67 @@ fn tools_list() -> Vec<Value> {
             }),
             vec!["project_id", "text", "status_id"],
         ),
+        // Context Assembly
+        tool_def(
+            "get_task_context",
+            "Get full assembled context for a task including labels, relations, comments, prior attempts, similar issues, and project path",
+            json!({
+                "identifier": prop("string", "Task/issue identifier (e.g. KAN-42)")
+            }),
+            vec!["identifier"],
+        ),
+        // Code Analysis
+        tool_def(
+            "link_file",
+            "Link a file to an issue for code tracking",
+            json!({
+                "identifier": prop("string", "Issue identifier (e.g. KAN-42)"),
+                "file_path": prop("string", "File path relative to project root"),
+                "link_type": prop("string", "Link type: related, cause, fix (default: related)")
+            }),
+            vec!["identifier", "file_path"],
+        ),
+        tool_def(
+            "file_heat_map",
+            "Get file heat map showing files ranked by issue count",
+            json!({
+                "project_id": prop("number", "Project ID"),
+                "limit": prop("number", "Max results (default: 20)")
+            }),
+            vec!["project_id"],
+        ),
+        tool_def(
+            "directory_heat_map",
+            "Get directory heat map showing directories ranked by issue count",
+            json!({
+                "project_id": prop("number", "Project ID"),
+                "depth": prop("number", "Directory depth to aggregate at (default: 2)")
+            }),
+            vec!["project_id"],
+        ),
+        tool_def(
+            "issues_for_file",
+            "Get all issues linked to a specific file",
+            json!({
+                "file_path": prop("string", "File path"),
+                "project_id": prop("number", "Project ID")
+            }),
+            vec!["file_path", "project_id"],
+        ),
+        // Diff Issues
+        tool_def(
+            "create_issue_from_diff",
+            "Create an issue from a code review finding with automatic file linking",
+            json!({
+                "project_id": prop("number", "Project ID"),
+                "title": prop("string", "Issue title"),
+                "description": prop("string", "Issue description"),
+                "file_path": prop("string", "File path where the issue was found"),
+                "line_range": prop("string", "Line range (e.g. '42-55')"),
+                "severity": prop("string", "Severity: bug, improvement, todo")
+            }),
+            vec!["project_id", "title", "file_path", "severity"],
+        ),
     ]
 }
 
@@ -2264,6 +2325,88 @@ async fn handle_tool_call(
                 "issue": issue,
                 "triage": suggestion,
             }))
+        }
+        // Context Assembly
+        "get_task_context" => {
+            let identifier = args["identifier"].as_str().ok_or("identifier required")?;
+            let ctx = crate::commands::context::get_task_context_async(pool, identifier).await?;
+            Ok(serde_json::to_value(&ctx).map_err(|e| e.to_string())?)
+        }
+        // Code Analysis
+        "link_file" => {
+            let identifier = args["identifier"].as_str().ok_or("identifier required")?;
+            let file_path = args["file_path"].as_str().ok_or("file_path required")?;
+            let link_type = args.get("link_type").and_then(|v| v.as_str()).unwrap_or("related");
+
+            let issue_id: i64 = sqlx::query_scalar("SELECT id FROM issues WHERE identifier = $1")
+                .bind(identifier)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            let id: i64 = sqlx::query_scalar(
+                "INSERT INTO issue_file_links (issue_id, file_path, link_type) VALUES ($1, $2, $3) RETURNING id",
+            )
+            .bind(issue_id)
+            .bind(file_path)
+            .bind(link_type)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let link = sqlx::query_as::<_, crate::models::IssueFileLink>(
+                "SELECT * FROM issue_file_links WHERE id = $1",
+            )
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            notify_change();
+            Ok(json!(link))
+        }
+        "file_heat_map" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(20) as i32;
+            let entries = crate::commands::code_analysis::get_file_heat_map_async(pool, project_id, limit).await?;
+            Ok(json!(entries))
+        }
+        "directory_heat_map" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let depth = args.get("depth").and_then(|v| v.as_i64()).unwrap_or(2) as i32;
+            let entries = crate::commands::code_analysis::get_directory_heat_map_async(pool, project_id, depth).await?;
+            Ok(json!(entries))
+        }
+        "issues_for_file" => {
+            let file_path = args["file_path"].as_str().ok_or("file_path required")?;
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let issues = crate::commands::code_analysis::get_issues_for_file_async(pool, file_path, project_id).await?;
+            Ok(json!(issues))
+        }
+        // Diff Issues
+        "create_issue_from_diff" => {
+            let project_id = args["project_id"].as_i64().ok_or("project_id required")?;
+            let title = args["title"].as_str().ok_or("title required")?.to_string();
+            let description = args.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let file_path = args["file_path"].as_str().ok_or("file_path required")?.to_string();
+            let line_range = args.get("line_range").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let severity = args["severity"].as_str().ok_or("severity required")?.to_string();
+
+            let issue = crate::commands::diff_issues::create_issue_from_diff_async(
+                pool,
+                crate::commands::diff_issues::DiffIssueInput {
+                    project_id,
+                    title,
+                    description,
+                    file_path,
+                    line_range,
+                    severity,
+                    status_id: None,
+                    assignee_id: None,
+                },
+            ).await?;
+            notify_change();
+            Ok(json!(issue))
         }
         _ => Err(format!("Unknown tool: {}", name)),
     }

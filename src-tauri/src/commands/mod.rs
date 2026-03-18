@@ -1,9 +1,12 @@
 pub mod advanced_search;
 pub mod agents;
 pub mod automations;
+pub mod code_analysis;
 pub mod comments;
+pub mod context;
 pub mod custom_fields;
 pub mod decomposition;
+pub mod diff_issues;
 pub mod epics;
 pub mod execution_logs;
 pub mod git_links;

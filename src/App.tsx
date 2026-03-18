@@ -19,6 +19,7 @@ import { NotificationsPanel } from "./components/NotificationsPanel";
 import { ProjectSettingsView } from "./components/ProjectSettingsView";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AgentDashboard } from "@/components/AgentDashboard";
+import { CodeHeatMap } from "@/components/CodeHeatMap";
 import { ReplayViewer } from "@/components/ReplayViewer";
 import { useProjects } from "./hooks/use-projects";
 import { useIssues } from "./hooks/use-issues";
@@ -35,7 +36,7 @@ import { useRecentlyViewed } from "./hooks/use-recently-viewed";
 import * as api from "./tauri/commands";
 import type { IssueTemplate, SavedView } from "./types";
 
-type Page = "project" | "members" | "settings" | "agents";
+type Page = "project" | "members" | "settings" | "agents" | "code";
 
 function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
@@ -274,6 +275,7 @@ function App() {
         onOpenMembers={() => { setPage("members"); setSelectedIssueId(null); }}
         onOpenSettings={() => setPage("settings")}
         onOpenAgents={() => setPage("agents")}
+        onOpenCode={() => setPage("code")}
         agentCount={onlineAgentCount}
         collapsed={sidebarCollapsed}
         starredIssues={starredIssues}
@@ -421,6 +423,10 @@ function App() {
 
         {page === "agents" && (
           <AgentDashboard projectId={selectedProjectId} projectName={selectedProject?.name ?? null} projectPrefix={selectedProject?.prefix ?? null} onViewReplay={(id) => setReplayIdentifier(id)} />
+        )}
+
+        {page === "code" && (
+          <CodeHeatMap projectId={selectedProjectId} projectName={selectedProject?.name ?? null} />
         )}
       </div>
 

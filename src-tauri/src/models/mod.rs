@@ -312,7 +312,11 @@ pub struct GitLink {
     pub link_type: String,
     pub url: Option<String>,
     pub ref_name: String,
-    pub status: String,
+    pub pr_number: Option<i64>,
+    pub pr_state: Option<String>,
+    pub pr_merged: bool,
+    pub ci_status: Option<String>,
+    pub review_status: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -343,4 +347,13 @@ pub struct AutomationLogEntry {
     pub success: bool,
     pub error_message: Option<String>,
     pub executed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct IssueFileLink {
+    pub id: i64,
+    pub issue_id: i64,
+    pub file_path: String,
+    pub link_type: String,
+    pub created_at: String,
 }

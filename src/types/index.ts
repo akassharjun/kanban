@@ -535,3 +535,51 @@ export interface BranchNamePreview {
   branch_name: string;
   pattern: string;
 }
+
+// Code Analysis Types
+
+export interface IssueFileLink {
+  id: number;
+  issue_id: number;
+  file_path: string;
+  link_type: "related" | "cause" | "fix";
+  created_at: string;
+}
+
+export interface FileHeatEntry {
+  file_path: string;
+  issue_count: number;
+  bug_count: number;
+  last_issue_at: string;
+}
+
+export interface DirectoryHeatEntry {
+  directory: string;
+  issue_count: number;
+  file_count: number;
+}
+
+// Context Assembly Types
+
+export interface PriorAttempt {
+  agent_name: string;
+  attempt_number: number;
+  result: string;
+  reason: string | null;
+}
+
+export interface TaskContext {
+  issue: Issue;
+  labels: Label[];
+  parent_issue: Issue | null;
+  sub_issues: Issue[];
+  related_issues: IssueRelation[];
+  blocking_issues: Issue[];
+  blocked_issues: Issue[];
+  comments: Comment[];
+  activity_log: ActivityLogEntry[];
+  prior_attempts: PriorAttempt[];
+  similar_completed_issues: Issue[];
+  project_path: string | null;
+  context_files: string[];
+}
