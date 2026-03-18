@@ -47,7 +47,7 @@ test.describe("Phase 1: Navigation", () => {
     await switchView(page, "board");
     // Match the "In Progress" column header button (not a <select> option)
     await expect(page.getByRole("button", { name: /In Progress/ })).toBeVisible();
-    await expect(page.getByText("KAN-6", { exact: true })).toBeVisible();
+    await expect(page.getByText("KAN-6", { exact: true }).first()).toBeVisible();
   });
 
   test("Cmd+B toggles sidebar", async ({ page }) => {
