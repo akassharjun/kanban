@@ -29,27 +29,40 @@
   }
 
   .dark {
-    --background: 228 15% 8%;
-    --foreground: 220 14% 96%;
-    --card: 228 13% 12%;
-    --card-foreground: 220 14% 96%;
-    --popover: 228 13% 12%;
-    --popover-foreground: 220 14% 96%;
-    --primary: 243 75% 59%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 228 12% 16%;
-    --secondary-foreground: 220 14% 96%;
-    --muted: 228 12% 16%;
-    --muted-foreground: 218 11% 55%;
-    --accent: 243 75% 59%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 63% 31%;
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 4%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 48%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 228 12% 17%;
-    --input: 228 12% 17%;
-    --ring: 243 75% 59%;
-    --sidebar: 228 15% 10%;
-    --column: 228 13% 10%;
+    --border: 0 0% 15%;
+    --input: 0 0% 15%;
+    --ring: 0 0% 98%;
+    --sidebar: 0 0% 4%;
+    --column: 0 0% 6%;
+
+    /* Semantic tokens for new components */
+    --surface: 0 0% 9%;
+    --border-elevated: 0 0% 25%;
+    --text-primary: 0 0% 98%;
+    --text-secondary: 0 0% 63%;
+    --text-muted: 0 0% 48%;
+    --ticker-bg: 0 0% 5%;
+    --green: 142 71% 65%;
+    --orange: 25 95% 53%;
+    --red: 0 84% 60%;
+    --yellow: 48 96% 53%;
+    --blue: 217 91% 60%;
   }
 
   * {
@@ -76,4 +89,21 @@
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.35);
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  .bg-ticker { background: hsl(var(--ticker-bg)); }
+  .bg-surface { background: hsl(var(--surface)); }
+  .border-elevated { border-color: hsl(var(--border-elevated)); }
+  .text-primary-custom { color: hsl(var(--text-primary)); }
+  .text-secondary-custom { color: hsl(var(--text-secondary)); }
+  .text-muted-custom { color: hsl(var(--text-muted)); }
 }
