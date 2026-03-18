@@ -50,8 +50,8 @@ export async function createIssue(page: Page, opts: { title: string }) {
 /** Open an issue detail panel by clicking its card */
 export async function openIssue(page: Page, identifier: string) {
   await page.getByText(identifier).first().click();
-  // Wait for detail panel to appear
-  await page.getByText("Status").waitFor({ state: "visible" });
+  // Wait for the panel's close button — its title="Close (Esc)" is unique to the detail panel
+  await page.locator('[title="Close (Esc)"]').waitFor({ state: "visible" });
 }
 
 /** Open search dialog via Cmd+K */
