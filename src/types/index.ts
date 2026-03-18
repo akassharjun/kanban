@@ -966,3 +966,38 @@ export interface SlaDashboard {
   statuses: SlaStatus[];
   recent_events: SlaEvent[];
 }
+
+// Agent presence types (for card UI)
+export type ExecutionEntryType =
+  | "reasoning"
+  | "file_read"
+  | "file_edit"
+  | "command"
+  | "discovery"
+  | "error"
+  | "checkpoint"
+  | "claim"
+  | "start"
+  | "complete"
+  | "fail"
+  | "timeout";
+
+export interface AgentPresenceData {
+  agentId: string;
+  agentName: string;
+  agentType: "claude" | "codex" | "gemini" | "custom";
+  status: "active" | "idle" | "error" | "offline";
+  lastAction?: string;
+  lastActionType?: ExecutionEntryType;
+}
+
+export interface TickerEntry {
+  id: number;
+  agentName: string;
+  agentId: string;
+  action: string;
+  entryType: string;
+  issueIdentifier: string | null;
+  issueId: number;
+  timestamp: string;
+}
