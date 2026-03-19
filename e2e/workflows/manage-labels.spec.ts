@@ -65,6 +65,8 @@ test.describe("Workflow: Manage Issue Labels", () => {
     // - "ui" badge is gone (was removed)
     // The label badges are <span> elements in the labels row (inside the panel, not the picker).
     // Use the labelsSection to scope the check.
+    // Wait for the panel to finish reloading after label changes
+    await page.waitForTimeout(500);
     const labelBadges = labelsSection.locator("span");
     await expect(labelBadges.filter({ hasText: "bug" })).toBeVisible({ timeout: 5_000 });
     await expect(labelBadges.filter({ hasText: "feature" })).toBeVisible({ timeout: 5_000 });
