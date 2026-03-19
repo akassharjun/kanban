@@ -355,8 +355,8 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     // Notifications
     case "list_notifications": return [...notifications];
     case "unread_notification_count": return notifications.filter(n => !n.read).length;
-    case "mark_notification_read": { const n = notifications.find(x => x.id === args?.id); if (n) n.read = true; return; }
-    case "mark_all_notifications_read": { notifications.forEach(n => n.read = true); return; }
+    case "mark_notification_read": { const n = notifications.find(x => x.id === args?.id); if (n) n.read = 1; return; }
+    case "mark_all_notifications_read": { notifications.forEach(n => n.read = 1); return; }
     case "clear_notifications": { notifications.length = 0; return; }
 
     // Comments
@@ -630,13 +630,13 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
       const iss = issues.find(i => i.identifier === ident);
       const slug = iss ? iss.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") : "branch";
       const refName = `${ident.toLowerCase()}/${slug}`;
-      const gl: GitLink = { id: id(), issue_id: iss?.id ?? 0, link_type: "branch", url: `https://github.com/akassharjun/kanban/tree/${refName}`, ref_name: refName, pr_number: null, pr_state: null, pr_merged: false, ci_status: null, review_status: null, created_at: now, updated_at: now };
+      const gl: GitLink = { id: id(), issue_id: iss?.id ?? 0, link_type: "branch", url: `https://github.com/akassharjun/kanban/tree/${refName}`, ref_name: refName, pr_number: null, pr_state: null, pr_merged: 0, ci_status: null, review_status: null, created_at: now, updated_at: now };
       (gitLinks[gl.issue_id] ??= []).push(gl);
       return gl;
     }
     case "sync_github_prs": {
       return [
-        { id: id(), issue_id: 9, link_type: "pr", url: "https://github.com/akassharjun/kanban/pull/42", ref_name: "KAN-9/implement-undo-redo", pr_number: 42, pr_state: "open", pr_merged: false, ci_status: "success", review_status: "approved", created_at: ago(60), updated_at: ago(5) },
+        { id: id(), issue_id: 9, link_type: "pr", url: "https://github.com/akassharjun/kanban/pull/42", ref_name: "KAN-9/implement-undo-redo", pr_number: 42, pr_state: "open", pr_merged: 0, ci_status: "success", review_status: "approved", created_at: ago(60), updated_at: ago(5) },
       ] as GitLink[];
     }
     case "get_pr_status": {

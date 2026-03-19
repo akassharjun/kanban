@@ -188,7 +188,7 @@ export interface UndoLogEntry {
   entity_id: number;
   snapshot_before: string | null;
   snapshot_after: string | null;
-  undone: boolean;
+  undone: number;
   timestamp: string;
 }
 
@@ -206,7 +206,7 @@ export interface Notification {
   type: string;
   issue_id: number | null;
   message: string;
-  read: boolean;
+  read: number;
   created_at: string;
 }
 
@@ -436,7 +436,7 @@ export interface GitLink {
   ref_name: string;
   pr_number: number | null;
   pr_state: string | null;
-  pr_merged: boolean;
+  pr_merged: number;
   ci_status: string | null;
   review_status: string | null;
   created_at: string;
