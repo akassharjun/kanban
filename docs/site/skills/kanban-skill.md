@@ -17,7 +17,7 @@ When an agent has this skill loaded, it will:
 Copy the markdown block below into your agent's instruction file. For Claude Code, add it to `CLAUDE.md` at the project root. For Codex, add it to `AGENTS.md`. For other agents, include it in the system prompt.
 
 :::tip
-The skill references specific project IDs and status IDs. Update these to match your board configuration. Run `kanban-cli issue list --project <id>` to see your project's statuses.
+The skill references specific project IDs and status IDs. Update these to match your board configuration. Run `kanban cli issue list --project <id>` to see your project's statuses.
 :::
 
 ### Embeddable Skill Markdown
@@ -29,11 +29,9 @@ All work MUST be tracked on the Kanban board before implementation begins.
 
 ### Setup
 
-The CLI binary is at: `src-tauri/target/release/kanban-cli`
-
 ```bash
 # Verify the CLI works
-kanban-cli issue list --project <PROJECT_ID>
+kanban cli issue list --project <PROJECT_ID>
 ```
 
 ### Workflow
@@ -42,7 +40,7 @@ When the user requests a feature, bug fix, or improvement:
 
 1. **Create an issue first** before writing any code:
    ```bash
-   kanban-cli issue create --project <PROJECT_ID> \
+   kanban cli issue create --project <PROJECT_ID> \
      --title "Short description of the work" \
      --status <STATUS_ID> \
      --priority <urgent|high|medium|low> \
@@ -60,7 +58,7 @@ When the user requests a feature, bug fix, or improvement:
 
 3. **On every status change, leave a comment** explaining why:
    ```bash
-   kanban-cli issue update <IDENTIFIER> --status <NEW_STATUS_ID>
+   kanban cli issue update <IDENTIFIER> --status <NEW_STATUS_ID>
    # Log a comment via activity_log:
    sqlite3 ~/.kanban/data.db "INSERT INTO activity_log (issue_id, field_changed, old_value, new_value, timestamp) VALUES (<issue_id>, 'comment', NULL, '<message>', datetime('now'));"
    ```
@@ -79,17 +77,17 @@ When the user requests a feature, bug fix, or improvement:
 
 ```bash
 # Create issue
-kanban-cli issue create --project <ID> --title "..." --status <ID> --priority high --assignee <ID>
+kanban cli issue create --project <ID> --title "..." --status <ID> --priority high --assignee <ID>
 
 # Update status
-kanban-cli issue update <IDENTIFIER> --status <ID>
+kanban cli issue update <IDENTIFIER> --status <ID>
 
 # List issues
-kanban-cli issue list --project <ID>
-kanban-cli issue list --project <ID> --status <ID>  # Filter by status
+kanban cli issue list --project <ID>
+kanban cli issue list --project <ID> --status <ID>  # Filter by status
 
 # Search
-kanban-cli issue search --project <ID> "query"
+kanban cli issue search --project <ID> "query"
 ```
 
 ### Status IDs
@@ -104,7 +102,7 @@ kanban-cli issue search --project <ID> "query"
 | Done | completed | Verified complete |
 | Discarded | discarded | Abandoned |
 
-> **Note:** Run `kanban-cli issue list --project <ID>` to see the actual status IDs for your project.
+> **Note:** Run `kanban cli issue list --project <ID>` to see the actual status IDs for your project.
 ````
 
 ## Configuration
@@ -114,8 +112,8 @@ The skill above uses placeholder IDs. Here's how to find your actual values:
 ### Find Your Project ID
 
 ```bash
-kanban-cli issue list --project 1  # Try project 1
-kanban-cli issue list --project 2  # Try project 2
+kanban cli issue list --project 1  # Try project 1
+kanban cli issue list --project 2  # Try project 2
 ```
 
 ### Find Status IDs

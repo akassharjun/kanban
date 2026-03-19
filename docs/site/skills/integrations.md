@@ -46,12 +46,12 @@ Ralph Loop works through tasks autonomously until a completion promise is met. C
 ```bash
 # Process all Todo issues autonomously
 /ralph-loop "
-1. Run: kanban-cli issue list --project 2 --status 9
+1. Run: kanban cli issue list --project 2 --status 9
 2. Pick the highest priority issue
-3. Move it to In Progress: kanban-cli issue update <ID> --status 10
+3. Move it to In Progress: kanban cli issue update <ID> --status 10
 4. Implement the change described in the issue title
 5. Run tests: npm run test:run
-6. If tests pass, move to Done: kanban-cli issue update <ID> --status 13
+6. If tests pass, move to Done: kanban cli issue update <ID> --status 13
 7. If tests fail, fix and retry
 8. Repeat from step 1
 " --completion-promise "NO_MORE_TODO_ISSUES" --max-iterations 30

@@ -23,7 +23,7 @@ When the user requests a feature, bug fix, or improvement:
 
 1. **Create an issue on the board first** using the CLI before doing any work:
    ```bash
-   kanban-cli issue create --project 2 \
+   kanban cli issue create --project 2 \
      --title "Short description" \
      --status 9 \
      --priority medium \
@@ -49,16 +49,16 @@ When the user requests a feature, bug fix, or improvement:
 
 ```bash
 # Create issue
-kanban-cli issue create --project 2 --title "..." --status 9 --priority high --assignee 3
+kanban cli issue create --project 2 --title "..." --status 9 --priority high --assignee 3
 
 # Update status
-kanban-cli issue update KAN-42 --status 10
+kanban cli issue update KAN-42 --status 10
 
 # List issues
-kanban-cli issue list --project 2
+kanban cli issue list --project 2
 
 # Search
-kanban-cli issue search --project 2 "query"
+kanban cli issue search --project 2 "query"
 ```
 
 ### Assign all issues to Claude (member_id: 3).
@@ -80,8 +80,8 @@ If your agent supports MCP, add the Kanban MCP server to your Claude Code settin
 {
   "mcpServers": {
     "kanban": {
-      "command": "src-tauri/target/release/kanban-mcp",
-      "args": []
+      "command": "kanban",
+      "args": ["mcp"]
     }
   }
 }
@@ -103,7 +103,7 @@ OpenAI Codex reads agent instructions from `AGENTS.md`.
 Before starting any work, create an issue on the Kanban board:
 
 ```bash
-kanban-cli issue create --project 2 \
+kanban cli issue create --project 2 \
   --title "Description of work" \
   --status 9 \
   --priority medium \
@@ -132,9 +132,9 @@ kanban-cli issue create --project 2 \
 ## CLI Quick Reference
 
 ```bash
-kanban-cli issue list --project 2              # See all issues
-kanban-cli issue update KAN-42 --status 10     # Move to In Progress
-kanban-cli issue search --project 2 "bug"      # Search issues
+kanban cli issue list --project 2              # See all issues
+kanban cli issue update KAN-42 --status 10     # Move to In Progress
+kanban cli issue search --project 2 "bug"      # Search issues
 ```
 ````
 
@@ -146,12 +146,12 @@ For agents that accept system prompts (custom setups, LangChain, etc.):
 You are an AI coding agent. All work must be tracked on the Kanban board.
 
 Before writing any code:
-1. Create an issue: kanban-cli issue create --project 2 --title "..." --status 9 --priority medium
-2. Move to In Progress: kanban-cli issue update <ID> --status 10
+1. Create an issue: kanban cli issue create --project 2 --title "..." --status 9 --priority medium
+2. Move to In Progress: kanban cli issue update <ID> --status 10
 
 After completing work:
-3. Move to In Review: kanban-cli issue update <ID> --status 11
-4. If verified, move to Done: kanban-cli issue update <ID> --status 13
+3. Move to In Review: kanban cli issue update <ID> --status 11
+4. If verified, move to Done: kanban cli issue update <ID> --status 13
 
 Always create the issue BEFORE starting implementation. Never skip this step.
 ```
@@ -162,7 +162,7 @@ If using Ralph TUI or the Ralph Loop technique for autonomous task execution:
 
 ```bash
 # Ralph Loop that works through Kanban issues
-/ralph-loop "Pick the next Todo issue from the Kanban board (kanban-cli issue list --project 2 --status 9), move it to In Progress, implement it, run tests, and move to Done. Repeat until no Todo issues remain." \
+/ralph-loop "Pick the next Todo issue from the Kanban board (kanban cli issue list --project 2 --status 9), move it to In Progress, implement it, run tests, and move to Done. Repeat until no Todo issues remain." \
   --completion-promise "ALL_ISSUES_DONE" \
   --max-iterations 20
 ```
@@ -175,10 +175,10 @@ After adding the skill, verify the agent can access the board:
 
 ```bash
 # Test CLI access
-kanban-cli issue list --project 2
+kanban cli issue list --project 2
 
 # Test MCP access (if configured)
-echo '{"jsonrpc":"2.0","id":1,"method":"list_projects","params":{}}' | kanban-mcp
+echo '{"jsonrpc":"2.0","id":1,"method":"list_projects","params":{}}' | kanban mcp
 ```
 
 If the CLI returns issues, the agent is ready to use the board.

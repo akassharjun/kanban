@@ -14,8 +14,8 @@ Add to your agent's MCP configuration:
 {
   "mcpServers": {
     "kanban": {
-      "command": "src-tauri/target/release/kanban-mcp",
-      "args": []
+      "command": "kanban",
+      "args": ["mcp"]
     }
   }
 }
