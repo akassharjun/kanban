@@ -9,6 +9,7 @@ pub struct CreateProjectInput {
     pub description: Option<String>,
     pub icon: Option<String>,
     pub prefix: String,
+    pub path: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -48,12 +49,13 @@ pub fn create_project(state: State<AppState>, input: CreateProjectInput) -> Resu
 
         // Insert project
         let project_id: i64 = sqlx::query_scalar(
-            "INSERT INTO projects (name, description, icon, status, prefix, issue_counter, created_at, updated_at) VALUES ($1, $2, $3, 'active', $4, 0, $5, $6) RETURNING id"
+            "INSERT INTO projects (name, description, icon, status, prefix, issue_counter, path, created_at, updated_at) VALUES ($1, $2, $3, 'active', $4, 0, $5, $6, $7) RETURNING id"
         )
         .bind(&input.name)
         .bind(&input.description)
         .bind(&input.icon)
         .bind(&input.prefix)
+        .bind(&input.path)
         .bind(&now)
         .bind(&now)
         .fetch_one(&state.pool)
