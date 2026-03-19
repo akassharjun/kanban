@@ -42,7 +42,7 @@ test.describe("Phase 4: Search & Filtering", () => {
     await page.locator('[title="Close (Esc)"]').waitFor({ state: "visible", timeout: 5_000 });
 
     // Verify the detail panel is showing KAN-6
-    const panel = page.locator(".border-l").first();
+    const panel = page.locator(".rounded-xl.border").first();
     await expect(panel.locator("h2")).toContainText("Fix drag-drop position calculation");
   });
 

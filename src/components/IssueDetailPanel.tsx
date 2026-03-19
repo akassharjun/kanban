@@ -285,7 +285,8 @@ export function IssueDetailPanel({
   const currentPriority = priorities.find(p => p.value === issue.priority) || priorities[4];
 
   return (
-    <div className="flex h-full w-full sm:w-[480px] flex-col border-l border-border/50 bg-card">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="flex w-full max-w-[560px] max-h-[85vh] flex-col rounded-xl border border-border/50 bg-card shadow-2xl">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3">
         <span className="text-xs font-mono text-muted-foreground/60">{issue.identifier}</span>
@@ -1450,6 +1451,7 @@ export function IssueDetailPanel({
           onCreated={() => loadIssue()}
         />
       )}
+    </div>
     </div>
   );
 }

@@ -42,7 +42,7 @@ test.describe("Phase 2: Board Interaction", () => {
     ).toBeVisible();
     // "Status" and "Priority" appear as <span> labels inside the panel's properties section
     // Use a CSS selector scoped to the panel container (border-l flex flex-col)
-    const panel = page.locator(".border-l");
+    const panel = page.locator(".rounded-xl.border");
     await expect(panel.getByText("Status", { exact: true })).toBeVisible();
     await expect(panel.getByText("Priority", { exact: true })).toBeVisible();
   });
