@@ -161,22 +161,22 @@ function App() {
         e.preventDefault();
         setSidebarCollapsed(prev => !prev);
       }
-      if (e.key === "1" && !e.metaKey) {
+      if (e.key === "1" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
         setViewMode("board");
       }
-      if (e.key === "2" && !e.metaKey) {
+      if (e.key === "2" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
         setViewMode("list");
       }
-      if (e.key === "3" && !e.metaKey) {
+      if (e.key === "3" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
         setViewMode("tree");
       }
-      if (e.key === "4" && !e.metaKey) {
+      if (e.key === "4" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
         setViewMode("calendar");
       }
-      if (e.key === "5" && !e.metaKey) {
+      if (e.key === "5" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
         setViewMode("gantt");
       }
-      if (e.key === "6" && !e.metaKey) {
+      if (e.key === "6" && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
         setViewMode("roadmap");
         setPage("project");
       }
@@ -190,11 +190,11 @@ function App() {
       // Undo/Redo
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
-        api.undo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); showToast("Undone"); }).catch((e) => console.error("undo failed:", e));
+        api.undo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); showToast("Undone"); }).catch((err) => { console.error("undo failed:", err); showToast("Undo failed"); });
       }
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
         e.preventDefault();
-        api.redo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); showToast("Redone"); }).catch((e) => console.error("redo failed:", e));
+        api.redo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); showToast("Redone"); }).catch((err) => { console.error("redo failed:", err); showToast("Redo failed"); });
       }
     };
     window.addEventListener("keydown", handler);
