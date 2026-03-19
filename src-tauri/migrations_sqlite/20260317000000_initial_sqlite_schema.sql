@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS projects (
     deleted_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    path TEXT
+    path TEXT,
+    stale_days INTEGER DEFAULT NULL,
+    stale_close_status_id INTEGER REFERENCES statuses(id)
 );
 
 -- Statuses (per-project workflow)

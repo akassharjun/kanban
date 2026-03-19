@@ -1,9 +1,17 @@
 use sqlx::AnyPool;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 async fn test_db() -> AnyPool {
-    let (pool, _backend) = kanban_lib::db::init_db(Some("sqlite://:memory:"))
+    let id = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let tmp = std::env::temp_dir().join(format!("kanban-test-{}-{}.db", std::process::id(), id));
+    // Clean up any leftover file from a previous run
+    let _ = std::fs::remove_file(&tmp);
+    let url = format!("sqlite://{}?mode=rwc", tmp.display());
+    let (pool, _backend) = kanban_lib::db::init_db(Some(&url))
         .await
-        .expect("Failed to initialize in-memory database");
+        .expect("Failed to initialize test database");
     pool
 }
 
