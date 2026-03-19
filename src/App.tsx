@@ -421,11 +421,35 @@ function App() {
         )}
 
         {page === "project" && !selectedProject && (
-          <div className="flex flex-1 items-center justify-center text-muted-foreground">
-            <div className="text-center">
-              <p className="text-lg">No project selected</p>
-              <Button className="mt-2" onClick={() => setShowCreateProject(true)}>
-                Create your first project
+          <div className="flex flex-1 items-center justify-center">
+            <div className="max-w-2xl w-full px-8 text-center">
+              <h1 className="text-3xl font-bold text-foreground mb-2">Welcome to Kanban</h1>
+              <p className="text-muted-foreground text-base mb-10">Your AI-powered project management board</p>
+
+              <div className="grid grid-cols-3 gap-4 mb-10">
+                <div className="rounded-xl border border-border bg-card p-5 text-left">
+                  <div className="text-2xl mb-3">📋</div>
+                  <div className="font-semibold text-foreground mb-1">Track Issues</div>
+                  <div className="text-sm text-muted-foreground">Organize work with a visual board, list, and tree views. Prioritize, assign, and ship.</div>
+                </div>
+                <div className="rounded-xl border border-border bg-card p-5 text-left">
+                  <div className="text-2xl mb-3">🤖</div>
+                  <div className="font-semibold text-foreground mb-1">Agent Orchestration</div>
+                  <div className="text-sm text-muted-foreground">Register AI agents to claim, execute, and complete tasks autonomously with full auditability.</div>
+                </div>
+                <div className="rounded-xl border border-border bg-card p-5 text-left">
+                  <div className="text-2xl mb-3">🔗</div>
+                  <div className="font-semibold text-foreground mb-1">Code Integration</div>
+                  <div className="text-sm text-muted-foreground">Link issues to branches, PRs, and commits. Track file-level heat maps and git history.</div>
+                </div>
+              </div>
+
+              <Button
+                size="lg"
+                className="px-8"
+                onClick={() => setShowCreateProject(true)}
+              >
+                Create Your First Project
               </Button>
             </div>
           </div>

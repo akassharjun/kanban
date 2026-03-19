@@ -82,304 +82,55 @@ const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOSt
 
 const members: Member[] = [
   { id: 1, name: "akassharjun", display_name: "Arjun", email: "arjun@kanban.dev", avatar_color: "#6366f1", created_at: ago(10000) },
-  { id: 2, name: "claude-agent", display_name: "Claude", email: null, avatar_color: "#f59e0b", created_at: ago(5000) },
-  { id: 3, name: "review-bot", display_name: "Review Bot", email: null, avatar_color: "#10b981", created_at: ago(3000) },
 ];
 
-const projects: Project[] = [
-  { id: 1, name: "Kanban Core", description: "Core kanban board features", icon: "📋", status: "active", prefix: "KAN", issue_counter: 24, path: "/home/user/kanban", stale_days: null, stale_close_status_id: null, created_at: ago(10000), updated_at: ago(10) },
-  { id: 2, name: "Agent Platform", description: "AI agent task orchestration", icon: "🤖", status: "active", prefix: "AGT", issue_counter: 12, path: "/home/user/agent-platform", stale_days: null, stale_close_status_id: null, created_at: ago(5000), updated_at: ago(30) },
-];
+const projects: Project[] = [];
 
-const statuses: Record<number, Status[]> = {
-  1: [
-    { id: 1, project_id: 1, name: "Backlog", category: "unstarted", color: "#94a3b8", icon: null, position: 0 },
-    { id: 2, project_id: 1, name: "Todo", category: "unstarted", color: "#60a5fa", icon: null, position: 1 },
-    { id: 3, project_id: 1, name: "In Progress", category: "started", color: "#fbbf24", icon: null, position: 2 },
-    { id: 4, project_id: 1, name: "In Review", category: "started", color: "#a78bfa", icon: null, position: 3 },
-    { id: 5, project_id: 1, name: "Done", category: "completed", color: "#34d399", icon: null, position: 4 },
-  ],
-  2: [
-    { id: 6, project_id: 2, name: "Backlog", category: "unstarted", color: "#94a3b8", icon: null, position: 0 },
-    { id: 7, project_id: 2, name: "Todo", category: "unstarted", color: "#60a5fa", icon: null, position: 1 },
-    { id: 8, project_id: 2, name: "In Progress", category: "started", color: "#fbbf24", icon: null, position: 2 },
-    { id: 9, project_id: 2, name: "Done", category: "completed", color: "#34d399", icon: null, position: 3 },
-  ],
-};
+const statuses: Record<number, Status[]> = {};
 
-const labels: Record<number, Label[]> = {
-  1: [
-    { id: 1, project_id: 1, name: "bug", color: "#ef4444" },
-    { id: 2, project_id: 1, name: "feature", color: "#3b82f6" },
-    { id: 3, project_id: 1, name: "ui", color: "#8b5cf6" },
-    { id: 4, project_id: 1, name: "backend", color: "#f97316" },
-    { id: 5, project_id: 1, name: "performance", color: "#14b8a6" },
-  ],
-  2: [
-    { id: 6, project_id: 2, name: "agent", color: "#f59e0b" },
-    { id: 7, project_id: 2, name: "orchestration", color: "#6366f1" },
-  ],
-};
+const labels: Record<number, Label[]> = {};
 
-const issues: Issue[] = [
-  // Kanban Core - Backlog
-  { id: 1, project_id: 1, identifier: "KAN-1", title: "Add dark/light mode toggle animation", description: "Smooth transition between themes", status_id: 1, priority: "low", assignee_id: null, parent_id: null, position: 0, estimate: 2, due_date: "2026-03-28", epic_id: 1, milestone_id: 2, business_value: 2, time_criticality: 3, risk_reduction: 1, job_size: 2, wsjf_score: 3.0, created_at: ago(5000), updated_at: ago(100) },
-  { id: 2, project_id: 1, identifier: "KAN-2", title: "Implement board column resize", description: "Allow users to resize columns by dragging edges", status_id: 1, priority: "medium", assignee_id: null, parent_id: null, position: 1, estimate: 5, due_date: "2026-03-30", epic_id: 1, milestone_id: 2, business_value: 5, time_criticality: 3, risk_reduction: 3, job_size: 5, wsjf_score: 2.2, created_at: ago(4800), updated_at: ago(200) },
-  // Kanban Core - Todo
-  { id: 3, project_id: 1, identifier: "KAN-3", title: "Add keyboard shortcuts help panel", description: "Show a modal with all keyboard shortcuts when user presses ?", status_id: 2, priority: "medium", assignee_id: 1, parent_id: null, position: 0, estimate: 3, due_date: "2026-03-25", epic_id: 2, milestone_id: 1, business_value: 5, time_criticality: 7, risk_reduction: 3, job_size: 3, wsjf_score: 5.0, created_at: ago(3000), updated_at: ago(50) },
-  { id: 4, project_id: 1, identifier: "KAN-4", title: "Issue templates for common workflows", description: "Pre-fill issue fields from templates", status_id: 2, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: 5, due_date: "2026-03-22", epic_id: 2, milestone_id: 1, business_value: 8, time_criticality: 7, risk_reduction: 3, job_size: 5, wsjf_score: 3.6, created_at: ago(2800), updated_at: ago(30) },
-  { id: 5, project_id: 1, identifier: "KAN-5", title: "Export board to CSV/JSON", description: null, status_id: 2, priority: "low", assignee_id: null, parent_id: null, position: 2, estimate: null, due_date: null, epic_id: null, milestone_id: null, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(2700), updated_at: ago(500) },
-  // Kanban Core - In Progress
-  { id: 6, project_id: 1, identifier: "KAN-6", title: "Fix drag-drop position calculation", description: "Position sometimes becomes NaN when dropping at list boundaries", status_id: 3, priority: "urgent", assignee_id: 2, parent_id: null, position: 0, estimate: 2, due_date: "2026-03-19", epic_id: 1, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(1000), updated_at: ago(5) },
-  { id: 7, project_id: 1, identifier: "KAN-7", title: "Improve issue detail panel UX", description: "## Improvements needed\n- Better spacing between sections\n- Collapsible sections\n- Loading states for async ops", status_id: 3, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: 8, due_date: "2026-03-20", epic_id: 1, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(800), updated_at: ago(2) },
-  { id: 8, project_id: 1, identifier: "KAN-8", title: "Add comment mentions (@user)", description: null, status_id: 3, priority: "medium", assignee_id: 2, parent_id: 7, position: 0, estimate: 3, due_date: null, epic_id: 1, milestone_id: null, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(600), updated_at: ago(15) },
-  // Kanban Core - In Review
-  { id: 9, project_id: 1, identifier: "KAN-9", title: "Implement undo/redo for issue edits", description: "Use Cmd+Z to undo last change", status_id: 4, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: 5, due_date: "2026-03-19", epic_id: 2, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(2000), updated_at: ago(60) },
-  // Kanban Core - Done
-  { id: 10, project_id: 1, identifier: "KAN-10", title: "Setup project with Tauri v2", description: null, status_id: 5, priority: "high", assignee_id: 1, parent_id: null, position: 0, estimate: null, due_date: null, epic_id: null, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(9000), updated_at: ago(8000) },
-  { id: 11, project_id: 1, identifier: "KAN-11", title: "Implement board view with drag-drop", description: null, status_id: 5, priority: "high", assignee_id: 1, parent_id: null, position: 1, estimate: null, due_date: null, epic_id: 1, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(8500), updated_at: ago(7000) },
-  { id: 12, project_id: 1, identifier: "KAN-12", title: "Add list and tree views", description: null, status_id: 5, priority: "medium", assignee_id: 1, parent_id: null, position: 2, estimate: null, due_date: null, epic_id: 1, milestone_id: 1, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(7000), updated_at: ago(6000) },
-  // Agent Platform
-  { id: 13, project_id: 2, identifier: "AGT-1", title: "Design task contract schema", description: null, status_id: 9, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: null, due_date: null, epic_id: 3, milestone_id: 3, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(4000), updated_at: ago(3000) },
-  { id: 14, project_id: 2, identifier: "AGT-2", title: "Implement agent heartbeat", description: null, status_id: 8, priority: "high", assignee_id: 2, parent_id: null, position: 0, estimate: 3, due_date: "2026-03-21", epic_id: 3, milestone_id: 3, business_value: null, time_criticality: null, risk_reduction: null, job_size: null, wsjf_score: null, created_at: ago(3500), updated_at: ago(100) },
-];
+const issues: Issue[] = [];
 
-const issueLabels: Record<number, number[]> = {
-  1: [3],       // ui
-  2: [2, 3],    // feature, ui
-  3: [2, 3],    // feature, ui
-  6: [1],       // bug
-  7: [3],       // ui
-  8: [2],       // feature
-  9: [2, 4],    // feature, backend
-  14: [6, 7],   // agent, orchestration
-};
+const issueLabels: Record<number, number[]> = {};
 
 const customFieldValues: Record<number, { id: number; issue_id: number; field_id: number; value: string | null }[]> = {};
 
-const comments: Record<number, Comment[]> = {
-  6: [
-    { id: 1, issue_id: 6, member_id: 2, content: "Reproducing this when you drop an issue below the last item in a column. The `nextPosition` becomes undefined.", created_at: ago(100), updated_at: ago(100) },
-    { id: 2, issue_id: 6, member_id: 1, content: "Good find. Let's add a fallback: if no next issue, use `lastPosition + 1`.", created_at: ago(80), updated_at: ago(80) },
-  ],
-  7: [
-    { id: 3, issue_id: 7, member_id: 1, content: "Breaking this into sub-tasks. Starting with collapsible sections.", created_at: ago(400), updated_at: ago(400) },
-  ],
-  9: [
-    { id: 4, issue_id: 9, member_id: 2, content: "Implementation complete. Undo stack stores JSON snapshots before/after mutations. Uses Cmd+Z / Shift+Cmd+Z.", created_at: ago(65), updated_at: ago(65) },
-    { id: 5, issue_id: 9, member_id: 3, content: "QA review: tested with create, update, delete, and bulk operations. All working correctly. Approving.", created_at: ago(61), updated_at: ago(61) },
-  ],
-};
+const comments: Record<number, Comment[]> = {};
 
-const agents: Agent[] = [
-  { id: "claude-opus-1", name: "Claude Opus", agent_type: "implementation", skills: ["rust", "typescript", "react", "sql"], task_types: ["implementation", "review"], max_concurrent: 3, max_complexity: "high", member_id: 2, worktree_path: "/tmp/kanban-wt-1", status: "busy", registered_at: ago(5000), last_heartbeat: ago(1), last_activity_at: ago(2) },
-  { id: "review-bot-1", name: "Review Bot", agent_type: "review", skills: ["code-review", "testing"], task_types: ["review", "testing"], max_concurrent: 5, max_complexity: "medium", member_id: 3, worktree_path: null, status: "idle", registered_at: ago(3000), last_heartbeat: ago(5), last_activity_at: ago(60) },
-  { id: "research-agent-1", name: "Research Agent", agent_type: "research", skills: ["analysis", "documentation"], task_types: ["research", "decomposition"], max_concurrent: 2, max_complexity: "low", member_id: null, worktree_path: null, status: "offline", registered_at: ago(2000), last_heartbeat: ago(600), last_activity_at: ago(500) },
-];
+const agents: Agent[] = [];
 
-const epics: Epic[] = [
-  { id: 1, project_id: 1, title: "Board UX Overhaul", description: "Comprehensive UX improvements for the kanban board", color: "#6366f1", status: "active", created_at: ago(8000), updated_at: ago(100) },
-  { id: 2, project_id: 1, title: "Productivity Features", description: "Search, templates, shortcuts", color: "#f59e0b", status: "active", created_at: ago(6000), updated_at: ago(200) },
-  { id: 3, project_id: 2, title: "Agent Core", description: "Core agent infrastructure", color: "#10b981", status: "active", created_at: ago(4000), updated_at: ago(300) },
-];
+const epics: Epic[] = [];
 
-const milestones: Milestone[] = [
-  { id: 1, project_id: 1, title: "v1.0 Release", description: "First stable release", due_date: "2026-04-01", status: "open", created_at: ago(9000), updated_at: ago(100) },
-  { id: 2, project_id: 1, title: "v1.1 Polish", description: "UX improvements and bug fixes", due_date: "2026-05-01", status: "open", created_at: ago(5000), updated_at: ago(200) },
-  { id: 3, project_id: 2, title: "Agent MVP", description: null, due_date: "2026-04-15", status: "open", created_at: ago(3000), updated_at: ago(300) },
-];
+const milestones: Milestone[] = [];
 
-const savedViews: SavedView[] = [
-  { id: 1, project_id: 1, name: "My Open Issues", filters: '{"assignee_id":1}', sort_by: "priority", sort_direction: "desc", view_mode: "board", created_at: ago(2000), updated_at: ago(100) },
-  { id: 2, project_id: 1, name: "Urgent & High Priority", filters: '{"priority":"urgent"}', sort_by: null, sort_direction: "asc", view_mode: "list", created_at: ago(1500), updated_at: ago(50) },
-];
+const savedViews: SavedView[] = [];
 
-const starredIssues: { issue_id: number; member_id: number }[] = [
-  { issue_id: 6, member_id: 1 },
-  { issue_id: 7, member_id: 1 },
-  { issue_id: 3, member_id: 1 },
-];
+const starredIssues: { issue_id: number; member_id: number }[] = [];
 
-const recentlyViewed: { issue_id: number; member_id: number; viewed_at: string }[] = [
-  { issue_id: 6, member_id: 1, viewed_at: ago(2) },
-  { issue_id: 7, member_id: 1, viewed_at: ago(10) },
-  { issue_id: 9, member_id: 1, viewed_at: ago(30) },
-  { issue_id: 3, member_id: 1, viewed_at: ago(60) },
-  { issue_id: 4, member_id: 1, viewed_at: ago(120) },
-];
-const gitLinks: Record<number, GitLink[]> = {
-  6: [
-    { id: 1, issue_id: 6, link_type: "branch", url: null, ref_name: "fix/drag-drop-nan", pr_number: null, pr_state: null, pr_merged: false, ci_status: null, review_status: null, created_at: ago(50), updated_at: ago(50) },
-  ],
-  9: [
-    { id: 2, issue_id: 9, link_type: "pr", url: "https://github.com/akassharjun/kanban/pull/42", ref_name: "#42", pr_number: 42, pr_state: "closed", pr_merged: true, ci_status: "success", review_status: "approved", created_at: ago(70), updated_at: ago(60) },
-    { id: 3, issue_id: 9, link_type: "branch", url: null, ref_name: "feat/undo-redo", pr_number: null, pr_state: null, pr_merged: false, ci_status: null, review_status: null, created_at: ago(80), updated_at: ago(60) },
-  ],
-};
+const recentlyViewed: { issue_id: number; member_id: number; viewed_at: string }[] = [];
 
-const fileLinks: Record<number, IssueFileLink[]> = {
-  6: [
-    { id: 1, issue_id: 6, file_path: "src/components/BoardView.tsx", link_type: "cause", created_at: ago(100) },
-    { id: 2, issue_id: 6, file_path: "src/lib/utils.ts", link_type: "related", created_at: ago(90) },
-  ],
-  7: [
-    { id: 3, issue_id: 7, file_path: "src/components/IssueDetailPanel.tsx", link_type: "related", created_at: ago(200) },
-  ],
-  9: [
-    { id: 4, issue_id: 9, file_path: "src-tauri/src/commands/undo.rs", link_type: "fix", created_at: ago(60) },
-    { id: 5, issue_id: 9, file_path: "src/tauri/commands.ts", link_type: "related", created_at: ago(55) },
-  ],
-};
+const gitLinks: Record<number, GitLink[]> = {};
 
-const pipelines: Pipeline[] = [
-  {
-    id: 1, project_id: 1, name: "SDLC Pipeline", description: "Implement, Test, Review, Deploy",
-    stages: JSON.stringify([
-      { name: "Implement", task_type: "implementation", required_skills: ["rust", "react"], max_complexity: "large", timeout_minutes: 60, title_template: "{{pipeline.name}}: {{stage.name}} - {{trigger.title}}", objective_template: "Implement the changes described in: {{trigger.description}}", success_criteria: ["code compiles", "tests pass"], auto_advance: true },
-      { name: "Test", task_type: "testing", required_skills: ["testing"], max_complexity: "medium", timeout_minutes: 30, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Write and run tests for the implementation", success_criteria: ["all tests pass", "coverage > 80%"], auto_advance: true },
-      { name: "Review", task_type: "review", required_skills: ["code-review"], max_complexity: "medium", timeout_minutes: 30, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Review the implementation and tests", success_criteria: ["code quality approved"], auto_advance: true },
-      { name: "Deploy", task_type: "implementation", required_skills: ["devops"], max_complexity: "small", timeout_minutes: 15, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Deploy the changes", success_criteria: ["deployment successful"], auto_advance: false },
-    ]),
-    enabled: true, total_runs: 3, created_at: ago(2000), updated_at: ago(100),
-  },
-  {
-    id: 2, project_id: 1, name: "Bug Fix Pipeline", description: "Reproduce, Fix, Test, Review",
-    stages: JSON.stringify([
-      { name: "Reproduce", task_type: "research", required_skills: ["debugging"], max_complexity: "small", timeout_minutes: 15, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Reproduce the bug", success_criteria: ["bug reproduced"], auto_advance: true },
-      { name: "Fix", task_type: "implementation", required_skills: ["rust", "react"], max_complexity: "medium", timeout_minutes: 45, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Fix the bug", success_criteria: ["bug fixed"], auto_advance: true },
-      { name: "Test", task_type: "testing", required_skills: ["testing"], max_complexity: "small", timeout_minutes: 20, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Verify the fix", success_criteria: ["regression test passes"], auto_advance: true },
-      { name: "Review", task_type: "review", required_skills: ["code-review"], max_complexity: "small", timeout_minutes: 15, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Review the fix", success_criteria: ["approved"], auto_advance: false },
-    ]),
-    enabled: true, total_runs: 1, created_at: ago(1500), updated_at: ago(200),
-  },
-  {
-    id: 3, project_id: 2, name: "Research Pipeline", description: "Research, Document, Review",
-    stages: JSON.stringify([
-      { name: "Research", task_type: "research", required_skills: ["analysis"], max_complexity: "medium", timeout_minutes: 60, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Research the topic", success_criteria: ["findings documented"], auto_advance: true },
-      { name: "Document", task_type: "implementation", required_skills: ["documentation"], max_complexity: "small", timeout_minutes: 30, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Write documentation", success_criteria: ["docs complete"], auto_advance: true },
-      { name: "Review", task_type: "review", required_skills: ["code-review"], max_complexity: "small", timeout_minutes: 15, title_template: "{{pipeline.name}}: {{stage.name}}", objective_template: "Review documentation", success_criteria: ["approved"], auto_advance: false },
-    ]),
-    enabled: true, total_runs: 0, created_at: ago(1000), updated_at: ago(500),
-  },
-];
+const fileLinks: Record<number, IssueFileLink[]> = {};
 
-const pipelineRuns: PipelineRun[] = [
-  {
-    id: 1, pipeline_id: 1, trigger_issue_id: 6, status: "completed", current_stage: 3,
-    stage_tasks: JSON.stringify([
-      { stage_index: 0, task_identifier: "KAN-20", status: "completed" },
-      { stage_index: 1, task_identifier: "KAN-21", status: "completed" },
-      { stage_index: 2, task_identifier: "KAN-22", status: "completed" },
-      { stage_index: 3, task_identifier: "KAN-23", status: "completed" },
-    ]),
-    context: "{}", started_at: ago(500), completed_at: ago(100), error_message: null,
-  },
-  {
-    id: 2, pipeline_id: 1, trigger_issue_id: 7, status: "running", current_stage: 1,
-    stage_tasks: JSON.stringify([
-      { stage_index: 0, task_identifier: "KAN-24", status: "completed" },
-      { stage_index: 1, task_identifier: "KAN-25", status: "queued" },
-    ]),
-    context: "{}", started_at: ago(50), completed_at: null, error_message: null,
-  },
-];
+const pipelines: Pipeline[] = [];
 
-const agentPermissions: AgentPermission[] = [
-  { id: 1, agent_id: "claude-opus-1", permission_type: "project_access", scope: "1", allowed: true, created_at: ago(1000) },
-  { id: 2, agent_id: "claude-opus-1", permission_type: "file_access", scope: "src/**/*.tsx", allowed: true, created_at: ago(1000) },
-  { id: 3, agent_id: "claude-opus-1", permission_type: "file_access", scope: "src/**/*.ts", allowed: true, created_at: ago(1000) },
-  { id: 4, agent_id: "claude-opus-1", permission_type: "action", scope: "deploy", allowed: false, created_at: ago(1000) },
-  { id: 5, agent_id: "review-bot-1", permission_type: "task_type", scope: "review", allowed: true, created_at: ago(900) },
-  { id: 6, agent_id: "review-bot-1", permission_type: "task_type", scope: "testing", allowed: true, created_at: ago(900) },
-  { id: 7, agent_id: "review-bot-1", permission_type: "action", scope: "create_branch", allowed: false, created_at: ago(900) },
-];
+const pipelineRuns: PipelineRun[] = [];
 
-const permissionPresets: PermissionPreset[] = [
-  { id: 1, name: "Full Access", description: "No restrictions (for trusted internal agents)", permissions: "[]", created_at: ago(5000) },
-  { id: 2, name: "Read Only", description: "Can view issues but not modify", permissions: JSON.stringify([
-    { permission_type: "action", scope: "create_issue", allowed: false },
-    { permission_type: "action", scope: "update_issue", allowed: false },
-    { permission_type: "action", scope: "delete_issue", allowed: false },
-    { permission_type: "action", scope: "create_branch", allowed: false },
-    { permission_type: "action", scope: "merge_pr", allowed: false },
-  ]), created_at: ago(5000) },
-  { id: 3, name: "Code Review Only", description: "Can review and comment but not implement", permissions: JSON.stringify([
-    { permission_type: "task_type", scope: "review", allowed: true },
-    { permission_type: "action", scope: "create_comment", allowed: true },
-    { permission_type: "action", scope: "create_branch", allowed: false },
-  ]), created_at: ago(5000) },
-  { id: 4, name: "Frontend Only", description: "Can only modify frontend files", permissions: JSON.stringify([
-    { permission_type: "file_access", scope: "src/**/*.tsx", allowed: true },
-    { permission_type: "file_access", scope: "src/**/*.ts", allowed: true },
-    { permission_type: "file_access", scope: "src/**/*.css", allowed: true },
-  ]), created_at: ago(5000) },
-  { id: 5, name: "Untrusted", description: "Limited access for untrusted agents", permissions: JSON.stringify([
-    { permission_type: "action", scope: "delete_issue", allowed: false },
-    { permission_type: "action", scope: "deploy", allowed: false },
-    { permission_type: "action", scope: "merge_pr", allowed: false },
-    { permission_type: "max_cost", scope: "1", allowed: true },
-  ]), created_at: ago(5000) },
-];
+const agentPermissions: AgentPermission[] = [];
 
-const notifications: Notification[] = [
-  { id: 1, type: "mention", issue_id: 6, message: "Claude mentioned you in KAN-6", read: false, created_at: ago(80) },
-  { id: 2, type: "status_change", issue_id: 9, message: "KAN-9 moved to In Review", read: false, created_at: ago(60) },
-  { id: 3, type: "comment", issue_id: 7, message: "New comment on KAN-7", read: true, created_at: ago(400) },
-];
+const permissionPresets: PermissionPreset[] = [];
 
-const automationRules: AutomationRule[] = [
-  {
-    id: 1, project_id: 1, name: "Auto-assign urgent bugs", enabled: true,
-    trigger_type: "issue_created",
-    trigger_config: "{}",
-    conditions: JSON.stringify([{ field: "priority", operator: "equals", value: "urgent" }]),
-    actions: JSON.stringify([{ type: "assign_to", config: { member_id: 2 } }, { type: "add_comment", config: { content_template: "Auto-assigned {{issue.identifier}} to Claude due to urgent priority" } }]),
-    execution_count: 12, last_executed_at: ago(30), created_at: ago(5000), updated_at: ago(30),
-  },
-  {
-    id: 2, project_id: 1, name: "Notify on completion", enabled: true,
-    trigger_type: "status_change",
-    trigger_config: JSON.stringify({ to_status_id: 5 }),
-    conditions: "[]",
-    actions: JSON.stringify([{ type: "send_notification", config: { message_template: "{{issue.identifier}} has been completed" } }]),
-    execution_count: 5, last_executed_at: ago(120), created_at: ago(4000), updated_at: ago(120),
-  },
-  {
-    id: 3, project_id: 1, name: "Create QA task on review", enabled: false,
-    trigger_type: "status_change",
-    trigger_config: JSON.stringify({ to_status_id: 4 }),
-    conditions: "[]",
-    actions: JSON.stringify([{ type: "create_task_contract", config: { type: "review", complexity: "medium", skills: ["code-review"] } }]),
-    execution_count: 0, last_executed_at: null, created_at: ago(2000), updated_at: ago(2000),
-  },
-];
+const notifications: Notification[] = [];
 
-const automationLog: AutomationLogEntry[] = [
-  { id: 1, rule_id: 1, issue_id: 6, trigger_type: "issue_created", actions_executed: JSON.stringify([{ type: "assign_to", success: true }, { type: "add_comment", success: true }]), success: true, error_message: null, executed_at: ago(30) },
-  { id: 2, rule_id: 2, issue_id: 10, trigger_type: "status_change", actions_executed: JSON.stringify([{ type: "send_notification", success: true }]), success: true, error_message: null, executed_at: ago(120) },
-  { id: 3, rule_id: 1, issue_id: 14, trigger_type: "issue_created", actions_executed: JSON.stringify([{ type: "assign_to", success: false, error: "Member not found" }]), success: false, error_message: "Member not found", executed_at: ago(200) },
-];
+const automationRules: AutomationRule[] = [];
 
-const recurringIssues: RecurringIssue[] = [
-  {
-    id: 1, project_id: 1, title_template: "Daily standup review - {{date}}", description_template: "Review open issues and blocked items for {{day}}.\n\nIteration: #{{count}}", status_id: 2, priority: "medium", assignee_id: 2, label_ids: "[]", recurrence_type: "daily", recurrence_config: "{}", next_run_at: new Date(Date.now() + 86400000).toISOString(), last_run_at: ago(1440), enabled: true, total_created: 12, created_at: ago(20000), updated_at: ago(1440),
-  },
-  {
-    id: 2, project_id: 1, title_template: "Weekly dependency audit - week {{count}}", description_template: null, status_id: 2, priority: "low", assignee_id: null, label_ids: "[4]", recurrence_type: "weekly", recurrence_config: '{"day_of_week": 1}', next_run_at: new Date(Date.now() + 604800000).toISOString(), last_run_at: ago(10080), enabled: true, total_created: 4, created_at: ago(40000), updated_at: ago(10080),
-  },
-  {
-    id: 3, project_id: 1, title_template: "Monthly performance review - {{date}}", description_template: null, status_id: 1, priority: "high", assignee_id: 1, label_ids: "[5]", recurrence_type: "monthly", recurrence_config: '{"day_of_month": 1}', next_run_at: new Date(Date.now() + 2592000000).toISOString(), last_run_at: null, enabled: false, total_created: 0, created_at: ago(5000), updated_at: ago(5000),
-  },
-];
+const automationLog: AutomationLogEntry[] = [];
 
-const issueRelations: IssueRelation[] = [
-  { id: 1, source_issue_id: 6, target_issue_id: 7, relation_type: "blocks" },
-  { id: 2, source_issue_id: 7, target_issue_id: 8, relation_type: "blocks" },
-  { id: 3, source_issue_id: 9, target_issue_id: 6, relation_type: "related" },
-  { id: 4, source_issue_id: 3, target_issue_id: 4, relation_type: "blocks" },
-  { id: 5, source_issue_id: 10, target_issue_id: 11, relation_type: "blocks" },
-  { id: 6, source_issue_id: 11, target_issue_id: 12, relation_type: "blocks" },
-];
+const recurringIssues: RecurringIssue[] = [];
+
+const issueRelations: IssueRelation[] = [];
 
 // ---- Mock command handler ----
 
@@ -395,13 +146,14 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "list_projects": return [...projects];
     case "get_project": return projects.find(p => p.id === args?.id) ?? null;
     case "create_project": {
-      const p: Project = { id: id(), ...args!.input, status: "active", issue_counter: 0, path: null, stale_days: null, stale_close_status_id: null, created_at: now, updated_at: now };
+      const p: Project = { id: id(), ...args!.input, status: "active", issue_counter: 0, path: args!.input.path ?? null, stale_days: null, stale_close_status_id: null, created_at: now, updated_at: now };
       projects.push(p);
       statuses[p.id] = [
         { id: id(), project_id: p.id, name: "Backlog", category: "unstarted", color: "#94a3b8", icon: null, position: 0 },
         { id: id(), project_id: p.id, name: "Todo", category: "unstarted", color: "#60a5fa", icon: null, position: 1 },
         { id: id(), project_id: p.id, name: "In Progress", category: "started", color: "#fbbf24", icon: null, position: 2 },
-        { id: id(), project_id: p.id, name: "Done", category: "completed", color: "#34d399", icon: null, position: 3 },
+        { id: id(), project_id: p.id, name: "In Review", category: "started", color: "#a78bfa", icon: null, position: 3 },
+        { id: id(), project_id: p.id, name: "Done", category: "completed", color: "#34d399", icon: null, position: 4 },
       ];
       labels[p.id] = [];
       return p;

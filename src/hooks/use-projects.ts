@@ -19,7 +19,7 @@ export function useProjects() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const create = async (input: { name: string; description?: string; icon?: string; prefix: string }) => {
+  const create = async (input: { name: string; description?: string; icon?: string; prefix: string; path?: string }) => {
     const project = await api.createProject(input);
     setProjects(prev => [...prev, project]);
     return project;
