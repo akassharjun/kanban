@@ -853,7 +853,13 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
       return { branch_name: "KAN-6/fix-drag-drop-position-calculation", pattern: "{{prefix}}-{{number}}/{{slug}}" } as BranchNamePreview;
     }
     case "create_branch_for_issue": {
-      return { id: id(), issue_id: 6, link_type: "branch", url: "https://github.com/akassharjun/kanban/tree/KAN-6/fix-drag-drop", ref_name: "KAN-6/fix-drag-drop", pr_number: null, pr_state: null, pr_merged: false, ci_status: null, review_status: null, created_at: now, updated_at: now } as GitLink;
+      const ident = args?.issueIdentifier ?? "KAN-0";
+      const iss = issues.find(i => i.identifier === ident);
+      const slug = iss ? iss.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") : "branch";
+      const refName = `${ident.toLowerCase()}/${slug}`;
+      const gl: GitLink = { id: id(), issue_id: iss?.id ?? 0, link_type: "branch", url: `https://github.com/akassharjun/kanban/tree/${refName}`, ref_name: refName, pr_number: null, pr_state: null, pr_merged: false, ci_status: null, review_status: null, created_at: now, updated_at: now };
+      (gitLinks[gl.issue_id] ??= []).push(gl);
+      return gl;
     }
     case "sync_github_prs": {
       return [
