@@ -85,7 +85,7 @@ fn simple_glob_matches(pattern: &str, text: &str) -> bool {
             p_pos += 1;
         } else if let Some(sp) = star_p {
             p_pos = sp + 1;
-            let st = star_t.unwrap() + 1;
+            let st = star_t.unwrap_or(t_pos) + 1;
             star_t = Some(st);
             t_pos = st;
         } else {

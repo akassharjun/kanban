@@ -503,9 +503,16 @@ pub fn delete_issue(state: State<AppState>, id: i64) -> Result<(), String> {
         // Also snapshot label associations so undo can restore them
         let labels: Vec<i64> = sqlx::query_scalar("SELECT label_id FROM issue_labels WHERE issue_id = $1")
             .bind(id).fetch_all(&state.pool).await?;
-        let mut snapshot_val = serde_json::to_value(&old_issue).unwrap();
-        snapshot_val.as_object_mut().unwrap().insert("label_ids".to_string(), serde_json::to_value(&labels).unwrap());
-        let old_snapshot = serde_json::to_string(&snapshot_val).unwrap_or_default();
+        let old_snapshot = serde_json::to_value(&old_issue)
+            .ok()
+            .and_then(|mut v| {
+                v.as_object_mut()?.insert(
+                    "label_ids".to_string(),
+                    serde_json::to_value(&labels).ok()?,
+                );
+                serde_json::to_string(&v).ok()
+            })
+            .unwrap_or_default();
 
         sqlx::query("DELETE FROM issues WHERE id = $1").bind(id).execute(&state.pool).await?;
 
