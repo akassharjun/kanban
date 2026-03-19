@@ -35,7 +35,7 @@ pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
 #[tauri::command]
 pub fn get_project(state: State<AppState>, id: i64) -> Result<Project, String> {
     state.rt.block_on(async {
-        sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1")
+        sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1 AND deleted_at IS NULL")
             .bind(id)
             .fetch_one(&state.pool)
             .await

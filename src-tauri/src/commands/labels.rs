@@ -26,9 +26,12 @@ pub fn list_labels(state: State<AppState>, project_id: i64) -> Result<Vec<Label>
 
 #[tauri::command]
 pub fn create_label(state: State<AppState>, input: CreateLabelInput) -> Result<Label, String> {
+    if input.name.trim().is_empty() {
+        return Err(sqlx::Error::Protocol("Label name cannot be empty".to_string()).to_string());
+    }
     state.rt.block_on(async {
         let id: i64 = sqlx::query_scalar("INSERT INTO labels (project_id, name, color) VALUES ($1, $2, $3) RETURNING id")
-            .bind(input.project_id).bind(&input.name).bind(&input.color)
+            .bind(input.project_id).bind(input.name.trim()).bind(&input.color)
             .fetch_one(&state.pool).await?;
         sqlx::query_as::<_, Label>("SELECT * FROM labels WHERE id = $1")
             .bind(id).fetch_one(&state.pool).await

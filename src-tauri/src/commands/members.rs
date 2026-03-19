@@ -29,6 +29,9 @@ pub fn list_members(state: State<AppState>) -> Result<Vec<Member>, String> {
 
 #[tauri::command]
 pub fn create_member(state: State<AppState>, input: CreateMemberInput) -> Result<Member, String> {
+    if input.name.trim().is_empty() {
+        return Err(sqlx::Error::Protocol("Member name cannot be empty".to_string()).to_string());
+    }
     state.rt.block_on(async {
         let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
         let color = input.avatar_color.unwrap_or_else(|| {
@@ -39,7 +42,7 @@ pub fn create_member(state: State<AppState>, input: CreateMemberInput) -> Result
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO members (name, display_name, email, avatar_color, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id"
         )
-        .bind(&input.name).bind(&input.display_name).bind(&input.email).bind(&color).bind(&now)
+        .bind(input.name.trim()).bind(&input.display_name).bind(&input.email).bind(&color).bind(&now)
         .fetch_one(&state.pool).await?;
 
         sqlx::query_as::<_, Member>("SELECT * FROM members WHERE id = $1")

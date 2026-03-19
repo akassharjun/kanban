@@ -97,12 +97,21 @@ pub fn update_comment(state: State<AppState>, id: i64, input: UpdateCommentInput
 #[tauri::command]
 pub fn delete_comment(state: State<AppState>, id: i64) -> Result<(), String> {
     state.rt.block_on(async {
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+        // Get issue_id before deleting
+        let issue_id: Option<i64> = sqlx::query_scalar("SELECT issue_id FROM comments WHERE id = $1")
+            .bind(id).fetch_optional(&state.pool).await?;
         let result = sqlx::query("DELETE FROM comments WHERE id = $1")
             .bind(id)
             .execute(&state.pool)
             .await?;
         if result.rows_affected() == 0 {
             return Err(sqlx::Error::RowNotFound);
+        }
+        // Update issue's updated_at timestamp
+        if let Some(iid) = issue_id {
+            let _ = sqlx::query("UPDATE issues SET updated_at = $1 WHERE id = $2")
+                .bind(&now).bind(iid).execute(&state.pool).await;
         }
         Ok(())
     }).map_err(|e: sqlx::Error| e.to_string())

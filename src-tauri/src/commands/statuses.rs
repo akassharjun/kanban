@@ -33,6 +33,13 @@ pub fn list_statuses(state: State<AppState>, project_id: i64) -> Result<Vec<Stat
 
 #[tauri::command]
 pub fn create_status(state: State<AppState>, input: CreateStatusInput) -> Result<Status, String> {
+    if input.name.trim().is_empty() {
+        return Err(sqlx::Error::Protocol("Status name cannot be empty".to_string()).to_string());
+    }
+    let valid_categories = ["unstarted", "started", "blocked", "completed", "discarded"];
+    if !valid_categories.contains(&input.category.as_str()) {
+        return Err(sqlx::Error::Protocol(format!("Invalid category '{}'. Must be one of: {}", input.category, valid_categories.join(", "))).to_string());
+    }
     state.rt.block_on(async {
         // Get max position
         let max_pos: Option<i64> = sqlx::query_scalar("SELECT MAX(position) FROM statuses WHERE project_id = $1")
@@ -45,7 +52,7 @@ pub fn create_status(state: State<AppState>, input: CreateStatusInput) -> Result
             "INSERT INTO statuses (project_id, name, category, color, icon, position) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
         )
         .bind(input.project_id)
-        .bind(&input.name)
+        .bind(input.name.trim())
         .bind(&input.category)
         .bind(&input.color)
         .bind(&input.icon)
