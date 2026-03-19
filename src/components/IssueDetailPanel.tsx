@@ -306,6 +306,7 @@ export function IssueDetailPanel({
       await loadIssue();
     } catch (e) {
       console.error("Failed to link file", e);
+      showToast("Failed to link file");
     }
   };
 
@@ -315,6 +316,7 @@ export function IssueDetailPanel({
       await loadIssue();
     } catch (e) {
       console.error("Failed to unlink file", e);
+      showToast("Failed to unlink file");
     }
   };
 
@@ -403,7 +405,7 @@ export function IssueDetailPanel({
               {statuses.map(s => (
                 <button
                   key={s.id}
-                  onClick={async () => { await onUpdate(issueId, { status_id: s.id }); await loadIssue(); setOpenMenu(null); }}
+                  onClick={async () => { try { await onUpdate(issueId, { status_id: s.id }); await loadIssue(); } catch (e) { console.error("Failed to update status:", e); showToast("Failed to update status"); } setOpenMenu(null); }}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors",
                     s.id === issue.status_id && "bg-muted font-medium"
@@ -436,7 +438,7 @@ export function IssueDetailPanel({
               {priorities.map(p => (
                 <button
                   key={p.value}
-                  onClick={async () => { await onUpdate(issueId, { priority: p.value }); await loadIssue(); setOpenMenu(null); }}
+                  onClick={async () => { try { await onUpdate(issueId, { priority: p.value }); await loadIssue(); } catch (e) { console.error("Failed to update priority:", e); showToast("Failed to update priority"); } setOpenMenu(null); }}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors",
                     p.value === issue.priority && "bg-muted font-medium"
@@ -478,7 +480,7 @@ export function IssueDetailPanel({
               }
             >
               <button
-                onClick={async () => { await onUpdate(issueId, { assignee_id: -1 }); await loadIssue(); setOpenMenu(null); }}
+                onClick={async () => { try { await onUpdate(issueId, { assignee_id: -1 }); await loadIssue(); } catch (e) { console.error("Failed to update assignee:", e); showToast("Failed to update assignee"); } setOpenMenu(null); }}
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors"
               >
                 <div className="h-5 w-5 rounded-full border border-dashed border-muted-foreground/30" />
@@ -487,7 +489,7 @@ export function IssueDetailPanel({
               {members.map(m => (
                 <button
                   key={m.id}
-                  onClick={async () => { await onUpdate(issueId, { assignee_id: m.id }); await loadIssue(); setOpenMenu(null); }}
+                  onClick={async () => { try { await onUpdate(issueId, { assignee_id: m.id }); await loadIssue(); } catch (e) { console.error("Failed to update assignee:", e); showToast("Failed to update assignee"); } setOpenMenu(null); }}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors",
                     m.id === issue.assignee_id && "bg-muted font-medium"
@@ -535,8 +537,13 @@ export function IssueDetailPanel({
                         const newLabelIds = isSelected
                           ? issue.labels.filter(il => il.id !== l.id).map(il => il.id)
                           : [...issue.labels.map(il => il.id), l.id];
-                        await api.setIssueLabels(issueId, newLabelIds);
-                        await loadIssue();
+                        try {
+                          await api.setIssueLabels(issueId, newLabelIds);
+                          await loadIssue();
+                        } catch (e) {
+                          console.error("Failed to update labels:", e);
+                          showToast("Failed to update labels");
+                        }
                       }}
                       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted transition-colors"
                     >
@@ -575,7 +582,7 @@ export function IssueDetailPanel({
                 }
               >
                 <button
-                  onClick={async () => { await onUpdate(issueId, { epic_id: -1 }); await loadIssue(); setOpenMenu(null); }}
+                  onClick={async () => { try { await onUpdate(issueId, { epic_id: -1 }); await loadIssue(); } catch (e) { console.error("Failed to update epic:", e); showToast("Failed to update epic"); } setOpenMenu(null); }}
                   className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors"
                 >
                   None
@@ -583,7 +590,7 @@ export function IssueDetailPanel({
                 {epics.filter(e => e.status === "active").map(e => (
                   <button
                     key={e.id}
-                    onClick={async () => { await onUpdate(issueId, { epic_id: e.id }); await loadIssue(); setOpenMenu(null); }}
+                    onClick={async () => { try { await onUpdate(issueId, { epic_id: e.id }); await loadIssue(); } catch (err) { console.error("Failed to update epic:", err); showToast("Failed to update epic"); } setOpenMenu(null); }}
                     className={cn(
                       "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors",
                       e.id === issue.epic_id && "bg-muted font-medium"
@@ -619,7 +626,7 @@ export function IssueDetailPanel({
                 }
               >
                 <button
-                  onClick={async () => { await onUpdate(issueId, { milestone_id: -1 }); await loadIssue(); setOpenMenu(null); }}
+                  onClick={async () => { try { await onUpdate(issueId, { milestone_id: -1 }); await loadIssue(); } catch (e) { console.error("Failed to update milestone:", e); showToast("Failed to update milestone"); } setOpenMenu(null); }}
                   className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors"
                 >
                   None
@@ -627,7 +634,7 @@ export function IssueDetailPanel({
                 {milestones.filter(m => m.status === "open").map(m => (
                   <button
                     key={m.id}
-                    onClick={async () => { await onUpdate(issueId, { milestone_id: m.id }); await loadIssue(); setOpenMenu(null); }}
+                    onClick={async () => { try { await onUpdate(issueId, { milestone_id: m.id }); await loadIssue(); } catch (e) { console.error("Failed to update milestone:", e); showToast("Failed to update milestone"); } setOpenMenu(null); }}
                     className={cn(
                       "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] hover:bg-muted transition-colors",
                       m.id === issue.milestone_id && "bg-muted font-medium"
@@ -647,7 +654,7 @@ export function IssueDetailPanel({
             <input
               type="date"
               value={issue.due_date || ""}
-              onChange={async (e) => { await onUpdate(issueId, { due_date: e.target.value || "" }); await loadIssue(); }}
+              onChange={async (e) => { try { await onUpdate(issueId, { due_date: e.target.value || "" }); await loadIssue(); } catch (err) { console.error("Failed to update due date:", err); showToast("Failed to update due date"); } }}
               className="rounded-md bg-transparent px-2 py-1 text-[13px] outline-none hover:bg-muted transition-colors cursor-pointer"
             />
           </div>
@@ -663,9 +670,14 @@ export function IssueDetailPanel({
                 const cv = customValues.find(v => v.field_id === field.id);
                 const currentValue = cv?.value ?? "";
                 const handleChange = async (val: string | null) => {
-                  await api.setIssueCustomValue(issueId, field.id, val);
-                  const updated = await api.getIssueCustomValues(issueId);
-                  setCustomValues(updated);
+                  try {
+                    await api.setIssueCustomValue(issueId, field.id, val);
+                    const updated = await api.getIssueCustomValues(issueId);
+                    setCustomValues(updated);
+                  } catch (e) {
+                    console.error("Failed to update custom field:", e);
+                    showToast("Failed to update custom field");
+                  }
                 };
                 if (field.field_type === "select") {
                   let options: string[] = [];
@@ -998,7 +1010,7 @@ export function IssueDetailPanel({
                       </a>
                     )}
                     <button
-                      onClick={async () => { await api.deleteGitLink(link.id); await loadIssue(); }}
+                      onClick={async () => { try { await api.deleteGitLink(link.id); await loadIssue(); } catch (e) { console.error("Failed to delete git link:", e); showToast("Failed to delete git link"); } }}
                       className="opacity-0 group-hover:opacity-100 rounded-md p-1 hover:bg-red-500/10 transition-opacity"
                     >
                       <Trash2 className="h-3 w-3 text-muted-foreground/50" />
@@ -1031,16 +1043,21 @@ export function IssueDetailPanel({
                 <button
                   onClick={async () => {
                     if (!gitLinkRefName.trim()) return;
-                    await api.createGitLink({
-                      issue_id: issueId,
-                      link_type: showGitLinkForm,
-                      ref_name: gitLinkRefName.trim(),
-                      url: gitLinkUrl.trim() || undefined,
-                    });
-                    setShowGitLinkForm(null);
-                    setGitLinkRefName("");
-                    setGitLinkUrl("");
-                    await loadIssue();
+                    try {
+                      await api.createGitLink({
+                        issue_id: issueId,
+                        link_type: showGitLinkForm,
+                        ref_name: gitLinkRefName.trim(),
+                        url: gitLinkUrl.trim() || undefined,
+                      });
+                      setShowGitLinkForm(null);
+                      setGitLinkRefName("");
+                      setGitLinkUrl("");
+                      await loadIssue();
+                    } catch (e) {
+                      console.error("Failed to create git link:", e);
+                      showToast("Failed to create git link");
+                    }
                   }}
                   className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                 >
