@@ -14,6 +14,7 @@ export default defineConfig({
       { text: 'CLI Reference', link: '/cli/' },
       { text: 'MCP', link: '/mcp/' },
       { text: 'Agent Protocol', link: '/agents/' },
+      { text: 'Skills', link: '/skills/' },
       { text: 'GitHub', link: 'https://github.com/akassharjun/kanban' },
     ],
     sidebar: {
@@ -75,6 +76,18 @@ export default defineConfig({
             { text: 'Lifecycle', link: '/agents/lifecycle' },
             { text: 'Task Contracts', link: '/agents/task-contracts' },
             { text: 'Examples', link: '/agents/examples' },
+          ],
+        },
+      ],
+      '/skills/': [
+        {
+          text: 'Agent Skills',
+          items: [
+            { text: 'Overview', link: '/skills/' },
+            { text: 'Kanban Board Skill', link: '/skills/kanban-skill' },
+            { text: 'MCP Integration', link: '/skills/mcp-integration' },
+            { text: 'Installation Guide', link: '/skills/installation' },
+            { text: 'Plugin Integrations', link: '/skills/integrations' },
           ],
         },
       ],
