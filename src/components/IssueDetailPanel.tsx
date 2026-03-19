@@ -231,10 +231,13 @@ export function IssueDetailPanel({
       isSavingRef.current = true;
       try {
         await onUpdate(issueId, { title });
+        await loadIssue();
+      } catch (e) {
+        console.error("Failed to save title:", e);
+        showToast("Failed to save title");
       } finally {
         isSavingRef.current = false;
       }
-      await loadIssue();
     }
     setEditingTitle(false);
   };
@@ -244,10 +247,13 @@ export function IssueDetailPanel({
       isSavingRef.current = true;
       try {
         await onUpdate(issueId, { description: desc });
+        await loadIssue();
+      } catch (e) {
+        console.error("Failed to save description:", e);
+        showToast("Failed to save description");
       } finally {
         isSavingRef.current = false;
       }
-      await loadIssue();
     }
     setEditingDesc(false);
   };
