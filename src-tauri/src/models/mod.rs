@@ -311,22 +311,6 @@ pub struct RecentlyViewed {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct GitLink {
-    pub id: i64,
-    pub issue_id: i64,
-    pub link_type: String,
-    pub url: Option<String>,
-    pub ref_name: String,
-    pub pr_number: Option<i64>,
-    pub pr_state: Option<String>,
-    pub pr_merged: i64,
-    pub ci_status: Option<String>,
-    pub review_status: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct AutomationRule {
     pub id: i64,
     pub project_id: i64,

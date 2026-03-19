@@ -35,7 +35,7 @@ pub struct GitLink {
     pub ref_name: String,
     pub pr_number: Option<i64>,
     pub pr_state: Option<String>,
-    pub pr_merged: bool,
+    pub pr_merged: i64,
     pub ci_status: Option<String>,
     pub review_status: Option<String>,
     pub created_at: String,
