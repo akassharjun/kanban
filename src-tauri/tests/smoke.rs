@@ -136,3 +136,337 @@ async fn create_issue_with_all_fields() {
     assert_eq!(issue.epic_id, None);
     assert_eq!(issue.milestone_id, None);
 }
+
+// Helper to insert a single issue and return its id
+async fn insert_issue(
+    pool: &AnyPool,
+    project_id: i64,
+    identifier: &str,
+    title: &str,
+    status_id: i64,
+    priority: &str,
+    assignee_id: Option<i64>,
+) -> i64 {
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%SZ")
+        .to_string();
+
+    sqlx::query_scalar(
+        "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, \
+         assignee_id, parent_id, position, estimate, due_date, epic_id, milestone_id, \
+         created_at, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id",
+    )
+    .bind(project_id)
+    .bind(identifier)
+    .bind(title)
+    .bind(None::<String>)
+    .bind(status_id)
+    .bind(priority)
+    .bind(assignee_id)
+    .bind(None::<i64>)
+    .bind(1.0f64)
+    .bind(None::<f64>)
+    .bind(None::<String>)
+    .bind(None::<i64>)
+    .bind(None::<i64>)
+    .bind(&now)
+    .bind(&now)
+    .fetch_one(pool)
+    .await
+    .expect("Failed to INSERT issue")
+}
+
+#[tokio::test]
+async fn update_issue_status_and_priority() {
+    let pool = test_db().await;
+    let (project_id, backlog_status_id) = create_test_project(&pool).await;
+
+    let issue_id = insert_issue(&pool, project_id, "TST-1", "My Issue", backlog_status_id, "low", None).await;
+
+    // Get the "In Progress" status id
+    let in_progress_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM statuses WHERE project_id = $1 AND name = $2",
+    )
+    .bind(project_id)
+    .bind("In Progress")
+    .fetch_one(&pool)
+    .await
+    .expect("Failed to get In Progress status");
+
+    // Update status and priority
+    sqlx::query("UPDATE issues SET status_id = $1, priority = $2 WHERE id = $3")
+        .bind(in_progress_id)
+        .bind("urgent")
+        .bind(issue_id)
+        .execute(&pool)
+        .await
+        .expect("Failed to update issue");
+
+    // Verify via SELECT
+    let issue: kanban_lib::models::Issue =
+        sqlx::query_as("SELECT * FROM issues WHERE id = $1")
+            .bind(issue_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to SELECT issue");
+
+    assert_eq!(issue.status_id, in_progress_id);
+    assert_eq!(issue.priority, "urgent");
+}
+
+#[tokio::test]
+async fn list_issues_by_status() {
+    let pool = test_db().await;
+    let (project_id, backlog_status_id) = create_test_project(&pool).await;
+
+    // Get the "Todo" status id
+    let todo_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM statuses WHERE project_id = $1 AND name = $2",
+    )
+    .bind(project_id)
+    .bind("Todo")
+    .fetch_one(&pool)
+    .await
+    .expect("Failed to get Todo status");
+
+    // Create 2 Backlog issues and 1 Todo issue
+    insert_issue(&pool, project_id, "TST-1", "Backlog Issue 1", backlog_status_id, "medium", None).await;
+    insert_issue(&pool, project_id, "TST-2", "Backlog Issue 2", backlog_status_id, "low", None).await;
+    insert_issue(&pool, project_id, "TST-3", "Todo Issue 1", todo_id, "high", None).await;
+
+    // SELECT filtered by Backlog
+    let issues: Vec<kanban_lib::models::Issue> =
+        sqlx::query_as("SELECT * FROM issues WHERE project_id = $1 AND status_id = $2")
+            .bind(project_id)
+            .bind(backlog_status_id)
+            .fetch_all(&pool)
+            .await
+            .expect("Failed to SELECT issues by status");
+
+    assert_eq!(issues.len(), 2, "Expected 2 Backlog issues, got {}", issues.len());
+
+    let titles: Vec<&str> = issues.iter().map(|i| i.title.as_str()).collect();
+    assert!(titles.contains(&"Backlog Issue 1"));
+    assert!(titles.contains(&"Backlog Issue 2"));
+}
+
+#[tokio::test]
+async fn create_member_and_assign_to_issue() {
+    let pool = test_db().await;
+    let (project_id, backlog_status_id) = create_test_project(&pool).await;
+
+    // Verify the default "You" member from seed_defaults exists
+    let you: kanban_lib::models::Member =
+        sqlx::query_as("SELECT * FROM members WHERE name = $1")
+            .bind("You")
+            .fetch_one(&pool)
+            .await
+            .expect("Default 'You' member not found — seed_defaults may have failed");
+
+    assert_eq!(you.name, "You");
+
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%SZ")
+        .to_string();
+
+    // Create a new member "alice"
+    let alice_id: i64 = sqlx::query_scalar(
+        "INSERT INTO members (name, display_name, email, avatar_color, created_at) \
+         VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    )
+    .bind("alice")
+    .bind("Alice")
+    .bind("alice@example.com")
+    .bind("#f59e0b")
+    .bind(&now)
+    .fetch_one(&pool)
+    .await
+    .expect("Failed to insert member alice");
+
+    // Create an issue assigned to alice
+    let issue_id = insert_issue(&pool, project_id, "TST-1", "Alice's Issue", backlog_status_id, "medium", Some(alice_id)).await;
+
+    // Verify assignee_id matches
+    let issue: kanban_lib::models::Issue =
+        sqlx::query_as("SELECT * FROM issues WHERE id = $1")
+            .bind(issue_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to SELECT issue");
+
+    assert_eq!(issue.assignee_id, Some(alice_id));
+}
+
+#[tokio::test]
+async fn create_label_and_attach_to_issue() {
+    let pool = test_db().await;
+    let (project_id, backlog_status_id) = create_test_project(&pool).await;
+
+    // Create a label
+    let label_id: i64 = sqlx::query_scalar(
+        "INSERT INTO labels (project_id, name, color) VALUES ($1, $2, $3) RETURNING id",
+    )
+    .bind(project_id)
+    .bind("bug")
+    .bind("#ef4444")
+    .fetch_one(&pool)
+    .await
+    .expect("Failed to insert label");
+
+    // Create an issue
+    let issue_id = insert_issue(&pool, project_id, "TST-1", "Bug Issue", backlog_status_id, "high", None).await;
+
+    // Attach label to issue via junction table
+    sqlx::query("INSERT INTO issue_labels (issue_id, label_id) VALUES ($1, $2)")
+        .bind(issue_id)
+        .bind(label_id)
+        .execute(&pool)
+        .await
+        .expect("Failed to insert issue_label");
+
+    // Verify via JOIN query
+    let label: kanban_lib::models::Label = sqlx::query_as(
+        "SELECT l.id, l.project_id, l.name, l.color \
+         FROM labels l \
+         JOIN issue_labels il ON il.label_id = l.id \
+         WHERE il.issue_id = $1",
+    )
+    .bind(issue_id)
+    .fetch_one(&pool)
+    .await
+    .expect("Failed to SELECT label via JOIN");
+
+    assert_eq!(label.name, "bug");
+    assert_eq!(label.color, "#ef4444");
+    assert_eq!(label.project_id, project_id);
+}
+
+#[tokio::test]
+async fn create_comment_and_activity_log() {
+    let pool = test_db().await;
+    let (project_id, backlog_status_id) = create_test_project(&pool).await;
+
+    let issue_id = insert_issue(&pool, project_id, "TST-1", "Commented Issue", backlog_status_id, "medium", None).await;
+
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%SZ")
+        .to_string();
+
+    // Insert a comment (member_id=1 = "You" from seed_defaults)
+    let comment_id: i64 = sqlx::query_scalar(
+        "INSERT INTO comments (issue_id, member_id, content, created_at, updated_at) \
+         VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    )
+    .bind(issue_id)
+    .bind(1i64)
+    .bind("This is a test comment")
+    .bind(&now)
+    .bind(&now)
+    .fetch_one(&pool)
+    .await
+    .expect("Failed to insert comment");
+
+    // Verify comment via Comment model
+    let comment: kanban_lib::models::Comment =
+        sqlx::query_as("SELECT * FROM comments WHERE id = $1")
+            .bind(comment_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to SELECT comment");
+
+    assert_eq!(comment.issue_id, issue_id);
+    assert_eq!(comment.content, "This is a test comment");
+
+    // Insert an activity_log entry
+    let log_id: i64 = sqlx::query_scalar(
+        "INSERT INTO activity_log (issue_id, field_changed, old_value, new_value, actor_id, actor_type, timestamp) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+    )
+    .bind(issue_id)
+    .bind("status")
+    .bind("Backlog")
+    .bind("In Progress")
+    .bind(1i64)
+    .bind("user")
+    .bind(&now)
+    .fetch_one(&pool)
+    .await
+    .expect("Failed to insert activity_log entry");
+
+    // Verify activity_log via ActivityLogEntry model
+    let entry: kanban_lib::models::ActivityLogEntry =
+        sqlx::query_as("SELECT * FROM activity_log WHERE id = $1")
+            .bind(log_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to SELECT activity_log entry");
+
+    assert_eq!(entry.issue_id, issue_id);
+    assert_eq!(entry.field_changed, "status");
+    assert_eq!(entry.old_value, Some("Backlog".to_string()));
+    assert_eq!(entry.new_value, Some("In Progress".to_string()));
+    assert_eq!(entry.actor_id, Some(1i64));
+}
+
+#[tokio::test]
+async fn delete_issue() {
+    let pool = test_db().await;
+    let (project_id, backlog_status_id) = create_test_project(&pool).await;
+
+    let issue_id = insert_issue(&pool, project_id, "TST-1", "To Be Deleted", backlog_status_id, "medium", None).await;
+
+    // DELETE the issue
+    sqlx::query("DELETE FROM issues WHERE id = $1")
+        .bind(issue_id)
+        .execute(&pool)
+        .await
+        .expect("Failed to DELETE issue");
+
+    // Verify COUNT=0
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM issues WHERE id = $1")
+        .bind(issue_id)
+        .fetch_one(&pool)
+        .await
+        .expect("Failed to COUNT issues");
+
+    assert_eq!(count, 0, "Expected 0 issues after delete, got {}", count);
+}
+
+#[tokio::test]
+async fn soft_delete_project() {
+    let pool = test_db().await;
+    let (project_id, _backlog_status_id) = create_test_project(&pool).await;
+
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%SZ")
+        .to_string();
+
+    // Soft delete: set deleted_at
+    sqlx::query("UPDATE projects SET deleted_at = $1 WHERE id = $2")
+        .bind(&now)
+        .bind(project_id)
+        .execute(&pool)
+        .await
+        .expect("Failed to soft-delete project");
+
+    // Verify SELECT WHERE deleted_at IS NULL returns 0
+    let active_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM projects WHERE id = $1 AND deleted_at IS NULL")
+            .bind(project_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to COUNT active projects");
+
+    assert_eq!(active_count, 0, "Expected 0 active projects, got {}", active_count);
+
+    // Verify SELECT all returns 1 (soft delete, not hard)
+    let total_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM projects WHERE id = $1")
+            .bind(project_id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to COUNT all projects");
+
+    assert_eq!(total_count, 1, "Expected 1 total project (soft deleted), got {}", total_count);
+}
