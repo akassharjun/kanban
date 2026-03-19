@@ -91,6 +91,12 @@ src-tauri/target/release/kanban-cli issue list --project 2
 # MCP server (JSON-RPC 2.0 over stdio)
 src-tauri/target/release/kanban-mcp
 
+# Backend smoke tests (Rust integration tests against real SQLite)
+cd src-tauri && cargo test --test smoke
+
+# CLI smoke tests (end-to-end against temp database)
+./scripts/smoke-test-cli.sh
+
 # Docs (VitePress)
 npm run docs:dev      # Dev server
 npm run docs:build    # Static build

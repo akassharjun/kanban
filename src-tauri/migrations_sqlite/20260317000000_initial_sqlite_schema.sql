@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS issues (
     position REAL NOT NULL DEFAULT 0,
     estimate REAL,
     due_date TEXT,
+    epic_id INTEGER REFERENCES epics(id) ON DELETE SET NULL,
+    milestone_id INTEGER REFERENCES milestones(id) ON DELETE SET NULL,
     business_value INTEGER,
     time_criticality INTEGER,
     risk_reduction INTEGER,
