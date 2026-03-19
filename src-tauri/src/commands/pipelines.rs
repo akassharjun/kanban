@@ -13,7 +13,7 @@ pub struct Pipeline {
     pub name: String,
     pub description: Option<String>,
     pub stages: String,
-    pub enabled: bool,
+    pub enabled: i64,
     pub total_runs: i64,
     pub created_at: String,
     pub updated_at: String,
@@ -228,7 +228,7 @@ pub fn trigger_pipeline(
             .fetch_one(&state.pool)
             .await?;
 
-            if !pipeline.enabled {
+            if pipeline.enabled == 0 {
                 return Err(sqlx::Error::Protocol("Pipeline is disabled".to_string()));
             }
 

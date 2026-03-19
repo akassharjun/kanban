@@ -19,6 +19,7 @@ export interface Project {
   status: ProjectStatus;
   prefix: string;
   issue_counter: number;
+  deleted_at: string | null;
   path: string | null;
   created_at: string;
   updated_at: string;

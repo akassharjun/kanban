@@ -76,6 +76,10 @@ pub async fn init_db(database_url: Option<&str>) -> Result<(AnyPool, DbBackend),
                 "ALTER TABLE issues ADD COLUMN job_size INTEGER",
                 "ALTER TABLE issues ADD COLUMN wsjf_score REAL",
                 "ALTER TABLE project_agent_config ADD COLUMN use_wsjf_scoring INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE saved_views ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))",
+                "ALTER TABLE saved_views ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))",
+                "ALTER TABLE automation_rules ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))",
+                "ALTER TABLE automation_rules ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))",
             ];
             for stmt in &backfill {
                 let _ = sqlx::query(stmt).execute(&pool).await;

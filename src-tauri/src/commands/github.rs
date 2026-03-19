@@ -459,7 +459,7 @@ pub fn sync_github_prs(state: State<AppState>, project_id: i64) -> Result<Vec<Gi
                     .map_err(|e| e.to_string())?;
 
                 // Auto-transition if PR was just merged
-                if pr_merged && !existing_link.pr_merged && config.auto_transition_on_merge {
+                if pr_merged && existing_link.pr_merged == 0 && config.auto_transition_on_merge {
                     if let Some(target_status) = config.merge_target_status_id {
                         let old_status_id = issue.status_id;
                         sqlx::query("UPDATE issues SET status_id = $1, updated_at = $2 WHERE id = $3")
