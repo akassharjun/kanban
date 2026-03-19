@@ -97,7 +97,7 @@ export const createProject = (input: {
   description?: string;
   icon?: string;
   prefix: string;
-  path?: string;
+  path: string;
 }) => invoke<Project>("create_project", { input });
 export const updateProject = (id: number, input: {
   name?: string;

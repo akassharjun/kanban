@@ -7,7 +7,7 @@ import * as api from "@/tauri/commands";
 
 interface CreateProjectDialogProps {
   onClose: () => void;
-  onCreate: (input: { name: string; description?: string; icon?: string; prefix: string; path?: string }) => Promise<unknown>;
+  onCreate: (input: { name: string; description?: string; icon?: string; prefix: string; path: string }) => Promise<unknown>;
 }
 
 export function CreateProjectDialog({ onClose, onCreate }: CreateProjectDialogProps) {

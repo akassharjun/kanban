@@ -9,7 +9,7 @@ pub struct CreateProjectInput {
     pub description: Option<String>,
     pub icon: Option<String>,
     pub prefix: String,
-    pub path: Option<String>,
+    pub path: String,
 }
 
 #[derive(Deserialize)]
