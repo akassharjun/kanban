@@ -634,6 +634,17 @@ export interface DirectoryHeatEntry {
   file_count: number;
 }
 
+export interface FileTreeNode {
+  path: string;
+  type: "file" | "dir";
+  size?: number;
+  children?: FileTreeNode[];
+}
+
+export interface ProjectFileContent {
+  content: string | null;
+}
+
 // Context Assembly Types
 
 export interface PriorAttempt {

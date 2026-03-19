@@ -1376,6 +1376,121 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
       ],
     } as SlaDashboard;
 
+    case "list_project_files": {
+      return [
+        { path: "src", type: "dir", children: [
+          { path: "src/App.tsx", type: "file", size: 15000 },
+          { path: "src/main.tsx", type: "file", size: 500 },
+          { path: "src/components", type: "dir", children: [
+            { path: "src/components/BoardView.tsx", type: "file", size: 8000 },
+            { path: "src/components/IssueCard.tsx", type: "file", size: 4000 },
+            { path: "src/components/CodeHeatMap.tsx", type: "file", size: 6000 },
+            { path: "src/components/IssueDetailPanel.tsx", type: "file", size: 12000 },
+            { path: "src/components/Sidebar.tsx", type: "file", size: 6000 },
+            { path: "src/components/AgentDashboard.tsx", type: "file", size: 9000 },
+            { path: "src/components/ReplayViewer.tsx", type: "file", size: 5000 },
+          ]},
+          { path: "src/hooks", type: "dir", children: [
+            { path: "src/hooks/use-issues.ts", type: "file", size: 1200 },
+            { path: "src/hooks/use-projects.ts", type: "file", size: 900 },
+            { path: "src/hooks/use-members.ts", type: "file", size: 700 },
+          ]},
+          { path: "src/tauri", type: "dir", children: [
+            { path: "src/tauri/commands.ts", type: "file", size: 12000 },
+            { path: "src/tauri/mock-backend.ts", type: "file", size: 28000 },
+            { path: "src/tauri/events.ts", type: "file", size: 400 },
+          ]},
+          { path: "src/lib", type: "dir", children: [
+            { path: "src/lib/utils.ts", type: "file", size: 800 },
+          ]},
+          { path: "src/types", type: "dir", children: [
+            { path: "src/types/index.ts", type: "file", size: 6000 },
+          ]},
+        ]},
+        { path: "src-tauri", type: "dir", children: [
+          { path: "src-tauri/src", type: "dir", children: [
+            { path: "src-tauri/src/main.rs", type: "file", size: 3000 },
+            { path: "src-tauri/src/lib.rs", type: "file", size: 4000 },
+            { path: "src-tauri/src/mcp.rs", type: "file", size: 45000 },
+            { path: "src-tauri/src/cli.rs", type: "file", size: 8000 },
+            { path: "src-tauri/src/state.rs", type: "file", size: 2000 },
+          ]},
+          { path: "src-tauri/migrations_sqlite", type: "dir", children: [
+            { path: "src-tauri/migrations_sqlite/schema.sql", type: "file", size: 12000 },
+          ]},
+        ]},
+        { path: "e2e", type: "dir", children: [
+          { path: "e2e/playwright.config.ts", type: "file", size: 800 },
+        ]},
+        { path: "CLAUDE.md", type: "file", size: 5000 },
+        { path: "AGENTS.md", type: "file", size: 2000 },
+        { path: "package.json", type: "file", size: 2000 },
+        { path: "tsconfig.json", type: "file", size: 400 },
+        { path: "vite.config.ts", type: "file", size: 600 },
+      ];
+    }
+    case "read_project_file": {
+      const filePath = args?.filePath ?? "";
+      if (filePath === "CLAUDE.md") return { content: `# Kanban — Project Rules
+
+## Pre-Push Verification (MANDATORY)
+
+Always verify locally before pushing or tagging releases:
+
+\`\`\`bash
+# 1. Rust compilation
+source "$HOME/.cargo/env" && cd src-tauri && cargo check --lib
+# 2. TypeScript compilation
+npx tsc --noEmit
+# 3. Tests
+npm run test:run
+\`\`\`
+
+## Tech Stack
+
+- **Backend:** Tauri v2, Rust, SQLite (sqlx with AnyPool), tokio
+- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui
+- **Database:** \`~/.kanban/data.db\` (SQLite with WAL mode)
+- **CLI:** \`kanban-cli\` (clap-based)
+- **Testing:** vitest + @testing-library/react + happy-dom
+
+## Workflow
+
+All work MUST be tracked on the Kanban board (project ID: 2, prefix: KAN).
+` };
+      if (filePath === "AGENTS.md") return { content: `# Agent Guidelines
+
+## Overview
+
+This project uses AI agents for automated task execution via the MCP protocol.
+
+## Agent Roles
+
+- **code-reviewer**: QA and code review agent
+- **yume--guardian**: Security and compliance agent
+
+## Task Lifecycle
+
+1. Agent calls \`next_task\` to claim work
+2. Agent starts task with \`start_task\`
+3. Agent completes with \`complete_task\` or fails with \`fail_task\`
+4. Human approves with \`approve_task\`
+
+## Heartbeat
+
+Agents must send a heartbeat every 30 seconds or they will be marked offline.
+` };
+      if (filePath === ".claude/settings.json") return { content: JSON.stringify({
+        permissions: {
+          allow: ["Bash", "Read", "Write", "Edit", "Glob", "Grep"],
+          deny: []
+        },
+        model: "claude-sonnet-4-6",
+        version: "1.0.0"
+      }, null, 2) };
+      return { content: null };
+    }
+
     default:
       throw new Error(`Unhandled mock command: ${cmd}`);
   }

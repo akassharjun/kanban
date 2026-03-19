@@ -1,16 +1,233 @@
 import { useState, useEffect, useCallback } from "react";
 import { listen } from "@/tauri/events";
-import { Flame, FolderTree, FileCode2, Bug } from "lucide-react";
+import {
+  Flame,
+  FolderTree,
+  FileCode2,
+  Bug,
+  ChevronRight,
+  ChevronDown,
+  Folder,
+  FolderOpen,
+  File,
+  FileText,
+  Settings,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { FileHeatEntry, DirectoryHeatEntry } from "@/types";
-import { getFileHeatMap, getDirectoryHeatMap } from "@/tauri/commands";
+import type { FileHeatEntry, DirectoryHeatEntry, FileTreeNode } from "@/types";
+import {
+  getFileHeatMap,
+  getDirectoryHeatMap,
+  listProjectFiles,
+  readProjectFile,
+} from "@/tauri/commands";
 
 export interface CodeHeatMapProps {
   projectId: number | null;
   projectName?: string | null;
 }
 
-type Tab = "files" | "directories";
+type Tab = "files" | "directories" | "explorer";
+
+// Config files we detect and can display
+const CONFIG_FILES = [
+  "CLAUDE.md",
+  "AGENTS.md",
+  ".claude/settings.json",
+  ".codex/config.json",
+];
+
+function isConfigFile(path: string): boolean {
+  return CONFIG_FILES.includes(path) || path.startsWith(".claude/") || path.startsWith(".codex/");
+}
+
+function getFileIcon(path: string, isDir: boolean, isOpen?: boolean) {
+  if (isDir) {
+    return isOpen
+      ? <FolderOpen className="h-4 w-4 text-amber-400 flex-shrink-0" />
+      : <Folder className="h-4 w-4 text-amber-400 flex-shrink-0" />;
+  }
+  if (path.endsWith(".md")) return <FileText className="h-4 w-4 text-blue-400 flex-shrink-0" />;
+  if (path.endsWith(".json") || path.endsWith(".toml") || path.endsWith(".yaml") || path.endsWith(".yml")) {
+    return <Settings className="h-4 w-4 text-green-400 flex-shrink-0" />;
+  }
+  if (path.endsWith(".ts") || path.endsWith(".tsx") || path.endsWith(".js") || path.endsWith(".jsx")) {
+    return <FileCode2 className="h-4 w-4 text-sky-400 flex-shrink-0" />;
+  }
+  if (path.endsWith(".rs")) return <FileCode2 className="h-4 w-4 text-orange-400 flex-shrink-0" />;
+  return <File className="h-4 w-4 text-muted-foreground/60 flex-shrink-0" />;
+}
+
+function getHeatDot(issueCount: number, bugCount: number) {
+  if (issueCount === 0) return <span className="h-2 w-2 rounded-full bg-muted-foreground/20 flex-shrink-0" />;
+  if (bugCount > 0) return <span className="h-2 w-2 rounded-full bg-red-500 flex-shrink-0" title={`${bugCount} bug(s)`} />;
+  return <span className="h-2 w-2 rounded-full bg-blue-500 flex-shrink-0" title={`${issueCount} issue(s)`} />;
+}
+
+interface TreeNodeProps {
+  node: FileTreeNode;
+  depth: number;
+  heatMap: Record<string, { issue_count: number; bug_count: number }>;
+  onFileClick: (path: string) => void;
+}
+
+function TreeNodeRow({ node, depth, heatMap, onFileClick }: TreeNodeProps) {
+  const [open, setOpen] = useState(depth === 0);
+  const isDir = node.type === "dir";
+  const heat = heatMap[node.path] ?? { issue_count: 0, bug_count: 0 };
+
+  // Aggregate counts for directories
+  const aggHeat = isDir ? aggregateHeat(node, heatMap) : heat;
+  const baseName = node.path.split("/").pop() ?? node.path;
+  const clickable = !isDir && (isConfigFile(node.path) || aggHeat.issue_count > 0);
+
+  return (
+    <div>
+      <div
+        className={cn(
+          "flex items-center gap-1.5 rounded-md py-1 px-2 text-sm transition-colors",
+          isDir ? "cursor-pointer hover:bg-muted/60" : clickable ? "cursor-pointer hover:bg-muted/60" : "cursor-default",
+        )}
+        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        onClick={() => {
+          if (isDir) setOpen(o => !o);
+          else if (clickable) onFileClick(node.path);
+        }}
+      >
+        {isDir ? (
+          <span className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground">
+            {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </span>
+        ) : (
+          <span className="h-3.5 w-3.5 flex-shrink-0" />
+        )}
+        {getFileIcon(node.path, isDir, open)}
+        <span className={cn(
+          "flex-1 font-mono text-xs truncate",
+          isDir ? "font-medium text-foreground" : "text-muted-foreground",
+        )}>
+          {baseName}
+        </span>
+        {aggHeat.issue_count > 0 && (
+          <span className="ml-auto flex items-center gap-1">
+            {getHeatDot(aggHeat.issue_count, aggHeat.bug_count)}
+            <span className="text-[10px] tabular-nums text-muted-foreground">{aggHeat.issue_count}</span>
+          </span>
+        )}
+        {aggHeat.issue_count === 0 && isDir && (
+          <span className="ml-auto">
+            <span className="h-2 w-2 rounded-full bg-muted-foreground/10 flex-shrink-0" />
+          </span>
+        )}
+        {aggHeat.issue_count === 0 && !isDir && (
+          <span className="ml-auto">
+            {getHeatDot(0, 0)}
+          </span>
+        )}
+        {!isDir && node.size && (
+          <span className="text-[10px] text-muted-foreground/40 ml-1 tabular-nums">
+            {node.size >= 1000 ? `${(node.size / 1000).toFixed(0)}k` : `${node.size}b`}
+          </span>
+        )}
+      </div>
+      {isDir && open && node.children && (
+        <div>
+          {node.children.map(child => (
+            <TreeNodeRow
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              heatMap={heatMap}
+              onFileClick={onFileClick}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function aggregateHeat(
+  node: FileTreeNode,
+  heatMap: Record<string, { issue_count: number; bug_count: number }>,
+): { issue_count: number; bug_count: number } {
+  if (node.type === "file") {
+    return heatMap[node.path] ?? { issue_count: 0, bug_count: 0 };
+  }
+  let issue_count = 0;
+  let bug_count = 0;
+  for (const child of node.children ?? []) {
+    const h = aggregateHeat(child, heatMap);
+    issue_count += h.issue_count;
+    bug_count += h.bug_count;
+  }
+  return { issue_count, bug_count };
+}
+
+function collectConfigFiles(nodes: FileTreeNode[]): string[] {
+  const found: string[] = [];
+  function walk(n: FileTreeNode) {
+    if (n.type === "file" && isConfigFile(n.path)) found.push(n.path);
+    if (n.children) n.children.forEach(walk);
+  }
+  nodes.forEach(walk);
+  return found;
+}
+
+function renderFileContent(path: string, content: string) {
+  const isMarkdown = path.endsWith(".md");
+  const isJson = path.endsWith(".json");
+
+  if (isMarkdown) {
+    // Simple markdown rendering — convert headings/bold/code blocks to styled spans
+    const lines = content.split("\n");
+    return (
+      <div className="space-y-1">
+        {lines.map((line, i) => {
+          if (line.startsWith("## ")) {
+            return <h2 key={i} className="text-sm font-semibold text-foreground mt-3 mb-1">{line.slice(3)}</h2>;
+          }
+          if (line.startsWith("# ")) {
+            return <h1 key={i} className="text-base font-bold text-foreground mt-2 mb-1">{line.slice(2)}</h1>;
+          }
+          if (line.startsWith("### ")) {
+            return <h3 key={i} className="text-xs font-semibold text-foreground mt-2 mb-0.5 uppercase tracking-wider">{line.slice(4)}</h3>;
+          }
+          if (line.startsWith("```")) {
+            return <div key={i} className="text-[10px] font-mono text-muted-foreground/60">{line}</div>;
+          }
+          if (line.startsWith("- ") || line.startsWith("* ")) {
+            return (
+              <div key={i} className="flex gap-1.5 text-xs text-muted-foreground">
+                <span className="text-muted-foreground/40 flex-shrink-0">•</span>
+                <span>{line.slice(2)}</span>
+              </div>
+            );
+          }
+          if (line.trim() === "") return <div key={i} className="h-1" />;
+          return <p key={i} className="text-xs text-muted-foreground leading-relaxed">{line}</p>;
+        })}
+      </div>
+    );
+  }
+
+  if (isJson) {
+    let formatted = content;
+    try { formatted = JSON.stringify(JSON.parse(content), null, 2); } catch { /* keep raw */ }
+    return (
+      <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
+        {formatted}
+      </pre>
+    );
+  }
+
+  return (
+    <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
+      {content}
+    </pre>
+  );
+}
 
 export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
   const [tab, setTab] = useState<Tab>("files");
@@ -18,6 +235,14 @@ export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
   const [dirEntries, setDirEntries] = useState<DirectoryHeatEntry[]>([]);
   const [depth, setDepth] = useState(2);
   const [loading, setLoading] = useState(false);
+
+  // Explorer state
+  const [treeNodes, setTreeNodes] = useState<FileTreeNode[]>([]);
+  const [heatMap, setHeatMap] = useState<Record<string, { issue_count: number; bug_count: number }>>({});
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [fileContentLoading, setFileContentLoading] = useState(false);
+  const [configFiles, setConfigFiles] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -29,6 +254,13 @@ export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
       ]);
       setFileEntries(files);
       setDirEntries(dirs);
+
+      // Build heat map index for the explorer
+      const hm: Record<string, { issue_count: number; bug_count: number }> = {};
+      for (const f of files) {
+        hm[f.file_path] = { issue_count: f.issue_count, bug_count: f.bug_count };
+      }
+      setHeatMap(hm);
     } catch (e) {
       console.error("Failed to load heat map", e);
     } finally {
@@ -36,12 +268,39 @@ export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
     }
   }, [projectId, depth]);
 
+  const loadTree = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const nodes = await listProjectFiles(projectId);
+      setTreeNodes(nodes);
+      setConfigFiles(collectConfigFiles(nodes));
+    } catch (e) {
+      console.error("Failed to load file tree", e);
+    }
+  }, [projectId]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadTree(); }, [loadTree]);
 
   useEffect(() => {
     const unlisten = listen("db-changed", () => load());
     return () => { unlisten.then(fn => fn()); };
   }, [load]);
+
+  const handleFileClick = useCallback(async (path: string) => {
+    if (!projectId) return;
+    setSelectedFile(path);
+    setFileContent(null);
+    setFileContentLoading(true);
+    try {
+      const result = await readProjectFile(projectId, path);
+      setFileContent(result.content);
+    } catch {
+      setFileContent(null);
+    } finally {
+      setFileContentLoading(false);
+    }
+  }, [projectId]);
 
   if (!projectId) {
     return (
@@ -85,17 +344,27 @@ export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
             <FolderTree className="mr-1.5 inline-block h-3.5 w-3.5" />
             Directories
           </button>
+          <button
+            onClick={() => setTab("explorer")}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              tab === "explorer" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Folder className="mr-1.5 inline-block h-3.5 w-3.5" />
+            Explorer
+          </button>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        {loading ? (
+      <div className="flex-1 overflow-hidden">
+        {loading && tab !== "explorer" ? (
           <div className="flex items-center justify-center py-12 text-muted-foreground">
             Loading...
           </div>
         ) : tab === "files" ? (
-          <div>
+          <div className="overflow-y-auto h-full px-6 py-4">
             {fileEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <Flame className="h-10 w-10 mb-3 opacity-30" />
@@ -141,8 +410,8 @@ export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
               </div>
             )}
           </div>
-        ) : (
-          <div>
+        ) : tab === "directories" ? (
+          <div className="overflow-y-auto h-full px-6 py-4">
             <div className="mb-4 flex items-center gap-2">
               <label className="text-xs text-muted-foreground">Depth:</label>
               <select
@@ -190,6 +459,110 @@ export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
                 })}
               </div>
             )}
+          </div>
+        ) : (
+          /* Explorer tab */
+          <div className="flex h-full overflow-hidden">
+            {/* Tree panel */}
+            <div className="flex flex-col w-80 flex-shrink-0 border-r border-border/50 overflow-hidden">
+              <div className="overflow-y-auto flex-1 py-2 px-1">
+                {/* Config files card */}
+                {configFiles.length > 0 && (
+                  <div className="mx-2 mb-3 rounded-lg border border-border/50 bg-muted/30 p-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 mb-2">
+                      Project Config
+                    </p>
+                    <div className="space-y-1">
+                      {configFiles.map(cf => (
+                        <button
+                          key={cf}
+                          onClick={() => handleFileClick(cf)}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-muted",
+                            selectedFile === cf && "bg-muted text-foreground",
+                          )}
+                        >
+                          {getFileIcon(cf, false)}
+                          <span className="font-mono truncate text-muted-foreground">{cf}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* File tree */}
+                {treeNodes.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <FolderTree className="h-8 w-8 mb-2 opacity-30" />
+                    <p className="text-xs">No files</p>
+                  </div>
+                ) : (
+                  <div>
+                    {treeNodes.map(node => (
+                      <TreeNodeRow
+                        key={node.path}
+                        node={node}
+                        depth={0}
+                        heatMap={heatMap}
+                        onFileClick={handleFileClick}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Legend */}
+              <div className="border-t border-border/50 px-3 py-2 flex items-center gap-3">
+                <span className="text-[10px] text-muted-foreground/40 uppercase tracking-wider">Heat:</span>
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full bg-red-500" /> Bugs
+                </span>
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full bg-blue-500" /> Active
+                </span>
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full bg-muted-foreground/20" /> Untouched
+                </span>
+              </div>
+            </div>
+
+            {/* File content panel */}
+            <div className="flex flex-1 flex-col overflow-hidden">
+              {selectedFile ? (
+                <>
+                  <div className="flex items-center justify-between border-b border-border/50 px-4 py-2">
+                    <span className="font-mono text-xs text-muted-foreground truncate">{selectedFile}</span>
+                    <button
+                      onClick={() => { setSelectedFile(null); setFileContent(null); }}
+                      className="ml-2 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-6 py-4">
+                    {fileContentLoading ? (
+                      <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
+                        Loading...
+                      </div>
+                    ) : fileContent !== null ? (
+                      renderFileContent(selectedFile, fileContent)
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                        <File className="h-8 w-8 mb-2 opacity-30" />
+                        <p className="text-sm">Content not available</p>
+                        <p className="text-xs mt-1">Only config files can be previewed in browser mode</p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground gap-2">
+                  <FileText className="h-10 w-10 opacity-20" />
+                  <p className="text-sm">Select a config file to preview</p>
+                  <p className="text-xs opacity-60">CLAUDE.md, AGENTS.md, and .claude/ files are supported</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

@@ -42,6 +42,8 @@ import type {
   IssueFileLink,
   FileHeatEntry,
   DirectoryHeatEntry,
+  FileTreeNode,
+  ProjectFileContent,
   TaskContext,
   RecurringIssue,
   RecurringPreview,
@@ -463,6 +465,8 @@ export const listFileLinks = (issueId: number) => invoke<IssueFileLink[]>("list_
 export const getFileHeatMap = (projectId: number, limit: number) => invoke<FileHeatEntry[]>("get_file_heat_map", { projectId, limit });
 export const getDirectoryHeatMap = (projectId: number, depth: number) => invoke<DirectoryHeatEntry[]>("get_directory_heat_map", { projectId, depth });
 export const getIssuesForFile = (filePath: string, projectId: number) => invoke<Issue[]>("get_issues_for_file", { filePath, projectId });
+export const listProjectFiles = (projectId: number) => invoke<FileTreeNode[]>("list_project_files", { projectId });
+export const readProjectFile = (projectId: number, filePath: string) => invoke<ProjectFileContent>("read_project_file", { projectId, filePath });
 
 // Diff Issues
 export const createIssueFromDiff = (input: {
