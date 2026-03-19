@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, History, MessageSquare, Activity, Star, GitBranch, GitPullRequest, GitCommitHorizontal, ExternalLink, CheckCircle2, XCircle, Clock, Loader2, Code, Link2, Unlink, ArrowRightLeft, Lightbulb, Zap, ChevronRight } from "lucide-react";
+import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, History, MessageSquare, Activity, Star, GitBranch, GitPullRequest, GitCommitHorizontal, ExternalLink, CheckCircle2, XCircle, Clock, Loader2, Code, Link2, Unlink, ArrowRightLeft, Lightbulb, Zap, ChevronRight, Check, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -77,7 +77,7 @@ export function IssueDetailPanel({
   projectId,
   statuses,
   members,
-  projectLabels: _projectLabels,
+  projectLabels,
   epics,
   milestones,
   onClose,
@@ -106,6 +106,7 @@ export function IssueDetailPanel({
   const [showTaskContractDialog, setShowTaskContractDialog] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showLabelPicker, setShowLabelPicker] = useState(false);
   const [activityLimit, setActivityLimit] = useState(50);
   const isSavingRef = useRef(false);
   const [activeTab, setActiveTab] = useState<"comments" | "history" | "activity">("comments");
@@ -190,6 +191,7 @@ export function IssueDetailPanel({
   // NOTE: must be declared before the early return to follow Rules of Hooks
   useEffect(() => {
     setShowDeleteConfirm(false);
+    setShowLabelPicker(false);
   }, [issueId]);
 
   if (!issue) return null;
@@ -468,16 +470,48 @@ export function IssueDetailPanel({
           </div>
 
           {/* Labels */}
-          <div className="flex items-start py-1.5 text-sm">
+          <div className="flex items-start py-1.5 text-sm relative">
             <span className="w-24 pt-0.5 text-[13px] text-muted-foreground/70">Labels</span>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1 items-center">
               {issue.labels.map(l => (
                 <span key={l.id} className="rounded-md px-2 py-0.5 text-[11px] font-medium" style={{ backgroundColor: l.color + "18", color: l.color }}>
                   {l.name}
                 </span>
               ))}
-              {issue.labels.length === 0 && <span className="text-[13px] text-muted-foreground/40">None</span>}
+              <button
+                onClick={() => setShowLabelPicker(!showLabelPicker)}
+                className="rounded-md p-0.5 hover:bg-muted text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
             </div>
+            {showLabelPicker && (
+              <div className="absolute left-24 top-full mt-1 z-50 min-w-[200px] rounded-lg border border-border bg-popover p-1.5 shadow-lg">
+                {projectLabels.length === 0 && (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">No labels available</p>
+                )}
+                {projectLabels.map(l => {
+                  const isSelected = issue.labels.some(il => il.id === l.id);
+                  return (
+                    <button
+                      key={l.id}
+                      onClick={async () => {
+                        const newLabelIds = isSelected
+                          ? issue.labels.filter(il => il.id !== l.id).map(il => il.id)
+                          : [...issue.labels.map(il => il.id), l.id];
+                        await api.setIssueLabels(issueId, newLabelIds);
+                        await loadIssue();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted transition-colors"
+                    >
+                      <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: l.color }} />
+                      <span className="flex-1 text-left">{l.name}</span>
+                      {isSelected && <Check className="h-3 w-3 text-primary" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Epic */}
