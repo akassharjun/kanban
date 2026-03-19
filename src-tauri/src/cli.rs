@@ -140,6 +140,14 @@ pub enum ProjectAction {
         description: Option<String>,
         #[arg(short, long)]
         status: Option<String>,
+        #[arg(long)]
+        path: Option<String>,
+        #[arg(long)]
+        icon: Option<String>,
+        #[arg(long)]
+        stale_days: Option<i64>,
+        #[arg(long)]
+        stale_close_status_id: Option<i64>,
     },
     /// Delete a project
     Delete { id: i64 },
@@ -196,6 +204,16 @@ pub enum IssueAction {
         assignee: Option<i64>,
         #[arg(short, long)]
         description: Option<String>,
+        #[arg(long)]
+        parent: Option<i64>,
+        #[arg(long)]
+        estimate: Option<f64>,
+        #[arg(long)]
+        due_date: Option<String>,
+        #[arg(long)]
+        epic: Option<i64>,
+        #[arg(long)]
+        milestone: Option<i64>,
     },
     /// Search issues
     Search {
@@ -1023,6 +1041,10 @@ async fn handle_project(
             name,
             description,
             status,
+            path,
+            icon,
+            stale_days,
+            stale_close_status_id,
         } => {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             if let Some(n) = &name {
@@ -1049,6 +1071,38 @@ async fn handle_project(
                     .execute(pool)
                     .await?;
             }
+            if let Some(path) = &path {
+                sqlx::query("UPDATE projects SET path = $1, updated_at = $2 WHERE id = $3")
+                    .bind(path)
+                    .bind(&now)
+                    .bind(id)
+                    .execute(pool)
+                    .await?;
+            }
+            if let Some(icon) = &icon {
+                sqlx::query("UPDATE projects SET icon = $1, updated_at = $2 WHERE id = $3")
+                    .bind(icon)
+                    .bind(&now)
+                    .bind(id)
+                    .execute(pool)
+                    .await?;
+            }
+            if let Some(sd) = stale_days {
+                sqlx::query("UPDATE projects SET stale_days = $1, updated_at = $2 WHERE id = $3")
+                    .bind(sd)
+                    .bind(&now)
+                    .bind(id)
+                    .execute(pool)
+                    .await?;
+            }
+            if let Some(scsi) = stale_close_status_id {
+                sqlx::query("UPDATE projects SET stale_close_status_id = $1, updated_at = $2 WHERE id = $3")
+                    .bind(scsi)
+                    .bind(&now)
+                    .bind(id)
+                    .execute(pool)
+                    .await?;
+            }
             let project = sqlx::query_as::<_, Project>("SELECT * FROM projects WHERE id = $1")
                 .bind(id)
                 .fetch_one(pool)
@@ -1061,11 +1115,18 @@ async fn handle_project(
             notify_change();
         }
         ProjectAction::Delete { id } => {
-            sqlx::query("DELETE FROM projects WHERE id = $1")
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            sqlx::query("UPDATE projects SET deleted_at = $1, updated_at = $2 WHERE id = $3")
+                .bind(&now)
+                .bind(&now)
                 .bind(id)
                 .execute(pool)
                 .await?;
-            println!("Deleted project {}", id);
+            if json {
+                println!("{{\"deleted\": true, \"id\": {}}}", id);
+            } else {
+                println!("Project {} archived (soft-deleted)", id);
+            }
             notify_change();
         }
     }
@@ -1204,6 +1265,11 @@ async fn handle_issue(
             priority,
             assignee,
             description,
+            parent,
+            estimate,
+            due_date,
+            epic,
+            milestone,
         } => {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let issue = sqlx::query_as::<_, Issue>("SELECT * FROM issues WHERE identifier = $1")
@@ -1245,6 +1311,48 @@ async fn handle_issue(
             if let Some(d) = &description {
                 sqlx::query("UPDATE issues SET description = $1, updated_at = $2 WHERE id = $3")
                     .bind(d)
+                    .bind(&now)
+                    .bind(issue.id)
+                    .execute(pool)
+                    .await?;
+            }
+            if let Some(par) = parent {
+                sqlx::query("UPDATE issues SET parent_id = $1, updated_at = $2 WHERE id = $3")
+                    .bind(par)
+                    .bind(&now)
+                    .bind(issue.id)
+                    .execute(pool)
+                    .await?;
+            }
+            if let Some(est) = estimate {
+                sqlx::query("UPDATE issues SET estimate = $1, updated_at = $2 WHERE id = $3")
+                    .bind(est)
+                    .bind(&now)
+                    .bind(issue.id)
+                    .execute(pool)
+                    .await?;
+            }
+            if let Some(dd) = &due_date {
+                sqlx::query("UPDATE issues SET due_date = $1, updated_at = $2 WHERE id = $3")
+                    .bind(dd)
+                    .bind(&now)
+                    .bind(issue.id)
+                    .execute(pool)
+                    .await?;
+            }
+            if let Some(e) = epic {
+                let epic_val = if e <= 0 { None } else { Some(e) };
+                sqlx::query("UPDATE issues SET epic_id = $1, updated_at = $2 WHERE id = $3")
+                    .bind(epic_val)
+                    .bind(&now)
+                    .bind(issue.id)
+                    .execute(pool)
+                    .await?;
+            }
+            if let Some(m) = milestone {
+                let ms_val = if m <= 0 { None } else { Some(m) };
+                sqlx::query("UPDATE issues SET milestone_id = $1, updated_at = $2 WHERE id = $3")
+                    .bind(ms_val)
                     .bind(&now)
                     .bind(issue.id)
                     .execute(pool)
@@ -1704,11 +1812,38 @@ async fn handle_member(
             notify_change();
         }
         MemberAction::Delete { id } => {
+            // Check if member is referenced by agents
+            let agent_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agents WHERE member_id = $1")
+                .bind(id)
+                .fetch_one(pool)
+                .await
+                .unwrap_or(0);
+            if agent_count > 0 {
+                if json {
+                    println!("{{\"error\": \"Cannot delete member: referenced by {} agent(s)\"}}", agent_count);
+                } else {
+                    println!("Cannot delete member: referenced by {} agent(s). Unlink agents first.", agent_count);
+                }
+                return Ok(());
+            }
+            // Nullify FK references in issues and comments
+            sqlx::query("UPDATE issues SET assignee_id = NULL WHERE assignee_id = $1")
+                .bind(id)
+                .execute(pool)
+                .await?;
+            sqlx::query("UPDATE comments SET member_id = NULL WHERE member_id = $1")
+                .bind(id)
+                .execute(pool)
+                .await?;
             sqlx::query("DELETE FROM members WHERE id = $1")
                 .bind(id)
                 .execute(pool)
                 .await?;
-            println!("Deleted member {}", id);
+            if json {
+                println!("{{\"deleted\": true, \"id\": {}}}", id);
+            } else {
+                println!("Member {} deleted", id);
+            }
             notify_change();
         }
     }
