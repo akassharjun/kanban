@@ -8,8 +8,9 @@ import type { Page } from "@playwright/test";
 export async function navigateTo(page: Page, target: "project" | "members" | "settings" | "agents") {
   switch (target) {
     case "project":
-      // Click the first project in sidebar
-      await page.getByText("Kanban Core").click();
+      // Click the first project button in the sidebar Projects section
+      // The button may have an icon/emoji prefix, so use a non-anchored match
+      await page.locator("button", { hasText: /Test Project|Kanban Core/ }).first().click();
       break;
     case "members":
       await page.locator("button", { hasText: "Members" }).click();
@@ -21,6 +22,24 @@ export async function navigateTo(page: Page, target: "project" | "members" | "se
       await page.locator("button", { hasText: "Agent Ops" }).click();
       break;
   }
+}
+
+/**
+ * Create a project via the New Project dialog.
+ * Assumes the dialog trigger is accessible (either onboarding button or sidebar "New project").
+ */
+export async function createProject(
+  page: Page,
+  opts: { name: string; prefix: string; path: string }
+) {
+  // Fill dialog fields
+  await page.getByPlaceholder("My Project").fill(opts.name);
+  await page.getByPlaceholder("PRJ").clear();
+  await page.getByPlaceholder("PRJ").fill(opts.prefix.toUpperCase());
+  await page.getByPlaceholder("/path/to/your/project").fill(opts.path);
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  // Wait for board to appear
+  await page.locator("button", { hasText: /^Backlog/ }).waitFor({ state: "visible", timeout: 15_000 });
 }
 
 /** Switch the board view mode using keyboard shortcuts (1=board, 2=list, 3=tree).

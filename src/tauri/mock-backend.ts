@@ -369,10 +369,12 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     // Custom Fields
     case "list_custom_fields": {
       const pid = args?.projectId;
-      if (pid === 1) return [
-        { id: 1, project_id: 1, name: "Sprint", field_type: "select", options: '["Sprint 1","Sprint 2","Sprint 3"]', required: false, position: 0 },
-        { id: 2, project_id: 1, name: "Complexity", field_type: "select", options: '["Simple","Medium","Complex"]', required: false, position: 1 },
-        { id: 3, project_id: 1, name: "Notes", field_type: "text", options: null, required: false, position: 2 },
+      // Return default custom fields for any project that exists
+      const proj = projects.find(p => p.id === pid);
+      if (proj) return [
+        { id: 1, project_id: pid, name: "Sprint", field_type: "select", options: '["Sprint 1","Sprint 2","Sprint 3"]', required: false, position: 0 },
+        { id: 2, project_id: pid, name: "Complexity", field_type: "select", options: '["Simple","Medium","Complex"]', required: false, position: 1 },
+        { id: 3, project_id: pid, name: "Notes", field_type: "text", options: null, required: false, position: 2 },
       ];
       return [];
     }

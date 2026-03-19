@@ -1,5 +1,5 @@
 import { test, expect, appReady } from "../fixtures/test-base";
-import { navigateTo, switchView } from "../helpers/actions";
+import { navigateTo, switchView, createIssue } from "../helpers/actions";
 
 test.describe("Phase 1: Navigation", () => {
   test.beforeEach(async ({ page }) => {
@@ -7,16 +7,16 @@ test.describe("Phase 1: Navigation", () => {
   });
 
   test("app renders with sidebar and project name", async ({ page }) => {
-    // "Kanban" appears exactly in the sidebar header; use exact to avoid matching "Kanban Core"
+    // "Kanban" appears in the sidebar header
     await expect(page.getByText("Kanban", { exact: true })).toBeVisible();
-    // "Kanban Core" appears in both the sidebar button and the project heading; .first() is fine
-    await expect(page.getByText("Kanban Core").first()).toBeVisible();
+    // The created project "Test Project" appears in the sidebar button
+    await expect(page.locator("button", { hasText: /Test Project/ }).first()).toBeVisible();
   });
 
   test("navigate to Members page", async ({ page }) => {
     await navigateTo(page, "members");
-    // Use exact to avoid matching "arjun@kanban.dev"
-    await expect(page.getByText("Arjun", { exact: true })).toBeVisible();
+    // "Arjun" is the default member in the mock (display_name)
+    await expect(page.getByText("Arjun", { exact: true }).first()).toBeVisible();
   });
 
   test("navigate to Settings page", async ({ page }) => {
@@ -26,34 +26,34 @@ test.describe("Phase 1: Navigation", () => {
 
   test("navigate to Agents page", async ({ page }) => {
     await navigateTo(page, "agents");
-    // Match the "Agent Ops" heading / section title — use exact to avoid ambiguity
     await expect(page.getByRole("heading", { name: "Agents" })).toBeVisible();
   });
 
-  test("switch to list view", async ({ page }) => {
+  test("switch to list view with created issues", async ({ page }) => {
+    // Create an issue so list view has something to show
+    await createIssue(page, { title: "Nav List View Issue" });
     await switchView(page, "list");
-    // Use exact to avoid matching KAN-10, KAN-11, KAN-12
-    await expect(page.getByText("KAN-1", { exact: true })).toBeVisible();
+    // In list view, the issue identifier should be visible (TST-1)
+    await expect(page.getByText("TST-", { exact: false }).first()).toBeVisible({ timeout: 5_000 });
   });
 
-  test("switch to tree view", async ({ page }) => {
+  test("switch to tree view with created issues", async ({ page }) => {
+    await createIssue(page, { title: "Nav Tree View Issue" });
     await switchView(page, "tree");
-    // Use exact to avoid matching KAN-10, KAN-11, KAN-12
-    await expect(page.getByText("KAN-1", { exact: true })).toBeVisible();
+    // Tree view shows issue identifiers
+    await expect(page.getByText("TST-", { exact: false }).first()).toBeVisible({ timeout: 5_000 });
   });
 
   test("switch back to board view", async ({ page }) => {
     await switchView(page, "list");
     await switchView(page, "board");
-    // Match the "In Progress" column header button (not a <select> option)
+    // Board view shows status column buttons
     await expect(page.getByRole("button", { name: /In Progress/ })).toBeVisible();
-    await expect(page.getByText("KAN-6", { exact: true }).first()).toBeVisible();
   });
 
   test("Cmd+B toggles sidebar", async ({ page }) => {
-    // Use "Kanban" exact to match only the sidebar app title, not "Kanban Core"
     await expect(page.getByText("Kanban", { exact: true })).toBeVisible();
-    // On Linux, Meta maps to the Super/Windows key; use Control+b which the app also accepts
+    // On Linux, use Control+b
     await page.keyboard.press("Control+b");
     await expect(page.getByText("Projects")).toBeHidden();
     await page.keyboard.press("Control+b");

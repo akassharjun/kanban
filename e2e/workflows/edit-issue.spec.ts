@@ -1,14 +1,18 @@
 import { test, expect, appReady } from "../fixtures/test-base";
-import { openIssue } from "../helpers/actions";
+import { createIssue } from "../helpers/actions";
 
 test.describe("Workflow: Edit Issue", () => {
   test.beforeEach(async ({ page }) => {
     await appReady(page);
   });
 
-  test("full edit issue workflow on KAN-1", async ({ page }) => {
-    // KAN-1: Backlog, priority "low", no assignee, has "ui" label
-    await openIssue(page, "KAN-1");
+  test("full edit issue workflow", async ({ page }) => {
+    // Create a fresh issue to edit
+    await createIssue(page, { title: "Issue to Edit" });
+
+    // Open the issue detail panel
+    await page.getByText("Issue to Edit").first().click();
+    await page.locator('[title="Close (Esc)"]').waitFor({ state: "visible", timeout: 8_000 });
 
     const panel = page.locator(".rounded-xl.border").first();
 
@@ -38,7 +42,6 @@ test.describe("Workflow: Edit Issue", () => {
     await expect(panel.locator(".prose.cursor-pointer")).toContainText("New description text");
 
     // --- Change status: Backlog -> In Progress ---
-    // KAN-1 starts in Backlog
     const statusTrigger = panel.locator("button", { hasText: "Backlog" }).first();
     await statusTrigger.waitFor({ state: "visible" });
     await statusTrigger.click();
@@ -50,8 +53,8 @@ test.describe("Workflow: Edit Issue", () => {
     // Verify status shows "In Progress"
     await expect(panel.locator("button", { hasText: "In Progress" }).first()).toBeVisible();
 
-    // --- Change priority: low -> High ---
-    const priorityTrigger = panel.locator("button", { hasText: /low/i }).first();
+    // --- Change priority: None -> High ---
+    const priorityTrigger = panel.locator("button", { hasText: /none/i }).first();
     await priorityTrigger.waitFor({ state: "visible" });
     await priorityTrigger.click();
 
@@ -62,34 +65,30 @@ test.describe("Workflow: Edit Issue", () => {
     // Verify priority shows "High"
     await expect(panel.locator("button", { hasText: /^High$/i }).first()).toBeVisible();
 
-    // --- Assign member: Unassigned -> Claude ---
+    // --- Assign member: Unassigned -> Arjun ---
     const assigneeTrigger = panel.locator("button", { hasText: "Unassigned" }).first();
     await assigneeTrigger.waitFor({ state: "visible" });
     await assigneeTrigger.click();
 
-    const claudeOption = panel.locator("button", { hasText: "Claude" });
-    await claudeOption.first().waitFor({ state: "visible" });
-    await claudeOption.first().click();
+    const arjunOption = panel.locator("button", { hasText: "Arjun" });
+    await arjunOption.first().waitFor({ state: "visible" });
+    await arjunOption.first().click();
 
-    // Verify shows "Claude"
-    await expect(panel.locator("button", { hasText: "Claude" }).first()).toBeVisible();
+    // Verify shows "Arjun"
+    await expect(panel.locator("button", { hasText: "Arjun" }).first()).toBeVisible();
 
     // --- Change due date ---
     const dateInput = panel.locator('input[type="date"]');
     await dateInput.waitFor({ state: "visible" });
     await dateInput.fill("2026-04-15");
-    // Trigger change event by blurring
     await dateInput.blur();
-
-    // Verify date value updated
     await expect(dateInput).toHaveValue("2026-04-15");
 
     // --- Close panel and verify card moved to "In Progress" column ---
     await page.locator('[title="Close (Esc)"]').click();
     await page.locator('[title="Close (Esc)"]').waitFor({ state: "hidden" });
 
-    // The card "Updated Title" (formerly KAN-1) should now appear in In Progress column area
-    // Verify the card text is visible on the board
+    // The card "Updated Title" should now appear in In Progress column area
     await expect(page.getByText("Updated Title").first()).toBeVisible({ timeout: 10_000 });
   });
 });

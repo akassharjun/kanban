@@ -1,56 +1,72 @@
 import { test, expect, appReady } from "../fixtures/test-base";
-import { openIssue } from "../helpers/actions";
+import { createIssue } from "../helpers/actions";
 
 test.describe("Workflow: Issue Code Context", () => {
   test.beforeEach(async ({ page }) => {
     await appReady(page);
-    // Ensure we are on the board view for the default project (Kanban Core)
     await page.locator("button", { hasText: /^Backlog/ }).waitFor({ state: "visible" });
   });
 
-  test("KAN-6 issue detail shows Code Context section with branch", async ({ page }) => {
-    await openIssue(page, "KAN-6");
+  test("new issue detail shows Git section", async ({ page }) => {
+    await createIssue(page, { title: "Git Section Test Issue" });
+    await page.getByText("Git Section Test Issue").first().click();
+    await page.locator('[title="Close (Esc)"]').waitFor({ state: "visible", timeout: 8_000 });
 
     const panel = page.locator(".rounded-xl.border").first();
 
-    // Scroll down to the Code Context section
-    // The section only renders when issueCommits or issueBranches is non-empty
-    // Mock returns branch: kan-6/fix-drag-drop and commit: feat: review workflow for KAN-6
-    await panel.getByText("Code Context").waitFor({ state: "visible", timeout: 8_000 });
-    await expect(panel.getByText("Code Context")).toBeVisible();
-
-    // The branch 'kan-6/fix-drag-drop' should be shown
-    await expect(panel.getByText("kan-6/fix-drag-drop")).toBeVisible();
+    // Git section should be visible (shows "Git (N)" heading)
+    await expect(panel.locator("h3").filter({ hasText: /^Git \(/ })).toBeVisible({ timeout: 8_000 });
   });
 
-  test("KAN-6 issue detail shows commit referencing KAN-6 in Code Context", async ({ page }) => {
-    await openIssue(page, "KAN-6");
+  test("Create Branch button adds a git link to the panel", async ({ page }) => {
+    await createIssue(page, { title: "Create Branch Test Issue" });
+    await page.getByText("Create Branch Test Issue").first().click();
+    await page.locator('[title="Close (Esc)"]').waitFor({ state: "visible", timeout: 8_000 });
 
     const panel = page.locator(".rounded-xl.border").first();
-    await panel.getByText("Code Context").waitFor({ state: "visible", timeout: 8_000 });
 
-    // The commit message: "feat: review workflow for KAN-6"
-    await expect(panel.getByText(/review workflow for KAN-6/)).toBeVisible();
+    // Read the initial Git section count
+    const gitHeading = panel.locator("h3").filter({ hasText: /^Git \(/ });
+    await gitHeading.waitFor({ state: "visible" });
+    const beforeText = await gitHeading.textContent();
+    const beforeCount = parseInt((beforeText?.match(/\((\d+)\)/) ?? ["", "0"])[1]);
+
+    // Click "Create Branch"
+    await panel.locator("button", { hasText: "Create Branch" }).click();
+
+    // Git count should increment
+    await expect(async () => {
+      const afterText = await panel.locator("h3").filter({ hasText: /^Git \(/ }).textContent();
+      const afterCount = parseInt((afterText?.match(/\((\d+)\)/) ?? ["", "0"])[1]);
+      expect(afterCount).toBeGreaterThan(beforeCount);
+    }).toPass({ timeout: 8_000 });
   });
 
-  test("KAN-3 issue detail shows branch 'kan-3/add-keyboard-shortcuts' in Code Context", async ({ page }) => {
-    await openIssue(page, "KAN-3");
+  test("created branch name follows issue-identifier/* pattern", async ({ page }) => {
+    await createIssue(page, { title: "Branch Pattern Issue" });
+    await page.getByText("Branch Pattern Issue").first().click();
+    await page.locator('[title="Close (Esc)"]').waitFor({ state: "visible", timeout: 8_000 });
 
     const panel = page.locator(".rounded-xl.border").first();
-    await panel.getByText("Code Context").waitFor({ state: "visible", timeout: 8_000 });
+    await panel.locator("button", { hasText: "Create Branch" }).waitFor({ state: "visible" });
+    await panel.locator("button", { hasText: "Create Branch" }).click();
 
-    // Branch for KAN-3
-    await expect(panel.getByText("kan-3/add-keyboard-shortcuts")).toBeVisible();
+    // Branch name should follow tst-N/* pattern (prefix is TST → tst-)
+    await expect(panel.getByText(/tst-\d+\//i).first()).toBeVisible({ timeout: 8_000 });
   });
 
-  test("KAN-1 issue detail does NOT show Code Context section", async ({ page }) => {
-    await openIssue(page, "KAN-1");
+  test("issue with no commits does NOT show Code Context section", async ({ page }) => {
+    await createIssue(page, { title: "No Code Context Issue" });
+    await page.getByText("No Code Context Issue").first().click();
+    await page.locator('[title="Close (Esc)"]').waitFor({ state: "visible", timeout: 8_000 });
 
     const panel = page.locator(".rounded-xl.border").first();
+
     // Wait a moment for async data to load
     await page.waitForTimeout(1500);
 
-    // Code Context section should NOT be present (KAN-1 has no commits/branches in mock data)
-    await expect(panel.getByText("Code Context")).not.toBeVisible();
+    // Code Context section should NOT be present (no commits/branches for new TST issues)
+    // Use exact heading match to avoid matching the issue title which contains "Code Context"
+    await expect(panel.getByRole("heading", { name: "Code Context", exact: true })).not.toBeVisible();
   });
 });
