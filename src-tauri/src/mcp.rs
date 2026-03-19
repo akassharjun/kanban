@@ -1690,7 +1690,7 @@ async fn handle_tool_call(
 
             // Sync issue status
             let category = orchestration::state_machine::task_state_to_status_category(
-                orchestration::state_machine::TaskState::from_str(new_state).unwrap(),
+                orchestration::state_machine::TaskState::from_str(new_state).map_err(|e| e.to_string())?,
             );
             sqlx::query(
                 "UPDATE issues SET status_id = (
@@ -1843,7 +1843,7 @@ async fn handle_tool_call(
 
             // Sync issue status
             let category = orchestration::state_machine::task_state_to_status_category(
-                orchestration::state_machine::TaskState::from_str(new_state).unwrap(),
+                orchestration::state_machine::TaskState::from_str(new_state).map_err(|e| e.to_string())?,
             );
             sqlx::query(
                 "UPDATE issues SET status_id = (
