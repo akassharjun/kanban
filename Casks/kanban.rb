@@ -4,9 +4,9 @@ cask "kanban" do
 
   url "https://github.com/akassharjun/kanban/releases/download/v#{version}/Kanban_#{version}_#{arch}.dmg"
   if Hardware::CPU.arm?
-    sha256 "45e48e585fcd62040a538314a819a773a970fc6614cc8bb8b6f35faf0e582125"
+    sha256 "92fb5931ee6132f7c96936d9153c3d90d369575d74195966081d16683a8b54a7"
   else
-    sha256 "7f383e3c9e4f75602a91a9b521571bd150648bd003bad85548a16a32daebd5fd"
+    sha256 "96bbb2da149099b4c61b58455c96e365f33a99338e18b68fe234b0a6888cf294"
   end
 
   name "Kanban"
