@@ -673,4 +673,6 @@ export const getGitStatus = (projectId: number) => invoke<GitStatus>("get_git_st
 export const listGitCommits = (projectId: number, limit?: number) => invoke<GitCommit[]>("list_git_commits", { projectId, limit });
 export const listGitBranches = (projectId: number) => invoke<GitBranch[]>("list_git_branches", { projectId });
 export const listGitWorktrees = (projectId: number) => invoke<GitWorktree[]>("list_git_worktrees", { projectId });
+export const getIssueCommits = (projectId: number, issueIdentifier: string) => invoke<GitCommit[]>("get_issue_commits", { projectId, issueIdentifier });
+export const getIssueBranches = (projectId: number, issueIdentifier: string) => invoke<GitBranch[]>("get_issue_branches", { projectId, issueIdentifier });
 export const getSlaDashboard = (projectId: number) => invoke<SlaDashboard>("get_sla_dashboard", { projectId });

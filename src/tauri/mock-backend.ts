@@ -1527,6 +1527,27 @@ Agents must send a heartbeat every 30 seconds or they will be marked offline.
       ] as GitBranch[];
     }
 
+    case "get_issue_commits": {
+      const ident = ((args?.issueIdentifier ?? "") as string).toUpperCase();
+      const allCommits = [
+        { hash: "5429658b", short_hash: "5429658", author: "Claude", message: "fix: resolve TypeScript errors for KAN-9", timestamp: ago(120), issue_refs: ["KAN-9"] },
+        { hash: "1bb390cb", short_hash: "1bb390c", author: "Claude", message: "feat: review workflow in issue detail panel (KAN-7)", timestamp: ago(180), issue_refs: ["KAN-7"] },
+        { hash: "6cc936da", short_hash: "6cc936d", author: "Claude", message: "feat: review workflow for KAN-6", timestamp: ago(420), issue_refs: ["KAN-6"] },
+        { hash: "abc12345", short_hash: "abc1234", author: "Arjun", message: "wip: keyboard shortcuts panel for KAN-3", timestamp: ago(500), issue_refs: ["KAN-3"] },
+      ] as GitCommit[];
+      return allCommits.filter(c => c.issue_refs.includes(ident));
+    }
+
+    case "get_issue_branches": {
+      const ident = ((args?.issueIdentifier ?? "") as string).toLowerCase();
+      const allBranches = [
+        { name: "kan-3/add-keyboard-shortcuts", is_current: false, last_commit_hash: "abc1234", last_commit_message: "wip: shortcuts panel", issue_ref: "KAN-3" },
+        { name: "kan-6/fix-drag-drop", is_current: false, last_commit_hash: "def5678", last_commit_message: "fix: position NaN", issue_ref: "KAN-6" },
+        { name: "kan-9/implement-undo-redo", is_current: false, last_commit_hash: "ghi9012", last_commit_message: "feat: undo stack", issue_ref: "KAN-9" },
+      ] as GitBranch[];
+      return allBranches.filter(b => b.issue_ref?.toUpperCase() === ident.toUpperCase());
+    }
+
     case "list_git_worktrees": {
       return [
         { path: "/home/user/kanban", branch: "dev", head_hash: "0c138a3", is_main: true, agent_id: null, agent_name: null, task_identifier: null },

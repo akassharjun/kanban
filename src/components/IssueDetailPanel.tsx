@@ -111,6 +111,8 @@ export function IssueDetailPanel({
   const isSavingRef = useRef(false);
   const [activeTab, setActiveTab] = useState<"comments" | "history" | "activity">("comments");
   const [gitLinks, setGitLinks] = useState<GitLink[]>([]);
+  const [issueCommits, setIssueCommits] = useState<import("@/types").GitCommit[]>([]);
+  const [issueBranches, setIssueBranches] = useState<import("@/types").GitBranch[]>([]);
   const [showGitLinkForm, setShowGitLinkForm] = useState<"branch" | "pr" | "commit" | null>(null);
   const [gitLinkRefName, setGitLinkRefName] = useState("");
   const [gitLinkUrl, setGitLinkUrl] = useState("");
@@ -165,6 +167,18 @@ export function IssueDetailPanel({
         setTaskLearnings(learnings);
       } catch {
         // Non-critical - don't block issue load
+      }
+      // Load per-issue code context (commits + branches referencing this issue)
+      try {
+        const pid = projectId ?? data.project_id;
+        const [iCommits, iBranches] = await Promise.all([
+          api.getIssueCommits(pid, data.identifier),
+          api.getIssueBranches(pid, data.identifier),
+        ]);
+        setIssueCommits(iCommits);
+        setIssueBranches(iBranches);
+      } catch {
+        // Non-critical
       }
       // Load task contract if exists
       try {
@@ -993,6 +1007,38 @@ export function IssueDetailPanel({
             </div>
           )}
         </div>
+
+        {/* Code Context — commits and branches that reference this issue */}
+        {(issueCommits.length > 0 || issueBranches.length > 0) && (
+          <div className="mt-6 border-t border-border/50 px-5 pt-4">
+            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+              Code Context
+            </h3>
+            {issueBranches.length > 0 && (
+              <div className="mb-3 space-y-0.5">
+                {issueBranches.map(branch => (
+                  <div key={branch.name} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-muted transition-colors">
+                    <GitBranch className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                    <span className="font-mono text-xs truncate flex-1 text-foreground/80">{branch.name}</span>
+                    <span className="text-[11px] text-muted-foreground/40 truncate max-w-[160px]">{branch.last_commit_message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {issueCommits.length > 0 && (
+              <div className="space-y-0.5">
+                {issueCommits.map(commit => (
+                  <div key={commit.hash} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-muted transition-colors">
+                    <GitCommitHorizontal className="h-3.5 w-3.5 text-muted-foreground/60 flex-shrink-0" />
+                    <span className="font-mono text-[11px] text-muted-foreground/50 flex-shrink-0">{commit.short_hash}</span>
+                    <span className="text-xs truncate flex-1 text-foreground/80">{commit.message}</span>
+                    <span className="text-[11px] text-muted-foreground/40 flex-shrink-0">{commit.author}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Decompose preview */}
         {decomposeTasks && (
