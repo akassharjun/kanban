@@ -32,6 +32,7 @@ interface IssueDetailPanelProps {
   onToggleStar?: (issueId: number) => void;
   onRecordView?: (issueId: number) => void;
   onShowDependencies?: (issueId: number) => void;
+  onCreateSubIssue?: (parentId: number) => void;
 }
 
 const priorities = [
@@ -89,6 +90,7 @@ export function IssueDetailPanel({
   onToggleStar,
   onRecordView,
   onShowDependencies,
+  onCreateSubIssue,
 }: IssueDetailPanelProps) {
   const { showToast } = useToast();
   const [issue, setIssue] = useState<IssueWithLabels | null>(null);
@@ -132,6 +134,8 @@ export function IssueDetailPanel({
   const [wsjfTc, setWsjfTc] = useState(5);
   const [wsjfRr, setWsjfRr] = useState(5);
   const [wsjfSize, setWsjfSize] = useState(5);
+  const [customFields, setCustomFields] = useState<import("@/types").CustomField[]>([]);
+  const [customValues, setCustomValues] = useState<import("@/types").CustomFieldValue[]>([]);
 
   const loadIssue = useCallback(async () => {
     // Skip refresh while a save is in-flight to prevent overwriting user edits
@@ -187,10 +191,22 @@ export function IssueDetailPanel({
       } catch {
         setTaskContract(null);
       }
+      // Load custom fields
+      try {
+        const pid = projectId ?? data.project_id;
+        const [fields, values] = await Promise.all([
+          api.listCustomFields(pid),
+          api.getIssueCustomValues(issueId),
+        ]);
+        setCustomFields(fields);
+        setCustomValues(values);
+      } catch {
+        // Non-critical
+      }
     } catch (e) {
       console.error("Failed to load issue", e);
     }
-  }, [issueId]);
+  }, [issueId, projectId]);
 
   useEffect(() => { loadIssue(); }, [loadIssue]);
 
@@ -630,23 +646,74 @@ export function IssueDetailPanel({
             />
           </div>
 
-          {/* Estimate */}
-          <div className="flex items-center py-1.5 text-sm">
-            <span className="w-24 text-[13px] text-muted-foreground/70">Estimate</span>
-            <input
-              type="number"
-              min="0"
-              value={issue.estimate ?? ""}
-              onChange={async (e) => {
-                const val = e.target.value === "" ? -1 : parseFloat(e.target.value);
-                await onUpdate(issueId, { estimate: val });
-                await loadIssue();
-              }}
-              placeholder="Points"
-              className="w-20 rounded-md bg-transparent px-2 py-1 text-[13px] outline-none hover:bg-muted transition-colors"
-            />
-          </div>
         </div>
+
+        {/* Custom Fields */}
+        {customFields.length > 0 && (
+          <div className="mt-4 border-t border-border/50 px-5 pt-3">
+            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">Custom Fields</h3>
+            <div className="space-y-0.5">
+              {customFields.map(field => {
+                const cv = customValues.find(v => v.field_id === field.id);
+                const currentValue = cv?.value ?? "";
+                const handleChange = async (val: string | null) => {
+                  await api.setIssueCustomValue(issueId, field.id, val);
+                  const updated = await api.getIssueCustomValues(issueId);
+                  setCustomValues(updated);
+                };
+                if (field.field_type === "select") {
+                  let options: string[] = [];
+                  try { options = field.options ? JSON.parse(field.options) : []; } catch { options = []; }
+                  return (
+                    <div key={field.id} className="flex items-center py-1.5 text-sm">
+                      <span className="w-24 text-[13px] text-muted-foreground/70">{field.name}</span>
+                      <select
+                        value={currentValue}
+                        onChange={async (e) => handleChange(e.target.value || null)}
+                        className="rounded-md bg-transparent px-2 py-1 text-[13px] outline-none hover:bg-muted transition-colors cursor-pointer"
+                      >
+                        <option value="">— None —</option>
+                        {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </div>
+                  );
+                }
+                if (field.field_type === "number") {
+                  return (
+                    <div key={field.id} className="flex items-center py-1.5 text-sm">
+                      <span className="w-24 text-[13px] text-muted-foreground/70">{field.name}</span>
+                      <input
+                        type="number"
+                        value={currentValue}
+                        onChange={async (e) => handleChange(e.target.value || null)}
+                        placeholder="—"
+                        className="w-20 rounded-md bg-transparent px-2 py-1 text-[13px] outline-none hover:bg-muted transition-colors"
+                      />
+                    </div>
+                  );
+                }
+                // text (default)
+                return (
+                  <div key={field.id} className="flex items-center py-1.5 text-sm">
+                    <span className="w-24 text-[13px] text-muted-foreground/70">{field.name}</span>
+                    <input
+                      type="text"
+                      value={currentValue}
+                      onChange={(e) => setCustomValues(prev => {
+                        const next = prev.filter(v => v.field_id !== field.id);
+                        if (e.target.value) next.push({ id: cv?.id ?? 0, issue_id: issueId, field_id: field.id, value: e.target.value });
+                        return next;
+                      })}
+                      onBlur={async (e) => handleChange(e.target.value || null)}
+                      placeholder="—"
+                      className="flex-1 rounded-md bg-transparent px-2 py-1 text-[13px] outline-none hover:bg-muted focus:bg-muted transition-colors"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* WSJF Scoring */}
         <div className="mt-4 border-t border-border/50 px-5 pt-3">
@@ -1080,14 +1147,26 @@ export function IssueDetailPanel({
         )}
 
         {/* Sub-issues */}
-        {subIssues.length > 0 && (
-          <div className="mt-6 border-t border-border/50 px-5 pt-4">
-            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-              Sub-issues ({subIssues.filter(s => {
+        <div className="mt-6 border-t border-border/50 px-5 pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+              Sub-issues{subIssues.length > 0 && ` (${subIssues.filter(s => {
                 const st = statuses.find(st2 => st2.id === s.status_id);
                 return st?.category === "completed" || st?.category === "discarded";
-              }).length}/{subIssues.length})
+              }).length}/${subIssues.length})`}
             </h3>
+            {onCreateSubIssue && (
+              <button
+                onClick={() => onCreateSubIssue(issueId)}
+                className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                title="Create sub-issue"
+              >
+                <Plus className="h-3 w-3" />
+                Add sub-issue
+              </button>
+            )}
+          </div>
+          {subIssues.length > 0 && (
             <div className="space-y-0.5">
               {subIssues.map(sub => {
                 const subStatus = statuses.find(s => s.id === sub.status_id);
@@ -1104,8 +1183,8 @@ export function IssueDetailPanel({
                 );
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Linked Files */}
         <div className="mt-6 border-t border-border/50 px-5 pt-4">

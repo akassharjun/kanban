@@ -57,6 +57,7 @@ function App() {
   const [notificationCount, setNotificationCount] = useState(0);
   const [templates, setTemplates] = useState<IssueTemplate[]>([]);
   const [createIssueStatusId, setCreateIssueStatusId] = useState<number | undefined>();
+  const [createIssueParentId, setCreateIssueParentId] = useState<number | undefined>();
   const [filters, setFilters] = useState<Filters>({});
   const [replayIdentifier, setReplayIdentifier] = useState<string | null>(null);
   const [showDepGraph, setShowDepGraph] = useState(false);
@@ -182,7 +183,7 @@ function App() {
       if (e.key === "Escape") {
         if (selectedIssueId) setSelectedIssueId(null);
         else if (showSearch) setShowSearch(false);
-        else if (showCreateIssue) setShowCreateIssue(false);
+        else if (showCreateIssue) { setShowCreateIssue(false); setCreateIssueParentId(undefined); }
         else if (showCreateProject) setShowCreateProject(false);
         else if (showNotifications) setShowNotifications(false);
       }
@@ -503,6 +504,7 @@ function App() {
           onToggleStar={toggleStar}
           onRecordView={handleRecordView}
           onShowDependencies={(issueId) => { setDepGraphFocusId(issueId); setShowDepGraph(true); }}
+          onCreateSubIssue={(parentId) => { setCreateIssueParentId(parentId); setCreateIssueStatusId(undefined); setShowCreateIssue(true); }}
         />
       )}
 
@@ -524,7 +526,8 @@ function App() {
           milestones={milestones}
           templates={templates}
           defaultStatusId={createIssueStatusId || statuses.find(s => s.category === "unstarted")?.id}
-          onClose={() => setShowCreateIssue(false)}
+          parentId={createIssueParentId}
+          onClose={() => { setShowCreateIssue(false); setCreateIssueParentId(undefined); }}
           onCreate={async (input) => { const result = await createIssue(input); showToast("Issue created"); return result; }}
         />
       )}

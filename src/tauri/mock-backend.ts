@@ -155,6 +155,8 @@ const issueLabels: Record<number, number[]> = {
   14: [6, 7],   // agent, orchestration
 };
 
+const customFieldValues: Record<number, { id: number; issue_id: number; field_id: number; value: string | null }[]> = {};
+
 const comments: Record<number, Comment[]> = {
   6: [
     { id: 1, issue_id: 6, member_id: 2, content: "Reproducing this when you drop an issue below the last item in a column. The `nextPosition` becomes undefined.", created_at: ago(100), updated_at: ago(100) },
@@ -613,9 +615,25 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "comment_count": return (comments[args?.issueId] ?? []).length;
 
     // Custom Fields
-    case "list_custom_fields": return [];
-    case "get_issue_custom_values": return [];
-    case "set_issue_custom_value": return;
+    case "list_custom_fields": {
+      const pid = args?.projectId;
+      if (pid === 1) return [
+        { id: 1, project_id: 1, name: "Sprint", field_type: "select", options: '["Sprint 1","Sprint 2","Sprint 3"]', required: false, position: 0 },
+        { id: 2, project_id: 1, name: "Complexity", field_type: "select", options: '["Simple","Medium","Complex"]', required: false, position: 1 },
+        { id: 3, project_id: 1, name: "Notes", field_type: "text", options: null, required: false, position: 2 },
+      ];
+      return [];
+    }
+    case "get_issue_custom_values": return customFieldValues[args?.issueId] ?? [];
+    case "set_issue_custom_value": {
+      const iid = args?.issueId as number;
+      const fid = args?.fieldId as number;
+      const val = args?.value as string | null;
+      if (!customFieldValues[iid]) customFieldValues[iid] = [];
+      const existing = customFieldValues[iid].find((v: { field_id: number }) => v.field_id === fid);
+      if (existing) { existing.value = val; } else { customFieldValues[iid].push({ id: id(), issue_id: iid, field_id: fid, value: val }); }
+      return;
+    }
 
     // Agents
     case "list_agents": return [...agents];
