@@ -62,8 +62,8 @@ export function PipelinesView({ projectId, projectName: _projectName, issues }: 
         const r = await api.listPipelineRuns(selectedPipeline.id);
         setRuns(r);
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      console.error("PipelinesView refresh failed:", e);
     }
   }, [projectId, selectedPipeline]);
 
@@ -78,7 +78,7 @@ export function PipelinesView({ projectId, projectName: _projectName, issues }: 
 
   useEffect(() => {
     if (selectedPipeline) {
-      api.listPipelineRuns(selectedPipeline.id).then(setRuns).catch(() => {});
+      api.listPipelineRuns(selectedPipeline.id).then(setRuns).catch((e) => console.error("listPipelineRuns failed:", e));
     } else {
       setRuns([]);
     }

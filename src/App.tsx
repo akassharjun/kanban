@@ -102,13 +102,13 @@ function App() {
   // Load templates when project changes
   useEffect(() => {
     if (selectedProjectId) {
-      api.listTemplates(selectedProjectId).then(setTemplates).catch(() => {});
+      api.listTemplates(selectedProjectId).then(setTemplates).catch((e) => console.error("listTemplates failed:", e));
     }
   }, [selectedProjectId]);
 
   // Poll notification count
   useEffect(() => {
-    const poll = () => { api.unreadNotificationCount().then(setNotificationCount).catch(() => {}); };
+    const poll = () => { api.unreadNotificationCount().then(setNotificationCount).catch((e) => console.error("unreadNotificationCount failed:", e)); };
     poll();
     const interval = setInterval(poll, 10000);
     return () => clearInterval(interval);
@@ -162,11 +162,11 @@ function App() {
       // Undo/Redo
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
         e.preventDefault();
-        api.undo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); showToast("Undone"); }).catch(() => {});
+        api.undo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); showToast("Undone"); }).catch((e) => console.error("undo failed:", e));
       }
       if (e.key === "z" && (e.metaKey || e.ctrlKey) && e.shiftKey) {
         e.preventDefault();
-        api.redo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); showToast("Redone"); }).catch(() => {});
+        api.redo().then(async () => { await Promise.all([refreshIssues(), refreshStatuses(), refreshProjects(), refreshLabels()]); showToast("Redone"); }).catch((e) => console.error("redo failed:", e));
       }
     };
     window.addEventListener("keydown", handler);
@@ -523,7 +523,9 @@ function App() {
       {replayIdentifier && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8">
           <div className="w-full max-w-4xl h-full max-h-[90vh] rounded-xl overflow-hidden">
-            <ReplayViewer identifier={replayIdentifier} onClose={() => setReplayIdentifier(null)} />
+            <ErrorBoundary>
+              <ReplayViewer identifier={replayIdentifier} onClose={() => setReplayIdentifier(null)} />
+            </ErrorBoundary>
           </div>
         </div>
       )}
