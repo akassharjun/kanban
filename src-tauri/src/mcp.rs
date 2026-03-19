@@ -891,7 +891,7 @@ async fn handle_tool_call(
             let position = max_pos.unwrap_or(-1.0) + 1.0;
 
             let issue_id: i64 = sqlx::query_scalar(
-                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
+                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, epic_id, milestone_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id",
             )
             .bind(project_id)
             .bind(&identifier)
@@ -902,6 +902,10 @@ async fn handle_tool_call(
             .bind(assignee_id)
             .bind(parent_id)
             .bind(position)
+            .bind(None::<f64>)
+            .bind(None::<String>)
+            .bind(None::<i64>)
+            .bind(None::<i64>)
             .bind(&now)
             .bind(&now)
             .fetch_one(&mut *tx)
@@ -2200,7 +2204,7 @@ async fn handle_tool_call(
             };
 
             let issue_id: i64 = sqlx::query_scalar(
-                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
+                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, epic_id, milestone_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id",
             )
             .bind(project_id)
             .bind(&identifier)
@@ -2211,6 +2215,10 @@ async fn handle_tool_call(
             .bind(assignee_id)
             .bind(parent_id)
             .bind(position)
+            .bind(None::<f64>)
+            .bind(None::<String>)
+            .bind(None::<i64>)
+            .bind(None::<i64>)
             .bind(&now)
             .bind(&now)
             .fetch_one(&mut *tx)
@@ -2538,11 +2546,12 @@ async fn handle_tool_call(
                 let position = max_pos.unwrap_or(-1.0) + 1.0 + idx as f64;
                 let priority = task.suggested_priority.as_deref().unwrap_or(&issue.priority);
                 let sub_id: i64 = sqlx::query_scalar(
-                    "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id"
+                    "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, epic_id, milestone_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id"
                 )
                 .bind(issue.project_id).bind(&ident).bind(&task.title).bind(&task.description)
                 .bind(issue.status_id).bind(priority).bind(issue.assignee_id).bind(issue.id)
-                .bind(position).bind(&now).bind(&now)
+                .bind(position).bind(None::<f64>).bind(None::<String>).bind(None::<i64>).bind(None::<i64>)
+                .bind(&now).bind(&now)
                 .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
                 let sub: Issue = sqlx::query_as("SELECT * FROM issues WHERE id = $1")
                     .bind(sub_id).fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -2581,11 +2590,12 @@ async fn handle_tool_call(
             let position = max_pos.unwrap_or(-1.0) + 1.0;
 
             let issue_id: i64 = sqlx::query_scalar(
-                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id"
+                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, epic_id, milestone_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id"
             )
             .bind(project_id).bind(&identifier).bind(&title).bind(&description)
             .bind(status_id).bind(priority).bind(suggestion.suggested_assignee_id)
-            .bind(None::<i64>).bind(position).bind(&now).bind(&now)
+            .bind(None::<i64>).bind(position).bind(None::<f64>).bind(None::<String>)
+            .bind(None::<i64>).bind(None::<i64>).bind(&now).bind(&now)
             .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
 
             for lid in &suggestion.suggested_label_ids {
@@ -3137,8 +3147,11 @@ async fn handle_tool_call(
 
             let desc = format!("Pipeline run #{} - Stage 1 ({})\n\n{}", run_id, stage_name, objective);
             let issue_id: i64 = sqlx::query_scalar(
-                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 'medium', $6, $7, $8) RETURNING id",
-            ).bind(pipeline.project_id).bind(&task_identifier).bind(&title).bind(&desc).bind(sid).bind(position).bind(&now).bind(&now)
+                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, epic_id, milestone_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 'medium', $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id",
+            ).bind(pipeline.project_id).bind(&task_identifier).bind(&title).bind(&desc).bind(sid)
+            .bind(None::<i64>).bind(None::<i64>).bind(position)
+            .bind(None::<f64>).bind(None::<String>).bind(None::<i64>).bind(None::<i64>)
+            .bind(&now).bind(&now)
             .fetch_one(pool).await.map_err(|e| e.to_string())?;
 
             let ctx = json!({ "files": [], "related_tasks": [], "prior_attempts": [], "pipeline": { "run_id": run_id, "stage_index": 0, "pipeline_name": &pipeline.name, "stage_name": stage_name } });

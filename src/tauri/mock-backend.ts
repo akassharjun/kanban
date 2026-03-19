@@ -146,7 +146,7 @@ export async function mockInvoke(cmd: string, args?: Record<string, any>): Promi
     case "list_projects": return [...projects];
     case "get_project": return projects.find(p => p.id === args?.id) ?? null;
     case "create_project": {
-      const p: Project = { id: id(), ...args!.input, status: "active", issue_counter: 0, path: args!.input.path ?? null, stale_days: null, stale_close_status_id: null, created_at: now, updated_at: now };
+      const p: Project = { id: id(), ...args!.input, status: "active", issue_counter: 0, deleted_at: null, path: args!.input.path ?? null, stale_days: null, stale_close_status_id: null, created_at: now, updated_at: now };
       projects.push(p);
       statuses[p.id] = [
         { id: id(), project_id: p.id, name: "Backlog", category: "unstarted", color: "#94a3b8", icon: null, position: 0 },
