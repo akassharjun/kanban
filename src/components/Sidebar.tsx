@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Users, Settings, ChevronDown, FolderKanban, Bot, Star, Clock, Bookmark, MoreHorizontal, Pencil, Trash2, Flame, GitBranch } from "lucide-react";
+import { Plus, Users, Settings, ChevronDown, FolderKanban, Bot, Star, Clock, Bookmark, MoreHorizontal, Pencil, Trash2, Flame, GitBranch, Terminal } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Project, Issue, SavedView } from "@/types";
 
@@ -14,6 +14,8 @@ interface SidebarProps {
   onOpenAgents?: () => void;
   onOpenCode?: () => void;
   onOpenPipelines?: () => void;
+  onToggleTerminal?: () => void;
+  terminalOpen?: boolean;
   agentCount?: number;
   collapsed: boolean;
   starredIssues?: Issue[];
@@ -40,6 +42,8 @@ export function Sidebar({
   onOpenAgents,
   onOpenCode,
   onOpenPipelines,
+  onToggleTerminal,
+  terminalOpen,
   agentCount,
   collapsed,
   starredIssues = [],
@@ -285,6 +289,15 @@ export function Sidebar({
           <Settings className="h-4 w-4" />
           Settings
         </button>
+        {onToggleTerminal && (
+          <button
+            onClick={onToggleTerminal}
+            className={cn(navItemBase, terminalOpen ? navItemActive : navItemInactive)}
+          >
+            <Terminal className="h-4 w-4" />
+            Terminal
+          </button>
+        )}
       </div>
     </div>
   );

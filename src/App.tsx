@@ -24,6 +24,7 @@ import { CodeHeatMap } from "@/components/CodeHeatMap";
 import { ReplayViewer } from "@/components/ReplayViewer";
 import { DependencyGraph } from "@/components/DependencyGraph";
 import { PipelinesView } from "@/components/PipelinesView";
+import { TerminalPanel } from "./components/TerminalPanel";
 import { useProjects } from "./hooks/use-projects";
 import { useIssues } from "./hooks/use-issues";
 import { useMembers } from "./hooks/use-members";
@@ -52,6 +53,7 @@ function App() {
   const [showCreateIssue, setShowCreateIssue] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [templates, setTemplates] = useState<IssueTemplate[]>([]);
   const [createIssueStatusId, setCreateIssueStatusId] = useState<number | undefined>();
@@ -285,6 +287,8 @@ function App() {
         onOpenAgents={() => setPage("agents")}
         onOpenCode={() => setPage("code")}
         onOpenPipelines={() => setPage("pipelines")}
+        onToggleTerminal={() => setShowTerminal(!showTerminal)}
+        terminalOpen={showTerminal}
         agentCount={onlineAgentCount}
         collapsed={sidebarCollapsed}
         starredIssues={starredIssues}
@@ -448,6 +452,10 @@ function App() {
           <ErrorBoundary>
             <PipelinesView projectId={selectedProjectId} projectName={selectedProject?.name ?? null} issues={issues} />
           </ErrorBoundary>
+        )}
+
+        {showTerminal && (
+          <TerminalPanel onClose={() => setShowTerminal(false)} />
         )}
       </div>
 
