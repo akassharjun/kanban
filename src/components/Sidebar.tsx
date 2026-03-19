@@ -106,6 +106,11 @@ export function Sidebar({
                 <button
                   key={project.id}
                   onClick={() => onSelectProject(project.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    onSelectProject(project.id);
+                    onOpenSettings();
+                  }}
                   className={cn(
                     navItemBase, "font-medium",
                     selectedProjectId === project.id && activePage === "project"

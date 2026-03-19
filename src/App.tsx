@@ -506,7 +506,7 @@ function App() {
         )}
 
         {showTerminal && (
-          <TerminalPanel onClose={() => setShowTerminal(false)} />
+          <TerminalPanel key={selectedProjectId ?? 0} onClose={() => setShowTerminal(false)} projectPath={selectedProject?.path} />
         )}
       </div>
 
