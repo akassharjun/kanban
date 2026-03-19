@@ -22,7 +22,7 @@ test.describe("Phase 3: Issue Lifecycle", () => {
     await openIssue(page, "KAN-3");
 
     // The panel is a border-l flex flex-col container
-    const panel = page.locator(".border-l").first();
+    const panel = page.locator(".rounded-xl.border").first();
 
     // Click the h2 title to switch to editing mode
     await panel.locator("h2").click();
@@ -46,7 +46,7 @@ test.describe("Phase 3: Issue Lifecycle", () => {
     await page.locator('[title="Close (Esc)"]').waitFor({ state: "visible" });
 
     // Verify that the panel shows KAN-7 (not KAN-8)
-    const panel = page.locator(".border-l").first();
+    const panel = page.locator(".rounded-xl.border").first();
     // The panel title is an h2 with class "cursor-pointer text-lg font-semibold"
     await expect(panel.locator("h2.cursor-pointer")).toContainText("Improve issue detail panel UX");
 
@@ -77,7 +77,7 @@ test.describe("Phase 3: Issue Lifecycle", () => {
   test("change issue status via detail panel", async ({ page }) => {
     await openIssue(page, "KAN-3");
 
-    const panel = page.locator(".border-l").first();
+    const panel = page.locator(".rounded-xl.border").first();
 
     // KAN-3 starts in Todo — click the status dropdown trigger
     const statusTrigger = panel.locator('button', { hasText: "Todo" }).first();
@@ -96,7 +96,7 @@ test.describe("Phase 3: Issue Lifecycle", () => {
   test("assign member to issue", async ({ page }) => {
     await openIssue(page, "KAN-5");
 
-    const panel = page.locator(".border-l").first();
+    const panel = page.locator(".rounded-xl.border").first();
 
     // KAN-5 has no assignee — the trigger shows "Unassigned"
     const assigneeTrigger = panel.locator('button', { hasText: "Unassigned" }).first();
@@ -115,7 +115,7 @@ test.describe("Phase 3: Issue Lifecycle", () => {
   test("activity log shows changes", async ({ page }) => {
     await openIssue(page, "KAN-6");
 
-    const panel = page.locator(".border-l").first();
+    const panel = page.locator(".rounded-xl.border").first();
 
     // Click the Activity tab
     const activityTab = panel.locator('button', { hasText: "Activity" });
