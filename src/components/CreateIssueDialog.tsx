@@ -81,7 +81,7 @@ export function CreateIssueDialog({
     } catch {
       // triage is best-effort
     }
-  }, [smartTriage, projectId, description, priority, selectedLabels.length, assigneeId]);
+  }, [smartTriage, projectId, description, priority, selectedLabels, assigneeId]);
 
   useEffect(() => {
     if (!smartTriage) return;
