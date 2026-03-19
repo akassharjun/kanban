@@ -1012,3 +1012,40 @@ export interface TickerEntry {
   issueId: number;
   timestamp: string;
 }
+
+// Git Intelligence Types
+
+export interface GitStatus {
+  branch: string;
+  ahead: number;
+  behind: number;
+  uncommitted: number;
+  untracked: number;
+}
+
+export interface GitCommit {
+  hash: string;
+  short_hash: string;
+  author: string;
+  message: string;
+  timestamp: string;
+  issue_refs: string[];
+}
+
+export interface GitBranch {
+  name: string;
+  is_current: boolean;
+  last_commit_hash: string;
+  last_commit_message: string;
+  issue_ref: string | null;
+}
+
+export interface GitWorktree {
+  path: string;
+  branch: string;
+  head_hash: string;
+  is_main: boolean;
+  agent_id: string | null;
+  agent_name: string | null;
+  task_identifier: string | null;
+}

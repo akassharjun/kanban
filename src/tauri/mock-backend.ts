@@ -66,6 +66,7 @@ import type {
   PermissionCheckResult,
   TaskCost, TaskCostSummary, ProjectCostSummary, BudgetStatus,
   CostBudget, SlaPolicy, SlaStatus, SlaEvent, SlaDashboard,
+  GitStatus, GitCommit, GitBranch, GitWorktree,
 } from "@/types";
 
 // Check if we're running inside Tauri
@@ -1489,6 +1490,49 @@ Agents must send a heartbeat every 30 seconds or they will be marked offline.
         version: "1.0.0"
       }, null, 2) };
       return { content: null };
+    }
+
+    case "get_git_status": {
+      return {
+        branch: "dev",
+        ahead: 3,
+        behind: 0,
+        uncommitted: 2,
+        untracked: 1,
+      } as GitStatus;
+    }
+
+    case "list_git_commits": {
+      return [
+        { hash: "0c138a3f", short_hash: "0c138a3", author: "Arjun", message: "fix: handle object values in activity log", timestamp: ago(5), issue_refs: [] },
+        { hash: "a61fb57e", short_hash: "a61fb57", author: "Arjun", message: "fix: font paths for production builds", timestamp: ago(30), issue_refs: [] },
+        { hash: "bd9b502a", short_hash: "bd9b502", author: "Arjun", message: "chore: bump version to 0.6.1", timestamp: ago(60), issue_refs: [] },
+        { hash: "5429658b", short_hash: "5429658", author: "Claude", message: "fix: resolve TypeScript errors for KAN-9", timestamp: ago(120), issue_refs: ["KAN-9"] },
+        { hash: "1bb390cb", short_hash: "1bb390c", author: "Claude", message: "feat: review workflow in issue detail panel (KAN-7)", timestamp: ago(180), issue_refs: ["KAN-7"] },
+        { hash: "3ac66a3d", short_hash: "3ac66a3", author: "Claude", message: "feat: wire ActivityTicker into main layout", timestamp: ago(240), issue_refs: [] },
+        { hash: "93daa11e", short_hash: "93daa11", author: "Arjun", message: "feat: integrate presence, badges into IssueCard", timestamp: ago(300), issue_refs: [] },
+        { hash: "d571527f", short_hash: "d571527", author: "Claude", message: "feat: Framer Motion card animations", timestamp: ago(360), issue_refs: [] },
+        { hash: "6cc936da", short_hash: "6cc936d", author: "Claude", message: "feat: review workflow for KAN-6", timestamp: ago(420), issue_refs: ["KAN-6"] },
+        { hash: "35c6dd8b", short_hash: "35c6dd8", author: "Arjun", message: "feat: PredictiveStatus late-risk indicator", timestamp: ago(500), issue_refs: [] },
+      ] as GitCommit[];
+    }
+
+    case "list_git_branches": {
+      return [
+        { name: "main", is_current: false, last_commit_hash: "abc0000", last_commit_message: "chore: release v0.6.0", issue_ref: null },
+        { name: "dev", is_current: true, last_commit_hash: "0c138a3", last_commit_message: "fix: handle object values", issue_ref: null },
+        { name: "kan-3/add-keyboard-shortcuts", is_current: false, last_commit_hash: "abc1234", last_commit_message: "wip: shortcuts panel", issue_ref: "KAN-3" },
+        { name: "kan-6/fix-drag-drop", is_current: false, last_commit_hash: "def5678", last_commit_message: "fix: position NaN", issue_ref: "KAN-6" },
+        { name: "kan-9/implement-undo-redo", is_current: false, last_commit_hash: "ghi9012", last_commit_message: "feat: undo stack", issue_ref: "KAN-9" },
+      ] as GitBranch[];
+    }
+
+    case "list_git_worktrees": {
+      return [
+        { path: "/home/user/kanban", branch: "dev", head_hash: "0c138a3", is_main: true, agent_id: null, agent_name: null, task_identifier: null },
+        { path: "/home/user/kanban/.worktrees/kan-6-fix", branch: "kan-6/fix-drag-drop", head_hash: "def5678", is_main: false, agent_id: "claude-opus-1", agent_name: "Claude Opus", task_identifier: "KAN-6" },
+        { path: "/home/user/kanban/.worktrees/kan-9-undo", branch: "kan-9/implement-undo-redo", head_hash: "ghi9012", is_main: false, agent_id: "review-bot-1", agent_name: "Review Bot", task_identifier: "KAN-9" },
+      ] as GitWorktree[];
     }
 
     default:

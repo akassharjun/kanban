@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { listen } from "@/tauri/events";
 import {
   Flame,
@@ -13,14 +13,22 @@ import {
   FileText,
   Settings,
   X,
+  GitBranch as GitBranchIcon,
+  GitCommit as GitCommitIcon,
+  GitFork,
+  Circle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { FileHeatEntry, DirectoryHeatEntry, FileTreeNode } from "@/types";
+import type { FileHeatEntry, DirectoryHeatEntry, FileTreeNode, GitStatus, GitCommit, GitBranch, GitWorktree } from "@/types";
 import {
   getFileHeatMap,
   getDirectoryHeatMap,
   listProjectFiles,
   readProjectFile,
+  getGitStatus,
+  listGitCommits,
+  listGitBranches,
+  listGitWorktrees,
 } from "@/tauri/commands";
 
 export interface CodeHeatMapProps {
@@ -28,7 +36,7 @@ export interface CodeHeatMapProps {
   projectName?: string | null;
 }
 
-type Tab = "files" | "directories" | "explorer";
+type Tab = "files" | "directories" | "explorer" | "git";
 
 // Config files we detect and can display
 const CONFIG_FILES = [
@@ -229,6 +237,35 @@ function renderFileContent(path: string, content: string) {
   );
 }
 
+function formatRelativeTime(timestamp: string): string {
+  const diff = Date.now() - new Date(timestamp).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function renderCommitMessage(message: string): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  const refPattern = /KAN-\d+/g;
+  let lastIdx = 0;
+  let m: RegExpExecArray | null;
+  while ((m = refPattern.exec(message)) !== null) {
+    if (m.index > lastIdx) parts.push(message.slice(lastIdx, m.index));
+    parts.push(
+      <span key={m.index} className="inline-flex items-center rounded-sm bg-blue-500/15 px-1 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400 mx-0.5">
+        {m[0]}
+      </span>
+    );
+    lastIdx = m.index + m[0].length;
+  }
+  if (lastIdx < message.length) parts.push(message.slice(lastIdx));
+  return parts.length > 0 ? parts : message;
+}
+
 export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
   const [tab, setTab] = useState<Tab>("files");
   const [fileEntries, setFileEntries] = useState<FileHeatEntry[]>([]);
@@ -243,6 +280,13 @@ export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileContentLoading, setFileContentLoading] = useState(false);
   const [configFiles, setConfigFiles] = useState<string[]>([]);
+
+  // Git state
+  const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
+  const [gitCommits, setGitCommits] = useState<GitCommit[]>([]);
+  const [gitBranches, setGitBranches] = useState<GitBranch[]>([]);
+  const [gitWorktrees, setGitWorktrees] = useState<GitWorktree[]>([]);
+  const [gitLoading, setGitLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -279,8 +323,30 @@ export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
     }
   }, [projectId]);
 
+  const loadGit = useCallback(async () => {
+    if (!projectId) return;
+    setGitLoading(true);
+    try {
+      const [status, commits, branches, worktrees] = await Promise.all([
+        getGitStatus(projectId),
+        listGitCommits(projectId, 10),
+        listGitBranches(projectId),
+        listGitWorktrees(projectId),
+      ]);
+      setGitStatus(status);
+      setGitCommits(commits);
+      setGitBranches(branches);
+      setGitWorktrees(worktrees);
+    } catch (e) {
+      console.error("Failed to load git data", e);
+    } finally {
+      setGitLoading(false);
+    }
+  }, [projectId]);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadTree(); }, [loadTree]);
+  useEffect(() => { if (tab === "git") loadGit(); }, [tab, loadGit]);
 
   useEffect(() => {
     const unlisten = listen("db-changed", () => load());
@@ -354,12 +420,22 @@ export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
             <Folder className="mr-1.5 inline-block h-3.5 w-3.5" />
             Explorer
           </button>
+          <button
+            onClick={() => setTab("git")}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              tab === "git" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <GitBranchIcon className="mr-1.5 inline-block h-3.5 w-3.5" />
+            Git
+          </button>
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {loading && tab !== "explorer" ? (
+        {loading && tab !== "explorer" && tab !== "git" ? (
           <div className="flex items-center justify-center py-12 text-muted-foreground">
             Loading...
           </div>
@@ -458,6 +534,176 @@ export function CodeHeatMap({ projectId, projectName }: CodeHeatMapProps) {
                   );
                 })}
               </div>
+            )}
+          </div>
+        ) : tab === "git" ? (
+          /* Git tab */
+          <div className="overflow-y-auto h-full px-6 py-4 space-y-6">
+            {gitLoading ? (
+              <div className="flex items-center justify-center py-12 text-muted-foreground">
+                Loading git data...
+              </div>
+            ) : (
+              <>
+                {/* Section 1: Status Bar */}
+                {gitStatus && (
+                  <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/30 px-4 py-3">
+                    <GitBranchIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <span className="font-mono text-sm font-medium text-foreground">{gitStatus.branch}</span>
+                    <div className="flex items-center gap-2 ml-2">
+                      {gitStatus.ahead > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-[11px] font-medium text-green-600 dark:text-green-400">
+                          &#8593; {gitStatus.ahead} ahead
+                        </span>
+                      )}
+                      {gitStatus.behind > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400">
+                          &#8595; {gitStatus.behind} behind
+                        </span>
+                      )}
+                      {gitStatus.uncommitted > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/15 px-2 py-0.5 text-[11px] font-medium text-yellow-600 dark:text-yellow-400">
+                          ~ {gitStatus.uncommitted} uncommitted
+                        </span>
+                      )}
+                      {gitStatus.untracked > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                          ? {gitStatus.untracked} untracked
+                        </span>
+                      )}
+                      {gitStatus.uncommitted === 0 && gitStatus.untracked === 0 && gitStatus.ahead === 0 && gitStatus.behind === 0 && (
+                        <span className="text-[11px] text-muted-foreground">Clean</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 2 and 3: Commits + Branches side by side */}
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Section 2: Recent Commits */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <GitCommitIcon className="h-3.5 w-3.5 text-muted-foreground/60" />
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Recent Commits</span>
+                    </div>
+                    <div className="rounded-lg border border-border/50 overflow-hidden">
+                      {gitCommits.length === 0 ? (
+                        <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">No commits</div>
+                      ) : (
+                        <div className="divide-y divide-border/30">
+                          {gitCommits.map((commit) => (
+                            <div key={commit.hash} className="flex items-start gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors">
+                              <span className="font-mono text-[10px] text-muted-foreground/50 flex-shrink-0 pt-0.5 w-14 tabular-nums">{commit.short_hash}</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs text-foreground leading-snug break-words">
+                                  {renderCommitMessage(commit.message)}
+                                </p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[10px] text-muted-foreground/50">{commit.author}</span>
+                                  <span className="text-[10px] text-muted-foreground/30">&#183;</span>
+                                  <span className="text-[10px] text-muted-foreground/50">{formatRelativeTime(commit.timestamp)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Section 3: Branches */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <GitBranchIcon className="h-3.5 w-3.5 text-muted-foreground/60" />
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Branches</span>
+                    </div>
+                    <div className="rounded-lg border border-border/50 overflow-hidden">
+                      {gitBranches.length === 0 ? (
+                        <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">No branches</div>
+                      ) : (
+                        <div className="divide-y divide-border/30">
+                          {gitBranches.map((branch) => (
+                            <div key={branch.name} className="flex items-start gap-2.5 px-3 py-2.5 hover:bg-muted/40 transition-colors">
+                              <Circle
+                                className={cn(
+                                  "h-2.5 w-2.5 flex-shrink-0 mt-1",
+                                  branch.is_current ? "text-green-500 fill-green-500" : "text-muted-foreground/20 fill-muted-foreground/20"
+                                )}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-mono text-xs text-foreground truncate max-w-[160px]">{branch.name}</span>
+                                  {branch.issue_ref && (
+                                    <span className="inline-flex items-center rounded-sm bg-violet-500/15 px-1 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400 flex-shrink-0">
+                                      {branch.issue_ref}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-muted-foreground/50 truncate mt-0.5">{branch.last_commit_message}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 4: Worktrees */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <GitFork className="h-3.5 w-3.5 text-muted-foreground/60" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">Worktrees</span>
+                  </div>
+                  <div className="rounded-lg border border-border/50 overflow-hidden">
+                    {gitWorktrees.length === 0 ? (
+                      <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">No worktrees</div>
+                    ) : (
+                      <div className="divide-y divide-border/30">
+                        {gitWorktrees.map((wt) => (
+                          <div
+                            key={wt.path}
+                            className={cn(
+                              "flex items-center gap-4 px-3 py-3 hover:bg-muted/40 transition-colors",
+                              !wt.agent_id && !wt.is_main && "opacity-50"
+                            )}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-[11px] text-muted-foreground truncate">{wt.path}</span>
+                                {wt.is_main && (
+                                  <span className="inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground flex-shrink-0">
+                                    Main
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <GitBranchIcon className="h-3 w-3 text-muted-foreground/40 flex-shrink-0" />
+                                <span className="font-mono text-[10px] text-muted-foreground/60 truncate">{wt.branch}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {wt.agent_name ? (
+                                <>
+                                  <span className="h-2 w-2 rounded-full bg-green-500 flex-shrink-0" />
+                                  <span className="text-xs text-muted-foreground">{wt.agent_name}</span>
+                                  {wt.task_identifier && (
+                                    <span className="inline-flex items-center rounded-sm bg-blue-500/15 px-1 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">
+                                      {wt.task_identifier}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-[10px] text-muted-foreground/40">No agent</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
           </div>
         ) : (

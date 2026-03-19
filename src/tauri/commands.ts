@@ -73,6 +73,10 @@ import type {
   SlaStatus,
   SlaEvent,
   SlaDashboard,
+  GitStatus,
+  GitCommit,
+  GitBranch,
+  GitWorktree,
 } from "@/types";
 
 // Use real Tauri invoke when in Tauri, mock otherwise
@@ -663,4 +667,10 @@ export const deleteSlaPolicy = (id: number) => invoke<void>("delete_sla_policy",
 export const checkSlaCompliance = (projectId: number) => invoke<SlaStatus[]>("check_sla_compliance", { projectId });
 export const enforceSla = (projectId: number) => invoke<SlaEvent[]>("enforce_sla", { projectId });
 export const getSlaEvents = (issueId: number) => invoke<SlaEvent[]>("get_sla_events", { issueId });
+
+// Git Intelligence
+export const getGitStatus = (projectId: number) => invoke<GitStatus>("get_git_status", { projectId });
+export const listGitCommits = (projectId: number, limit?: number) => invoke<GitCommit[]>("list_git_commits", { projectId, limit });
+export const listGitBranches = (projectId: number) => invoke<GitBranch[]>("list_git_branches", { projectId });
+export const listGitWorktrees = (projectId: number) => invoke<GitWorktree[]>("list_git_worktrees", { projectId });
 export const getSlaDashboard = (projectId: number) => invoke<SlaDashboard>("get_sla_dashboard", { projectId });
