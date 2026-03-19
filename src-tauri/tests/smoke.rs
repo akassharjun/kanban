@@ -548,3 +548,74 @@ async fn create_automation_rule() {
     assert_eq!(rule.trigger_type, "issue_created");
     assert_eq!(rule.project_id, project_id);
 }
+
+#[tokio::test]
+async fn mcp_create_issue_insert() {
+    // This test verifies the exact INSERT used by the MCP server's create_issue method
+    // (mcp.rs ~line 894) to catch column mismatches early
+    let pool = test_db().await;
+    let (project_id, backlog_status_id) = create_test_project(&pool).await;
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+    // Increment counter like MCP does
+    let (counter, prefix): (i64, String) = sqlx::query_as(
+        "UPDATE projects SET issue_counter = issue_counter + 1 WHERE id = $1 RETURNING issue_counter, prefix"
+    ).bind(project_id).fetch_one(&pool).await.expect("Failed to increment counter");
+    let identifier = format!("{}-{}", prefix, counter);
+
+    // MCP 15-column INSERT (matches mcp.rs create_issue)
+    let issue_id: i64 = sqlx::query_scalar(
+        "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, epic_id, milestone_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id"
+    )
+    .bind(project_id)
+    .bind(&identifier)
+    .bind("MCP Issue")
+    .bind(Some("Created via MCP"))
+    .bind(backlog_status_id)
+    .bind("medium")
+    .bind(None::<i64>)    // assignee_id
+    .bind(None::<i64>)    // parent_id
+    .bind(0.0f64)         // position
+    .bind(Some(3.5f64))   // estimate - test with a value
+    .bind(Some("2026-04-01"))  // due_date - test with a value
+    .bind(None::<i64>)    // epic_id
+    .bind(None::<i64>)    // milestone_id
+    .bind(&now)
+    .bind(&now)
+    .fetch_one(&pool)
+    .await
+    .expect("MCP INSERT failed — check mcp.rs create_issue query matches schema");
+
+    let issue = sqlx::query_as::<_, kanban_lib::models::Issue>(
+        "SELECT * FROM issues WHERE id = $1"
+    ).bind(issue_id).fetch_one(&pool).await.expect("SELECT failed");
+
+    assert_eq!(issue.identifier, "TST-1");
+    assert_eq!(issue.estimate, Some(3.5));
+    assert_eq!(issue.due_date, Some("2026-04-01".to_string()));
+}
+
+#[tokio::test]
+async fn cli_project_soft_delete() {
+    // Verify soft-delete works correctly (cli.rs ProjectAction::Delete)
+    let pool = test_db().await;
+    let (project_id, _) = create_test_project(&pool).await;
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+    // Soft-delete (same as CLI does now)
+    sqlx::query("UPDATE projects SET deleted_at = $1, updated_at = $2 WHERE id = $3")
+        .bind(&now).bind(&now).bind(project_id)
+        .execute(&pool).await.expect("Soft delete failed");
+
+    // Verify: not in active list
+    let active: Vec<kanban_lib::models::Project> = sqlx::query_as(
+        "SELECT * FROM projects WHERE deleted_at IS NULL"
+    ).fetch_all(&pool).await.unwrap();
+    assert_eq!(active.len(), 0);
+
+    // Verify: still exists in DB
+    let project = sqlx::query_as::<_, kanban_lib::models::Project>(
+        "SELECT * FROM projects WHERE id = $1"
+    ).bind(project_id).fetch_one(&pool).await.expect("Project should still exist");
+    assert!(project.deleted_at.is_some());
+}
