@@ -88,10 +88,10 @@ export function CostDashboard({ projectId }: CostDashboardProps) {
           <h3 className="text-sm font-semibold text-foreground mb-3">Daily Cost Trend</h3>
           <div className="rounded-lg border border-border bg-card p-4">
             <div className="flex items-end gap-1 h-32">
-              {summary.daily_costs.map((d, i) => {
+              {summary.daily_costs.map((d) => {
                 const height = (d.cost / maxDailyCost) * 100;
                 return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
                     <span className="text-[10px] text-muted-foreground">${d.cost.toFixed(0)}</span>
                     <div
                       className="w-full rounded-t bg-primary/80 hover:bg-primary transition-colors min-h-[2px]"

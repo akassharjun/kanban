@@ -381,7 +381,7 @@ export function RecurringIssuesTab({ projectId, statuses, members }: RecurringIs
                   <div className="mt-2 text-xs text-muted-foreground">
                     <span className="font-medium">Next 3 dates: </span>
                     {preview.next_dates.map((d, i) => (
-                      <span key={i}>
+                      <span key={d}>
                         {i > 0 && ", "}
                         {formatDate(d)}
                       </span>
