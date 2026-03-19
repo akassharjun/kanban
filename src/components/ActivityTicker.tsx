@@ -66,13 +66,7 @@ export function ActivityTicker({ projectId, onClickEntry }: ActivityTickerProps)
   }, [entries.length]);
 
   if (entries.length === 0) {
-    return (
-      <div className="h-9 border-t border-border bg-ticker flex items-center justify-center">
-        <span className="text-[11px] text-muted-foreground">
-          No agent activity yet
-        </span>
-      </div>
-    );
+    return null;
   }
 
   return (
