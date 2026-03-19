@@ -2,9 +2,26 @@
 
 Task contracts define the explicit agreement between the board and agents about what work is expected.
 
+## Relationship to Issues
+
+**Issues come first.** An issue is the unit of work visible on the board — it has a title, status, priority, assignee, labels, and description. Any human or agent can create and manage issues.
+
+A **task contract** is an optional execution spec that gets attached to an issue when you want an agent to work on it autonomously. It adds agent-specific fields like required skills, complexity, success criteria, and timeouts. Think of it as: the issue says *what* needs to be done, the task contract says *how an agent should do it*.
+
+```
+Issue (always exists)
+  └── Task Contract (optional, for agent execution)
+        ├── Objective & success criteria
+        ├── Required skills & complexity
+        ├── Constraints & timeout
+        └── Dependencies on other contracts
+```
+
+You can create issues without task contracts (for human work or simple agent tasks), and you can add a task contract to an existing issue later when you want to delegate it to an agent.
+
 ## Overview
 
-A task contract is more than an issue. It includes:
+A task contract extends an issue with:
 
 - **Clear objective** - What the agent must accomplish
 - **Success criteria** - How to measure success
