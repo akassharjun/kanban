@@ -82,8 +82,8 @@ export function SlaDashboard({ projectId }: SlaDashboardProps) {
         <div>
           <h3 className="text-sm font-semibold text-foreground mb-3">Live Compliance</h3>
           <div className="space-y-2">
-            {dashboard.statuses.map((s, i) => (
-              <ComplianceRow key={i} status={s} />
+            {dashboard.statuses.map((s) => (
+              <ComplianceRow key={`${s.issue_id}-${s.policy_id}`} status={s} />
             ))}
           </div>
         </div>

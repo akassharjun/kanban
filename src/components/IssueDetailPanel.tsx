@@ -967,7 +967,7 @@ export function IssueDetailPanel({
             </h4>
             <div className="space-y-1.5 mb-3">
               {decomposeTasks.map((t, i) => (
-                <div key={i} className="text-xs text-foreground/80 flex items-start gap-1.5">
+                <div key={t.title} className="text-xs text-foreground/80 flex items-start gap-1.5">
                   <span className="text-muted-foreground/50 font-mono">{i + 1}.</span>
                   <span>{t.title}</span>
                 </div>
@@ -1142,8 +1142,8 @@ export function IssueDetailPanel({
                     )}
                     {note.files_changed.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {note.files_changed.map((f, i) => (
-                          <span key={i} className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                        {note.files_changed.map((f) => (
+                          <span key={f} className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
                             <FileText className="h-2.5 w-2.5" />{f}
                           </span>
                         ))}
@@ -1151,8 +1151,8 @@ export function IssueDetailPanel({
                     )}
                     {note.risks.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {note.risks.map((r, i) => (
-                          <span key={i} className="inline-flex items-center gap-0.5 rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-600 dark:text-red-400">
+                        {note.risks.map((r) => (
+                          <span key={r} className="inline-flex items-center gap-0.5 rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-600 dark:text-red-400">
                             <AlertCircle className="h-2.5 w-2.5" />{r}
                           </span>
                         ))}
@@ -1208,8 +1208,8 @@ export function IssueDetailPanel({
                       <div className="mt-2">
                         <span className="text-[10px] font-medium text-red-500/80">Pitfalls:</span>
                         <ul className="mt-0.5 space-y-0.5">
-                          {learning.pitfalls.map((p, i) => (
-                            <li key={i} className="text-[11px] text-muted-foreground/70 pl-2">&bull; {p}</li>
+                          {learning.pitfalls.map((p) => (
+                            <li key={p} className="text-[11px] text-muted-foreground/70 pl-2">&bull; {p}</li>
                           ))}
                         </ul>
                       </div>
@@ -1218,16 +1218,16 @@ export function IssueDetailPanel({
                       <div className="mt-2">
                         <span className="text-[10px] font-medium text-green-500/80">What worked:</span>
                         <ul className="mt-0.5 space-y-0.5">
-                          {learning.effective_patterns.map((p, i) => (
-                            <li key={i} className="text-[11px] text-muted-foreground/70 pl-2">&bull; {p}</li>
+                          {learning.effective_patterns.map((p) => (
+                            <li key={p} className="text-[11px] text-muted-foreground/70 pl-2">&bull; {p}</li>
                           ))}
                         </ul>
                       </div>
                     )}
                     {learning.tags.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {learning.tags.map((tag, i) => (
-                          <span key={i} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {learning.tags.map((tag) => (
+                          <span key={tag} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                             {tag}
                           </span>
                         ))}
