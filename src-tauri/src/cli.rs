@@ -124,6 +124,8 @@ pub enum ProjectAction {
         name: String,
         #[arg(short, long)]
         prefix: String,
+        #[arg(long)]
+        path: Option<String>,
         #[arg(short, long)]
         description: Option<String>,
         #[arg(short, long)]
@@ -172,6 +174,14 @@ pub enum IssueAction {
         assignee: Option<i64>,
         #[arg(long)]
         parent: Option<i64>,
+        #[arg(long)]
+        estimate: Option<f64>,
+        #[arg(long)]
+        due_date: Option<String>,
+        #[arg(long)]
+        epic: Option<i64>,
+        #[arg(long)]
+        milestone: Option<i64>,
     },
     /// Update an issue by identifier (e.g. KAN-42)
     Update {
@@ -958,17 +968,19 @@ async fn handle_project(
         ProjectAction::Create {
             name,
             prefix,
+            path,
             description,
             icon,
         } => {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let project_id: i64 = sqlx::query_scalar(
-                "INSERT INTO projects (name, description, icon, status, prefix, issue_counter, created_at, updated_at) VALUES ($1, $2, $3, 'active', $4, 0, $5, $6) RETURNING id",
+                "INSERT INTO projects (name, description, icon, status, prefix, issue_counter, path, created_at, updated_at) VALUES ($1, $2, $3, 'active', $4, 0, $5, $6, $7) RETURNING id",
             )
             .bind(&name)
             .bind(&description)
             .bind(&icon)
             .bind(&prefix)
+            .bind(&path)
             .bind(&now)
             .bind(&now)
             .fetch_one(pool)
@@ -1120,6 +1132,10 @@ async fn handle_issue(
             description,
             assignee,
             parent,
+            estimate,
+            due_date,
+            epic,
+            milestone,
         } => {
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
             let prio = priority.unwrap_or_else(|| "none".to_string());
@@ -1144,8 +1160,11 @@ async fn handle_issue(
             .await?;
             let position = max_pos.unwrap_or(-1.0) + 1.0;
 
+            let epic_id = epic.and_then(|v| if v <= 0 { None } else { Some(v) });
+            let milestone_id = milestone.and_then(|v| if v <= 0 { None } else { Some(v) });
+
             let issue_id: i64 = sqlx::query_scalar(
-                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
+                "INSERT INTO issues (project_id, identifier, title, description, status_id, priority, assignee_id, parent_id, position, estimate, due_date, epic_id, milestone_id, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id",
             )
             .bind(project)
             .bind(&identifier)
@@ -1156,6 +1175,10 @@ async fn handle_issue(
             .bind(assignee)
             .bind(parent)
             .bind(position)
+            .bind(estimate)
+            .bind(&due_date)
+            .bind(epic_id)
+            .bind(milestone_id)
             .bind(&now)
             .bind(&now)
             .fetch_one(&mut *tx)
@@ -1767,7 +1790,7 @@ async fn handle_notifications(
                 for n in &notifs {
                     println!(
                         "[{}] {} | {}",
-                        if n.read { " " } else { "*" },
+                        if n.read != 0 { " " } else { "*" },
                         n.created_at,
                         n.message
                     );
@@ -3386,7 +3409,7 @@ async fn handle_pipeline(
                             p.name,
                             stages.len(),
                             p.total_runs,
-                            if p.enabled { "enabled" } else { "disabled" }
+                            if p.enabled != 0 { "enabled" } else { "disabled" }
                         );
                     }
                 }
@@ -3438,7 +3461,7 @@ async fn handle_pipeline(
             .fetch_one(pool)
             .await?;
 
-            if !pipeline.enabled {
+            if pipeline.enabled == 0 {
                 eprintln!("Pipeline is disabled");
                 std::process::exit(1);
             }

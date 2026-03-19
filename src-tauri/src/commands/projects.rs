@@ -138,6 +138,14 @@ pub fn update_project(state: State<AppState>, id: i64, input: UpdateProjectInput
             qb.push(", path = ");
             qb.push_bind(path);
         }
+        if let Some(stale_days) = &input.stale_days {
+            qb.push(", stale_days = ");
+            qb.push_bind(*stale_days);
+        }
+        if let Some(stale_close_status_id) = &input.stale_close_status_id {
+            qb.push(", stale_close_status_id = ");
+            qb.push_bind(*stale_close_status_id);
+        }
 
         qb.push(" WHERE id = ");
         qb.push_bind(id);

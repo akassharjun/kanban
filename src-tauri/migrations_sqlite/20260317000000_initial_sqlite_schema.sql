@@ -282,6 +282,10 @@ CREATE TABLE IF NOT EXISTS saved_views (
     sort_by TEXT,
     sort_direction TEXT DEFAULT 'asc',
     view_mode TEXT DEFAULT 'board',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Recurring Issues
 CREATE TABLE IF NOT EXISTS recurring_issues (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -431,6 +435,10 @@ CREATE TABLE IF NOT EXISTS automation_rules (
     actions TEXT NOT NULL DEFAULT '[]',
     execution_count INTEGER NOT NULL DEFAULT 0,
     last_executed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Pipelines (multi-agent stage chains)
 CREATE TABLE IF NOT EXISTS pipelines (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

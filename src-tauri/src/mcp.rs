@@ -3068,7 +3068,7 @@ async fn handle_tool_call(
             .await
             .map_err(|e| e.to_string())?;
 
-            if !pipeline.enabled {
+            if pipeline.enabled == 0 {
                 return Err("Pipeline is disabled".to_string());
             }
 

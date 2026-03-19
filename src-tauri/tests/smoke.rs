@@ -478,3 +478,73 @@ async fn soft_delete_project() {
 
     assert_eq!(total_count, 1, "Expected 1 total project (soft deleted), got {}", total_count);
 }
+
+#[tokio::test]
+async fn create_saved_view() {
+    let pool = test_db().await;
+    let (project_id, _) = create_test_project(&pool).await;
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+    let view_id: i64 = sqlx::query_scalar(
+        "INSERT INTO saved_views (project_id, name, filters, sort_by, sort_direction, view_mode, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id"
+    )
+    .bind(project_id)
+    .bind("My View")
+    .bind("{\"priority\":\"high\"}")
+    .bind(Some("created_at"))
+    .bind(Some("desc"))
+    .bind(Some("list"))
+    .bind(&now)
+    .bind(&now)
+    .fetch_one(&pool)
+    .await
+    .expect("INSERT saved_view failed — schema may be incomplete");
+
+    let view = sqlx::query_as::<_, kanban_lib::models::SavedView>(
+        "SELECT * FROM saved_views WHERE id = $1"
+    )
+    .bind(view_id)
+    .fetch_one(&pool)
+    .await
+    .expect("SELECT saved_view failed — model/schema mismatch");
+
+    assert_eq!(view.name, "My View");
+    assert_eq!(view.project_id, project_id);
+}
+
+#[tokio::test]
+async fn create_automation_rule() {
+    let pool = test_db().await;
+    let (project_id, _) = create_test_project(&pool).await;
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+
+    let rule_id: i64 = sqlx::query_scalar(
+        "INSERT INTO automation_rules (project_id, name, enabled, trigger_type, trigger_config, conditions, actions, execution_count, last_executed_at, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id"
+    )
+    .bind(project_id)
+    .bind("Auto-assign bug label")
+    .bind(true)
+    .bind("issue_created")
+    .bind("{}")
+    .bind("[]")
+    .bind("[{\"type\":\"add_label\",\"label_id\":1}]")
+    .bind(0i64)
+    .bind(None::<String>)
+    .bind(&now)
+    .bind(&now)
+    .fetch_one(&pool)
+    .await
+    .expect("INSERT automation_rule failed — schema may be incomplete");
+
+    let rule = sqlx::query_as::<_, kanban_lib::models::AutomationRule>(
+        "SELECT * FROM automation_rules WHERE id = $1"
+    )
+    .bind(rule_id)
+    .fetch_one(&pool)
+    .await
+    .expect("SELECT automation_rule failed — model/schema mismatch");
+
+    assert_eq!(rule.name, "Auto-assign bug label");
+    assert_eq!(rule.trigger_type, "issue_created");
+    assert_eq!(rule.project_id, project_id);
+}

@@ -231,7 +231,7 @@ pub struct UndoLogEntry {
     pub entity_id: i64,
     pub snapshot_before: Option<String>,
     pub snapshot_after: Option<String>,
-    pub undone: bool,
+    pub undone: i64,
     pub timestamp: String,
 }
 
@@ -241,7 +241,7 @@ pub struct Notification {
     pub r#type: String,
     pub issue_id: Option<i64>,
     pub message: String,
-    pub read: bool,
+    pub read: i64,
     pub created_at: String,
 }
 
@@ -319,7 +319,7 @@ pub struct GitLink {
     pub ref_name: String,
     pub pr_number: Option<i64>,
     pub pr_state: Option<String>,
-    pub pr_merged: bool,
+    pub pr_merged: i64,
     pub ci_status: Option<String>,
     pub review_status: Option<String>,
     pub created_at: String,
@@ -331,7 +331,7 @@ pub struct AutomationRule {
     pub id: i64,
     pub project_id: i64,
     pub name: String,
-    pub enabled: bool,
+    pub enabled: i64,
     pub trigger_type: String,
     pub trigger_config: String,
     pub conditions: String,
@@ -349,7 +349,7 @@ pub struct AutomationLogEntry {
     pub issue_id: Option<i64>,
     pub trigger_type: String,
     pub actions_executed: String,
-    pub success: bool,
+    pub success: i64,
     pub error_message: Option<String>,
     pub executed_at: String,
 }
@@ -377,7 +377,7 @@ pub struct RecurringIssue {
     pub recurrence_config: String,
     pub next_run_at: String,
     pub last_run_at: Option<String>,
-    pub enabled: bool,
+    pub enabled: i64,
     pub total_created: i64,
     pub created_at: String,
     pub updated_at: String,
