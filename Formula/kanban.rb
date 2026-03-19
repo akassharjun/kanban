@@ -1,22 +1,22 @@
 class Kanban < Formula
   desc "Desktop project management for AI agent orchestration"
   homepage "https://github.com/akassharjun/kanban"
-  version "0.8.6"
+  version "0.8.7"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/akassharjun/kanban/releases/download/v0.8.6/kanban-macos-aarch64.tar.gz"
-      sha256 "ecc5510b571f67e72577e5a4b20ab625223b870b036fc3f7f5285345ff5352d8"
+      url "https://github.com/akassharjun/kanban/releases/download/v0.8.7/kanban-macos-aarch64.tar.gz"
+      sha256 "bd3e3afd32fe6fbef94d5111f1ca423a89b8b8d164c51cfa4a19559271394491"
     else
-      url "https://github.com/akassharjun/kanban/releases/download/v0.8.6/kanban-macos-x86_64.tar.gz"
-      sha256 "d968f4dc79dea14f883b5e12d111ac1ff4078a771670f35d5a47ec9e5534260a"
+      url "https://github.com/akassharjun/kanban/releases/download/v0.8.7/kanban-macos-x86_64.tar.gz"
+      sha256 "aafc65950724ec57ed67170c4fbc20c380b253e9b6da32c39eeddeed7fba5ae0"
     end
   end
 
   on_linux do
-    url "https://github.com/akassharjun/kanban/releases/download/v0.8.6/kanban-linux-x86_64.tar.gz"
-    sha256 "02452e9eae0ddfc57a5b1083bebc307129c4504cdfbc084b0ef40e6608375f0b"
+    url "https://github.com/akassharjun/kanban/releases/download/v0.8.7/kanban-linux-x86_64.tar.gz"
+    sha256 "ef870a2c3e049a09be8190a951811fd51fcf8eb2d208cffc8088659f99996ace"
   end
 
   def install
