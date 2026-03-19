@@ -1,12 +1,12 @@
 cask "kanban" do
-  version "0.6.2"
+  version "0.7.0"
   arch arm: "aarch64", intel: "x64"
 
   url "https://github.com/akassharjun/kanban/releases/download/v#{version}/Kanban_#{version}_#{arch}.dmg"
   if Hardware::CPU.arm?
-    sha256 "a95480a1c1a1f346aa462c07448cbe48b52707ebdd9e934c4b77dac9357205d2"
+    sha256 "7872939076545277d59c3058a49634199fc9a4028fe453a50a49da568addcc66"
   else
-    sha256 "4a72675123042d5b14a2462a7ecf5c86c0fef4caffdfffd38ac527dc97ec6a45"
+    sha256 "d898693697f60693842f3f2dc792b5ac9b113386a10077d5750b0c6bee77c2ff"
   end
 
   name "Kanban"
