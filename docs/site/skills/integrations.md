@@ -91,15 +91,23 @@ When an agent creates a branch via the board's "Create Branch" button, it automa
 
 ## Playwright Plugin
 
-Already integrated — the Kanban board uses Playwright for E2E testing:
+The [Playwright MCP plugin](https://github.com/anthropics/claude-code-playwright) gives agents browser automation capabilities. Combined with Kanban, agents can:
 
-```bash
-npm run test:e2e        # Run 81 workflow tests
-npm run test:e2e:ui     # Interactive test runner
-npm run test:e2e:headed # Watch tests in browser
+- **Verify UI changes** — after implementing a frontend issue, the agent can open a browser, navigate the app, and screenshot the result before moving to In Review
+- **Run acceptance tests** — when an issue has acceptance criteria like "button should be visible," the agent can use Playwright to verify it programmatically
+- **Visual QA** — take before/after screenshots and attach them as comments on the issue
+
+### Example: Agent validates a UI fix
+
+```
+1. Agent picks up KAN-42 "Fix login button alignment"
+2. Implements the CSS fix
+3. Uses Playwright to navigate to /login, take a screenshot
+4. Attaches screenshot to the issue as a comment
+5. Moves to In Review with "Fix verified visually"
 ```
 
-Agents can run these tests as part of the validation step before moving issues to Done.
+This turns every agent into a QA tester — they don't just write code, they verify it works.
 
 ## Code Review Plugin
 
