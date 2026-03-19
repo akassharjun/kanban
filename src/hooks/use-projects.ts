@@ -20,20 +20,35 @@ export function useProjects() {
   useEffect(() => { refresh(); }, [refresh]);
 
   const create = async (input: { name: string; description?: string; icon?: string; prefix: string; path: string }) => {
-    const project = await api.createProject(input);
-    setProjects(prev => [...prev, project]);
-    return project;
+    try {
+      const project = await api.createProject(input);
+      setProjects(prev => [...prev, project]);
+      return project;
+    } catch (e) {
+      console.error("Failed to create project:", e);
+      throw e;
+    }
   };
 
   const update = async (id: number, input: { name?: string; description?: string; icon?: string; status?: string }) => {
-    const project = await api.updateProject(id, input);
-    setProjects(prev => prev.map(p => p.id === id ? project : p));
-    return project;
+    try {
+      const project = await api.updateProject(id, input);
+      setProjects(prev => prev.map(p => p.id === id ? project : p));
+      return project;
+    } catch (e) {
+      console.error("Failed to update project:", e);
+      throw e;
+    }
   };
 
   const remove = async (id: number) => {
-    await api.deleteProject(id);
-    setProjects(prev => prev.filter(p => p.id !== id));
+    try {
+      await api.deleteProject(id);
+      setProjects(prev => prev.filter(p => p.id !== id));
+    } catch (e) {
+      console.error("Failed to delete project:", e);
+      throw e;
+    }
   };
 
   return { projects, loading, refresh, create, update, remove };

@@ -21,20 +21,35 @@ export function useEpics(projectId: number | null) {
   useEffect(() => { refresh(); }, [refresh]);
 
   const create = async (input: Parameters<typeof api.createEpic>[0]) => {
-    const epic = await api.createEpic(input);
-    await refresh();
-    return epic;
+    try {
+      const epic = await api.createEpic(input);
+      await refresh();
+      return epic;
+    } catch (e) {
+      console.error("Failed to create epic:", e);
+      throw e;
+    }
   };
 
   const update = async (id: number, input: Parameters<typeof api.updateEpic>[1]) => {
-    const epic = await api.updateEpic(id, input);
-    await refresh();
-    return epic;
+    try {
+      const epic = await api.updateEpic(id, input);
+      await refresh();
+      return epic;
+    } catch (e) {
+      console.error("Failed to update epic:", e);
+      throw e;
+    }
   };
 
   const remove = async (id: number) => {
-    await api.deleteEpic(id);
-    await refresh();
+    try {
+      await api.deleteEpic(id);
+      await refresh();
+    } catch (e) {
+      console.error("Failed to delete epic:", e);
+      throw e;
+    }
   };
 
   return { epics, loading, refresh, create, update, remove };

@@ -21,14 +21,19 @@ export function useStarred(memberId: number | null) {
 
   const toggle = async (issueId: number) => {
     if (!memberId) return;
-    if (starredIds.has(issueId)) {
-      await api.unstarIssue(issueId, memberId);
-      setStarredIds(prev => { const next = new Set(prev); next.delete(issueId); return next; });
-      setStarredIssues(prev => prev.filter(i => i.id !== issueId));
-    } else {
-      await api.starIssue(issueId, memberId);
-      setStarredIds(prev => new Set(prev).add(issueId));
-      await refresh();
+    try {
+      if (starredIds.has(issueId)) {
+        await api.unstarIssue(issueId, memberId);
+        setStarredIds(prev => { const next = new Set(prev); next.delete(issueId); return next; });
+        setStarredIssues(prev => prev.filter(i => i.id !== issueId));
+      } else {
+        await api.starIssue(issueId, memberId);
+        setStarredIds(prev => new Set(prev).add(issueId));
+        await refresh();
+      }
+    } catch (e) {
+      console.error("Failed to toggle starred issue:", e);
+      throw e;
     }
   };
 

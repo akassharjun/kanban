@@ -21,20 +21,35 @@ export function useMilestones(projectId: number | null) {
   useEffect(() => { refresh(); }, [refresh]);
 
   const create = async (input: Parameters<typeof api.createMilestone>[0]) => {
-    const milestone = await api.createMilestone(input);
-    await refresh();
-    return milestone;
+    try {
+      const milestone = await api.createMilestone(input);
+      await refresh();
+      return milestone;
+    } catch (e) {
+      console.error("Failed to create milestone:", e);
+      throw e;
+    }
   };
 
   const update = async (id: number, input: Parameters<typeof api.updateMilestone>[1]) => {
-    const milestone = await api.updateMilestone(id, input);
-    await refresh();
-    return milestone;
+    try {
+      const milestone = await api.updateMilestone(id, input);
+      await refresh();
+      return milestone;
+    } catch (e) {
+      console.error("Failed to update milestone:", e);
+      throw e;
+    }
   };
 
   const remove = async (id: number) => {
-    await api.deleteMilestone(id);
-    await refresh();
+    try {
+      await api.deleteMilestone(id);
+      await refresh();
+    } catch (e) {
+      console.error("Failed to delete milestone:", e);
+      throw e;
+    }
   };
 
   return { milestones, loading, refresh, create, update, remove };

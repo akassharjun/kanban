@@ -22,20 +22,35 @@ export function useGitLinks(issueId: number | null) {
   useEffect(() => { refresh(); }, [refresh]);
 
   const create = async (input: Parameters<typeof api.createGitLink>[0]) => {
-    const link = await api.createGitLink(input);
-    setGitLinks(prev => [link, ...prev]);
-    return link;
+    try {
+      const link = await api.createGitLink(input);
+      setGitLinks(prev => [link, ...prev]);
+      return link;
+    } catch (e) {
+      console.error("Failed to create git link:", e);
+      throw e;
+    }
   };
 
   const update = async (id: number, input: Parameters<typeof api.updateGitLink>[1]) => {
-    const link = await api.updateGitLink(id, input);
-    setGitLinks(prev => prev.map(l => l.id === id ? link : l));
-    return link;
+    try {
+      const link = await api.updateGitLink(id, input);
+      setGitLinks(prev => prev.map(l => l.id === id ? link : l));
+      return link;
+    } catch (e) {
+      console.error("Failed to update git link:", e);
+      throw e;
+    }
   };
 
   const remove = async (id: number) => {
-    await api.deleteGitLink(id);
-    setGitLinks(prev => prev.filter(l => l.id !== id));
+    try {
+      await api.deleteGitLink(id);
+      setGitLinks(prev => prev.filter(l => l.id !== id));
+    } catch (e) {
+      console.error("Failed to delete git link:", e);
+      throw e;
+    }
   };
 
   return { gitLinks, loading, refresh, create, update, remove };

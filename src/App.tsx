@@ -536,7 +536,7 @@ function App() {
       {showCreateProject && (
         <CreateProjectDialog
           onClose={() => setShowCreateProject(false)}
-          onCreate={async (input) => { const result = await createProject(input); showToast("Project created"); return result; }}
+          onCreate={async (input) => { try { const result = await createProject(input); showToast("Project created"); return result; } catch (e) { showToast("Failed to create project"); throw e; } }}
         />
       )}
 
@@ -552,7 +552,7 @@ function App() {
           defaultStatusId={createIssueStatusId || statuses.find(s => s.category === "unstarted")?.id}
           parentId={createIssueParentId}
           onClose={() => { setShowCreateIssue(false); setCreateIssueParentId(undefined); }}
-          onCreate={async (input) => { const result = await createIssue(input); showToast("Issue created"); return result; }}
+          onCreate={async (input) => { try { const result = await createIssue(input); showToast("Issue created"); return result; } catch (e) { showToast("Failed to create issue"); throw e; } }}
         />
       )}
 

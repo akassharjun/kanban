@@ -21,20 +21,35 @@ export function useLabels(projectId: number | null) {
   useEffect(() => { refresh(); }, [refresh]);
 
   const create = async (input: Parameters<typeof api.createLabel>[0]) => {
-    const label = await api.createLabel(input);
-    await refresh();
-    return label;
+    try {
+      const label = await api.createLabel(input);
+      await refresh();
+      return label;
+    } catch (e) {
+      console.error("Failed to create label:", e);
+      throw e;
+    }
   };
 
   const update = async (id: number, input: Parameters<typeof api.updateLabel>[1]) => {
-    const label = await api.updateLabel(id, input);
-    await refresh();
-    return label;
+    try {
+      const label = await api.updateLabel(id, input);
+      await refresh();
+      return label;
+    } catch (e) {
+      console.error("Failed to update label:", e);
+      throw e;
+    }
   };
 
   const remove = async (id: number) => {
-    await api.deleteLabel(id);
-    await refresh();
+    try {
+      await api.deleteLabel(id);
+      await refresh();
+    } catch (e) {
+      console.error("Failed to delete label:", e);
+      throw e;
+    }
   };
 
   return { labels, loading, refresh, create, update, remove };

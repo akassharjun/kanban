@@ -34,9 +34,14 @@ export function useGithubConfig(projectId: number | null) {
     merge_target_status_id?: number | null;
   }) => {
     if (!projectId) return null;
-    const result = await api.setGithubConfig(projectId, input);
-    setConfig(result);
-    return result;
+    try {
+      const result = await api.setGithubConfig(projectId, input);
+      setConfig(result);
+      return result;
+    } catch (e) {
+      console.error("Failed to save GitHub config:", e);
+      throw e;
+    }
   }, [projectId]);
 
   return { config, loading, refresh, save };

@@ -33,26 +33,46 @@ export function useAutomations(projectId: number | null) {
   }, [refresh]);
 
   const create = async (input: Parameters<typeof api.createAutomationRule>[0]) => {
-    const rule = await api.createAutomationRule(input);
-    setRules(prev => [rule, ...prev]);
-    return rule;
+    try {
+      const rule = await api.createAutomationRule(input);
+      setRules(prev => [rule, ...prev]);
+      return rule;
+    } catch (e) {
+      console.error("Failed to create automation rule:", e);
+      throw e;
+    }
   };
 
   const update = async (id: number, input: Parameters<typeof api.updateAutomationRule>[1]) => {
-    const rule = await api.updateAutomationRule(id, input);
-    setRules(prev => prev.map(r => r.id === id ? rule : r));
-    return rule;
+    try {
+      const rule = await api.updateAutomationRule(id, input);
+      setRules(prev => prev.map(r => r.id === id ? rule : r));
+      return rule;
+    } catch (e) {
+      console.error("Failed to update automation rule:", e);
+      throw e;
+    }
   };
 
   const remove = async (id: number) => {
-    await api.deleteAutomationRule(id);
-    setRules(prev => prev.filter(r => r.id !== id));
+    try {
+      await api.deleteAutomationRule(id);
+      setRules(prev => prev.filter(r => r.id !== id));
+    } catch (e) {
+      console.error("Failed to delete automation rule:", e);
+      throw e;
+    }
   };
 
   const toggle = async (id: number, enabled: boolean) => {
-    const rule = await api.toggleAutomationRule(id, enabled);
-    setRules(prev => prev.map(r => r.id === id ? rule : r));
-    return rule;
+    try {
+      const rule = await api.toggleAutomationRule(id, enabled);
+      setRules(prev => prev.map(r => r.id === id ? rule : r));
+      return rule;
+    } catch (e) {
+      console.error("Failed to toggle automation rule:", e);
+      throw e;
+    }
   };
 
   return { rules, log, loading, refresh, create, update, remove, toggle };

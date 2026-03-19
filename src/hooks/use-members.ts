@@ -20,20 +20,35 @@ export function useMembers() {
   useEffect(() => { refresh(); }, [refresh]);
 
   const create = async (input: Parameters<typeof api.createMember>[0]) => {
-    const member = await api.createMember(input);
-    setMembers(prev => [...prev, member]);
-    return member;
+    try {
+      const member = await api.createMember(input);
+      setMembers(prev => [...prev, member]);
+      return member;
+    } catch (e) {
+      console.error("Failed to create member:", e);
+      throw e;
+    }
   };
 
   const update = async (id: number, input: Parameters<typeof api.updateMember>[1]) => {
-    const member = await api.updateMember(id, input);
-    setMembers(prev => prev.map(m => m.id === id ? member : m));
-    return member;
+    try {
+      const member = await api.updateMember(id, input);
+      setMembers(prev => prev.map(m => m.id === id ? member : m));
+      return member;
+    } catch (e) {
+      console.error("Failed to update member:", e);
+      throw e;
+    }
   };
 
   const remove = async (id: number) => {
-    await api.deleteMember(id);
-    setMembers(prev => prev.filter(m => m.id !== id));
+    try {
+      await api.deleteMember(id);
+      setMembers(prev => prev.filter(m => m.id !== id));
+    } catch (e) {
+      console.error("Failed to delete member:", e);
+      throw e;
+    }
   };
 
   return { members, loading, refresh, create, update, remove };

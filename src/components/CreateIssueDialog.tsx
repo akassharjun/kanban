@@ -55,6 +55,7 @@ export function CreateIssueDialog({
   const [selectedLabels, setSelectedLabels] = useState<number[]>([]);
   const [epicId, setEpicId] = useState<number | undefined>();
   const [milestoneId, setMilestoneId] = useState<number | undefined>();
+  const [submitting, setSubmitting] = useState(false);
   const [smartTriage, setSmartTriage] = useState(false);
   const [triageSuggestion, setTriageSuggestion] = useState<TriageSuggestion | null>(null);
   const triageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -103,20 +104,26 @@ export function CreateIssueDialog({
   };
 
   const handleSubmit = async () => {
-    if (!title.trim()) return;
-    await onCreate({
-      project_id: projectId,
-      title: title.trim(),
-      description: description || undefined,
-      status_id: statusId,
-      priority,
-      assignee_id: assigneeId,
-      parent_id: parentId,
-      label_ids: selectedLabels.length > 0 ? selectedLabels : undefined,
-      epic_id: epicId,
-      milestone_id: milestoneId,
-    });
-    onClose();
+    if (!title.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await onCreate({
+        project_id: projectId,
+        title: title.trim(),
+        description: description || undefined,
+        status_id: statusId,
+        priority,
+        assignee_id: assigneeId,
+        parent_id: parentId,
+        label_ids: selectedLabels.length > 0 ? selectedLabels : undefined,
+        epic_id: epicId,
+        milestone_id: milestoneId,
+      });
+      onClose();
+    } catch (e) {
+      console.error("Failed to create issue:", e);
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -283,8 +290,8 @@ export function CreateIssueDialog({
 
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={!title.trim()}>
-            Create
+          <Button onClick={handleSubmit} disabled={!title.trim() || submitting}>
+            {submitting ? "Creating..." : "Create"}
           </Button>
         </div>
       </DialogContent>

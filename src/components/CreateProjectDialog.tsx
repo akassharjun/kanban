@@ -17,6 +17,7 @@ export function CreateProjectDialog({ onClose, onCreate }: CreateProjectDialogPr
   const [icon, setIcon] = useState("📋");
   const [path, setPath] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -37,9 +38,15 @@ export function CreateProjectDialog({ onClose, onCreate }: CreateProjectDialogPr
   }, [path]);
 
   const handleSubmit = async () => {
-    if (!name.trim() || !prefix.trim() || !path.trim()) return;
-    await onCreate({ name: name.trim(), prefix: prefix.trim().toUpperCase(), description: description || undefined, icon, path: path.trim() });
-    onClose();
+    if (!name.trim() || !prefix.trim() || !path.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await onCreate({ name: name.trim(), prefix: prefix.trim().toUpperCase(), description: description || undefined, icon, path: path.trim() });
+      onClose();
+    } catch (e) {
+      console.error("Failed to create project:", e);
+      setSubmitting(false);
+    }
   };
 
   const handleNameChange = (val: string) => {
@@ -127,8 +134,8 @@ export function CreateProjectDialog({ onClose, onCreate }: CreateProjectDialogPr
 
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={!name.trim() || !prefix.trim() || !path.trim()}>
-            Create
+          <Button onClick={handleSubmit} disabled={!name.trim() || !prefix.trim() || !path.trim() || submitting}>
+            {submitting ? "Creating..." : "Create"}
           </Button>
         </div>
       </DialogContent>
