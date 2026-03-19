@@ -25,11 +25,24 @@ interface SidebarProps {
   onSelectSavedView?: (view: SavedView) => void;
   onDeleteSavedView?: (id: number) => void;
   onRenameSavedView?: (id: number, name: string) => void;
+  projectHealth?: Record<number, "clean" | "dirty" | "ahead">;
 }
 
 const navItemBase = "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-colors";
 const navItemActive = "bg-primary/10 text-primary font-medium";
 const navItemInactive = "text-muted-foreground hover:bg-muted hover:text-foreground";
+
+const HEALTH_DOT_COLORS: Record<"clean" | "dirty" | "ahead", string> = {
+  clean: "bg-green-500",
+  dirty: "bg-yellow-500",
+  ahead: "bg-blue-500",
+};
+
+const HEALTH_DOT_TITLES: Record<"clean" | "dirty" | "ahead", string> = {
+  clean: "Clean — no uncommitted changes",
+  dirty: "Dirty — has uncommitted changes",
+  ahead: "Ahead — has commits to push",
+};
 
 export function Sidebar({
   projects,
@@ -53,6 +66,7 @@ export function Sidebar({
   onSelectSavedView,
   onDeleteSavedView,
   onRenameSavedView,
+  projectHealth,
 }: SidebarProps) {
   const [projectsExpanded, setProjectsExpanded] = useState(true);
   const [starredExpanded, setStarredExpanded] = useState(true);
@@ -86,21 +100,30 @@ export function Sidebar({
 
         {projectsExpanded && (
           <div className="mt-0.5 space-y-0.5">
-            {projects.map((project) => (
-              <button
-                key={project.id}
-                onClick={() => onSelectProject(project.id)}
-                className={cn(
-                  navItemBase, "font-medium",
-                  selectedProjectId === project.id && activePage === "project"
-                    ? navItemActive
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                <span className="text-base leading-none">{project.icon || "📋"}</span>
-                <span className="truncate">{project.name}</span>
-              </button>
-            ))}
+            {projects.map((project) => {
+              const health = projectHealth?.[project.id];
+              return (
+                <button
+                  key={project.id}
+                  onClick={() => onSelectProject(project.id)}
+                  className={cn(
+                    navItemBase, "font-medium",
+                    selectedProjectId === project.id && activePage === "project"
+                      ? navItemActive
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  <span className="text-base leading-none">{project.icon || "📋"}</span>
+                  <span className="truncate flex-1">{project.name}</span>
+                  {health && (
+                    <span
+                      className={cn("h-2 w-2 rounded-full flex-shrink-0", HEALTH_DOT_COLORS[health])}
+                      title={HEALTH_DOT_TITLES[health]}
+                    />
+                  )}
+                </button>
+              );
+            })}
             <button
               onClick={onCreateProject}
               className={cn(navItemBase, "text-muted-foreground/60 hover:bg-muted hover:text-foreground")}

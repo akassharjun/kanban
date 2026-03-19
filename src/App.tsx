@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { listen } from "./tauri/events";
 import { Sidebar } from "./components/Sidebar";
 import { ProjectHeader, type ViewMode } from "./components/ProjectHeader";
@@ -39,7 +39,7 @@ import { useStarred } from "./hooks/use-starred";
 import { useRecentlyViewed } from "./hooks/use-recently-viewed";
 import * as api from "./tauri/commands";
 import { useToast } from "./components/Toast";
-import type { IssueTemplate, SavedView } from "./types";
+import type { IssueTemplate, SavedView, GitStatus } from "./types";
 
 type Page = "project" | "members" | "settings" | "agents" | "code" | "pipelines";
 
@@ -64,6 +64,8 @@ function App() {
 
   const { showToast } = useToast();
 
+  const [projectHealth, setProjectHealth] = useState<Record<number, "clean" | "dirty" | "ahead">>({});
+
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return document.documentElement.classList.contains("dark") ? "dark" : "light";
   });
@@ -85,6 +87,29 @@ function App() {
   const { milestones, refresh: refreshMilestones } = useMilestones(selectedProjectId);
   const { agents: allAgents } = useAgents();
   const onlineAgentCount = allAgents.filter(a => a.status !== "offline").length;
+
+  // Fetch git status for selected project and compute health indicator
+  const computeProjectHealth = useCallback((status: GitStatus): "clean" | "dirty" | "ahead" => {
+    if (status.uncommitted > 0 || status.untracked > 0) return "dirty";
+    if (status.ahead > 0) return "ahead";
+    return "clean";
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    let cancelled = false;
+    api.getGitStatus(selectedProjectId)
+      .then(status => {
+        if (!cancelled) {
+          setProjectHealth(prev => ({
+            ...prev,
+            [selectedProjectId]: computeProjectHealth(status),
+          }));
+        }
+      })
+      .catch(() => { /* git status unavailable, no dot shown */ });
+    return () => { cancelled = true; };
+  }, [selectedProjectId, computeProjectHealth]);
 
   // Current member ID (first member = current user)
   const currentMemberId = members.length > 0 ? members[0].id : null;
@@ -298,6 +323,7 @@ function App() {
         onSelectSavedView={handleSelectSavedView}
         onDeleteSavedView={removeSavedView}
         onRenameSavedView={(id, name) => updateSavedView(id, { name })}
+        projectHealth={projectHealth}
       />
 
       <div className="flex flex-1 flex-col overflow-hidden">

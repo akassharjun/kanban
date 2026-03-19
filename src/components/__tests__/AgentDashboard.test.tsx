@@ -20,6 +20,14 @@ vi.mock("@/tauri/commands", () => ({
   recentActivity: vi.fn(() => Promise.resolve([])),
   getIssue: vi.fn(),
   deregisterAgent: vi.fn(),
+  listGitWorktrees: vi.fn(() => Promise.resolve([])),
+  listAgentPermissions: vi.fn(() => Promise.resolve([])),
+  listPermissionPresets: vi.fn(() => Promise.resolve([])),
+  setAgentPermission: vi.fn(),
+  removeAgentPermission: vi.fn(),
+  clearAgentPermissions: vi.fn(),
+  applyPresetToAgent: vi.fn(),
+  checkPermission: vi.fn(),
 }));
 
 describe("AgentDashboard", () => {

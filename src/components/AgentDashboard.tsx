@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { listen } from "@/tauri/events";
-import { Trash2, Activity, Bot, Cpu, CheckCircle2, Clock, AlertTriangle, Wifi, Shield, ShieldCheck, ShieldX, Plus, X, ChevronDown, Search, DollarSign } from "lucide-react";
-import type { AgentMetrics, ExecutionLog, AgentPermission, PermissionPreset, PermissionCheckResult, Agent as AgentType } from "@/types";
+import { Trash2, Activity, Bot, Cpu, CheckCircle2, Clock, AlertTriangle, Wifi, Shield, ShieldCheck, ShieldX, Plus, X, ChevronDown, Search, DollarSign, GitBranch } from "lucide-react";
+import type { AgentMetrics, ExecutionLog, AgentPermission, PermissionPreset, PermissionCheckResult, Agent as AgentType, GitWorktree } from "@/types";
 import { useAgents, useProjectMetrics } from "@/hooks/use-agents";
-import { getAgentStats, recentActivity, getIssue, deregisterAgent, listAgentPermissions, setAgentPermission, removeAgentPermission, clearAgentPermissions, listPermissionPresets, applyPresetToAgent, checkPermission } from "@/tauri/commands";
+import { getAgentStats, recentActivity, getIssue, deregisterAgent, listAgentPermissions, setAgentPermission, removeAgentPermission, clearAgentPermissions, listPermissionPresets, applyPresetToAgent, checkPermission, listGitWorktrees } from "@/tauri/commands";
 import { cn } from "@/lib/utils";
 import { CostDashboard } from "@/components/CostDashboard";
 
@@ -274,6 +274,8 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
   const [issueIdentifiers, setIssueIdentifiers] = useState<Record<number, string>>({});
   const [showInactive, setShowInactive] = useState(false);
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+  const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
+  const [worktreesLoading, setWorktreesLoading] = useState(false);
 
   useEffect(() => {
     if (agents.length === 0) return;
@@ -306,6 +308,17 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
   }, [projectId]);
 
   useEffect(() => { refreshActivity(); }, [refreshActivity]);
+
+  useEffect(() => {
+    if (!projectId) { setWorktrees([]); return; }
+    let cancelled = false;
+    setWorktreesLoading(true);
+    listGitWorktrees(projectId)
+      .then(wt => { if (!cancelled) setWorktrees(wt); })
+      .catch(() => { if (!cancelled) setWorktrees([]); })
+      .finally(() => { if (!cancelled) setWorktreesLoading(false); });
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   useEffect(() => {
     if (activityLogs.length === 0) return;
@@ -510,6 +523,76 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
           </div>
         )}
       </div>
+
+      {/* Worktrees */}
+      {projectId && (
+        <div>
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50 mb-3 flex items-center gap-1.5">
+            <GitBranch className="h-3.5 w-3.5" />
+            Worktrees
+          </h2>
+          {worktreesLoading ? (
+            <div className="text-sm text-muted-foreground/50">Loading worktrees...</div>
+          ) : worktrees.length === 0 ? (
+            <div className="rounded-xl border border-border/50 bg-card p-6 text-center">
+              <GitBranch className="h-6 w-6 mx-auto text-muted-foreground/20 mb-2" />
+              <p className="text-sm text-muted-foreground/40 font-mono">No worktrees found for this project.</p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
+              <div className="grid grid-cols-[1fr_6rem_8rem_5rem] gap-2 px-3 py-2 border-b border-border/50 text-[10px] uppercase tracking-wider text-muted-foreground/40 font-semibold">
+                <span>Path</span>
+                <span>Branch</span>
+                <span>Agent</span>
+                <span>Task</span>
+              </div>
+              <div className="divide-y divide-border/30">
+                {worktrees.map((wt) => {
+                  const linkedAgent = wt.agent_id ? agents.find(a => a.id === wt.agent_id) : null;
+                  const agentStatus = linkedAgent?.status ?? null;
+                  const statusColor = agentStatus ? (STATUS_COLORS[agentStatus] || STATUS_COLORS.offline) : null;
+                  return (
+                    <div key={wt.path} className="grid grid-cols-[1fr_6rem_8rem_5rem] gap-2 px-3 py-2 items-center hover:bg-muted/30 transition-colors">
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-mono text-muted-foreground/70 truncate" title={wt.path}>
+                          {wt.path.split("/").slice(-2).join("/")}
+                        </div>
+                        {wt.is_main && (
+                          <span className="text-[9px] font-semibold uppercase tracking-wider text-primary/60">main</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] font-mono text-muted-foreground truncate" title={wt.branch}>
+                        {wt.branch}
+                      </div>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {linkedAgent ? (
+                          <>
+                            {statusColor && (
+                              <span className={cn("h-2 w-2 rounded-full flex-shrink-0", statusColor, agentStatus !== "offline" ? "animate-pulse" : "")} />
+                            )}
+                            <span className="text-[11px] font-mono text-muted-foreground truncate">{linkedAgent.name}</span>
+                          </>
+                        ) : wt.agent_name ? (
+                          <span className="text-[11px] font-mono text-muted-foreground/40 truncate">{wt.agent_name}</span>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground/20 font-mono">—</span>
+                        )}
+                      </div>
+                      <div>
+                        {wt.task_identifier ? (
+                          <span className="text-[11px] font-mono text-primary">{wt.task_identifier}</span>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground/20 font-mono">—</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Activity Feed */}
       <div>
