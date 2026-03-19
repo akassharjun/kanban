@@ -40,4 +40,5 @@ pub mod task_contracts;
 pub mod templates;
 pub mod triage;
 pub mod recurring;
+pub mod shell;
 pub mod undo;

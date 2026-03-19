@@ -1,18 +1,22 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { X, Minus, Maximize2, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isTauri } from "@/tauri/mock-backend";
+import * as api from "@/tauri/commands";
 
 interface TerminalPanelProps {
   onClose: () => void;
+  projectPath?: string | null;
 }
 
-export function TerminalPanel({ onClose }: TerminalPanelProps) {
+export function TerminalPanel({ onClose, projectPath }: TerminalPanelProps) {
   const [height, setHeight] = useState(240);
   const [isMaximized, setIsMaximized] = useState(false);
   const [input, setInput] = useState("");
+  const [cwd, setCwd] = useState<string | undefined>(projectPath ?? undefined);
   const [history, setHistory] = useState<{ type: "input" | "output" | "error"; text: string }[]>([
     { type: "output", text: "Terminal ready. Type commands below." },
-    { type: "output", text: "Note: In browser mode, commands are simulated." },
+    { type: "output", text: isTauri ? (projectPath ? `Working directory: ${projectPath}` : "Note: Set a project path in settings to start in project root.") : "Note: In browser mode, commands are simulated." },
   ]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -54,39 +58,76 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
     const cmd = input.trim();
     setHistory(prev => [...prev, { type: "input", text: `$ ${cmd}` }]);
     setInput("");
 
-    // Mock command responses
+    // Handle clear locally always
     if (cmd === "clear") {
       setHistory([]);
       return;
     }
-    if (cmd === "help") {
-      setHistory(prev => [...prev, { type: "output", text: "Available commands: help, clear, pwd, ls, echo, whoami" }]);
-      return;
+
+    if (isTauri) {
+      // Handle `cd` locally — update cwd state
+      if (cmd === "cd" || cmd === "cd ~") {
+        const home = cwd?.split("/").slice(0, 3).join("/") ?? "/home/user";
+        setCwd(home);
+        return;
+      }
+      if (cmd.startsWith("cd ")) {
+        const target = cmd.slice(3).trim();
+        let newCwd: string;
+        if (target.startsWith("/")) {
+          newCwd = target;
+        } else {
+          newCwd = (cwd ?? "") + "/" + target;
+        }
+        // Verify it exists by attempting to list it
+        try {
+          await api.listDirectories(newCwd);
+          setCwd(newCwd);
+        } catch {
+          setHistory(prev => [...prev, { type: "error", text: `cd: ${target}: No such file or directory` }]);
+        }
+        return;
+      }
+
+      try {
+        const output = await api.executeShellCommand(cmd, cwd);
+        if (output.trim()) {
+          setHistory(prev => [...prev, { type: "output", text: output.trimEnd() }]);
+        }
+      } catch (err) {
+        setHistory(prev => [...prev, { type: "error", text: String(err) }]);
+      }
+    } else {
+      // Browser mock fallback
+      if (cmd === "help") {
+        setHistory(prev => [...prev, { type: "output", text: "Available commands: help, clear, pwd, ls, echo, whoami" }]);
+        return;
+      }
+      if (cmd === "pwd") {
+        setHistory(prev => [...prev, { type: "output", text: cwd ?? "/home/user/project" }]);
+        return;
+      }
+      if (cmd === "whoami") {
+        setHistory(prev => [...prev, { type: "output", text: "kanban-user" }]);
+        return;
+      }
+      if (cmd.startsWith("echo ")) {
+        setHistory(prev => [...prev, { type: "output", text: cmd.slice(5) }]);
+        return;
+      }
+      if (cmd === "ls") {
+        setHistory(prev => [...prev, { type: "output", text: "src/  e2e/  docs/  package.json  tsconfig.json" }]);
+        return;
+      }
+      setHistory(prev => [...prev, { type: "error", text: `command not found: ${cmd.split(" ")[0]}` }]);
     }
-    if (cmd === "pwd") {
-      setHistory(prev => [...prev, { type: "output", text: "/home/user/project" }]);
-      return;
-    }
-    if (cmd === "whoami") {
-      setHistory(prev => [...prev, { type: "output", text: "kanban-user" }]);
-      return;
-    }
-    if (cmd.startsWith("echo ")) {
-      setHistory(prev => [...prev, { type: "output", text: cmd.slice(5) }]);
-      return;
-    }
-    if (cmd === "ls") {
-      setHistory(prev => [...prev, { type: "output", text: "src/  e2e/  docs/  package.json  tsconfig.json" }]);
-      return;
-    }
-    setHistory(prev => [...prev, { type: "error", text: `command not found: ${cmd.split(" ")[0]}` }]);
   };
 
   return (
@@ -101,6 +142,9 @@ export function TerminalPanel({ onClose }: TerminalPanelProps) {
         <div className="flex items-center gap-2">
           <ChevronUp className="h-3 w-3 text-muted-foreground/50" />
           <span className="text-[11px] font-medium text-muted-foreground">Terminal</span>
+          {cwd && (
+            <span className="text-[10px] text-muted-foreground/50 font-mono">{cwd}</span>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <button onClick={() => setHeight(120)} className="rounded p-0.5 hover:bg-muted/20 text-muted-foreground/50 hover:text-muted-foreground transition-colors">

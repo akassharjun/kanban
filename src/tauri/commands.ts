@@ -676,3 +676,7 @@ export const listGitWorktrees = (projectId: number) => invoke<GitWorktree[]>("li
 export const getIssueCommits = (projectId: number, issueIdentifier: string) => invoke<GitCommit[]>("get_issue_commits", { projectId, issueIdentifier });
 export const getIssueBranches = (projectId: number, issueIdentifier: string) => invoke<GitBranch[]>("get_issue_branches", { projectId, issueIdentifier });
 export const getSlaDashboard = (projectId: number) => invoke<SlaDashboard>("get_sla_dashboard", { projectId });
+
+// Shell
+export const executeShellCommand = (command: string, cwd?: string) => invoke<string>("execute_shell_command", { command, cwd });
+export const listDirectories = (path: string) => invoke<string[]>("list_directories", { path });

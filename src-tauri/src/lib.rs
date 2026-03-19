@@ -361,6 +361,9 @@ pub fn run_gui(database_url: Option<String>) {
             commands::sla::enforce_sla,
             commands::sla::get_sla_events,
             commands::sla::get_sla_dashboard,
+            // Shell
+            commands::shell::execute_shell_command,
+            commands::shell::list_directories,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

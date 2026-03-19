@@ -87,8 +87,8 @@ const members: Member[] = [
 ];
 
 const projects: Project[] = [
-  { id: 1, name: "Kanban Core", description: "Core kanban board features", icon: "📋", status: "active", prefix: "KAN", issue_counter: 24, path: null, stale_days: null, stale_close_status_id: null, created_at: ago(10000), updated_at: ago(10) },
-  { id: 2, name: "Agent Platform", description: "AI agent task orchestration", icon: "🤖", status: "active", prefix: "AGT", issue_counter: 12, path: null, stale_days: null, stale_close_status_id: null, created_at: ago(5000), updated_at: ago(30) },
+  { id: 1, name: "Kanban Core", description: "Core kanban board features", icon: "📋", status: "active", prefix: "KAN", issue_counter: 24, path: "/home/user/kanban", stale_days: null, stale_close_status_id: null, created_at: ago(10000), updated_at: ago(10) },
+  { id: 2, name: "Agent Platform", description: "AI agent task orchestration", icon: "🤖", status: "active", prefix: "AGT", issue_counter: 12, path: "/home/user/agent-platform", stale_days: null, stale_close_status_id: null, created_at: ago(5000), updated_at: ago(30) },
 ];
 
 const statuses: Record<number, Status[]> = {
@@ -1572,6 +1572,23 @@ Agents must send a heartbeat every 30 seconds or they will be marked offline.
         { path: "/home/user/kanban/.worktrees/kan-6-fix", branch: "kan-6/fix-drag-drop", head_hash: "def5678", is_main: false, agent_id: "claude-opus-1", agent_name: "Claude Opus", task_identifier: "KAN-6" },
         { path: "/home/user/kanban/.worktrees/kan-9-undo", branch: "kan-9/implement-undo-redo", head_hash: "ghi9012", is_main: false, agent_id: "review-bot-1", agent_name: "Review Bot", task_identifier: "KAN-9" },
       ] as GitWorktree[];
+    }
+
+    case "execute_shell_command": {
+      const cmd2 = args?.command ?? "";
+      if (cmd2 === "clear") return "";
+      if (cmd2 === "pwd") return "/home/user/kanban\n";
+      if (cmd2 === "ls") return "src/  e2e/  docs/  package.json  tsconfig.json\n";
+      if (cmd2 === "whoami") return "kanban-user\n";
+      if (cmd2.startsWith("echo ")) return cmd2.slice(5) + "\n";
+      if (cmd2 === "help") return "Available commands: help, clear, pwd, ls, echo, whoami\n";
+      return `command not found: ${cmd2.split(" ")[0]}\n`;
+    }
+    case "list_directories": {
+      const p = args?.path ?? "/";
+      if (p === "/" || p === "/home") return ["/home/user"];
+      if ((p as string).includes("/home/user")) return ["/home/user/kanban", "/home/user/documents", "/home/user/projects"];
+      return ["/home", "/tmp", "/usr"];
     }
 
     default:

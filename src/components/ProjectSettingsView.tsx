@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Plus, Pencil, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Project, Status, Label, IssueTemplate, Hook, ProjectAgentConfig } from "@/types";
@@ -40,6 +40,10 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
   const [agentConfig, setAgentConfig] = useState<ProjectAgentConfig | null>(null);
   const [agentConfigSaving, setAgentConfigSaving] = useState(false);
   const [path, setPath] = useState(project.path || "");
+  const [pathSuggestions, setPathSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const pathDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pathInputRef = useRef<HTMLInputElement>(null);
 
   // General form
   const [name, setName] = useState(project.name);
@@ -90,6 +94,26 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
     setHooks(h);
     setAgentConfig(ac);
   };
+
+  const handlePathChange = useCallback((value: string) => {
+    setPath(value);
+    if (pathDebounceRef.current) clearTimeout(pathDebounceRef.current);
+    if (!value.trim()) {
+      setPathSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    pathDebounceRef.current = setTimeout(async () => {
+      try {
+        const dirs = await api.listDirectories(value);
+        setPathSuggestions(dirs);
+        setShowSuggestions(dirs.length > 0);
+      } catch {
+        setPathSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }, 300);
+  }, []);
 
   const handleSaveGeneral = async () => {
     await onUpdateProject(project.id, {
@@ -270,10 +294,36 @@ export function ProjectSettingsView({ project, onUpdateProject, onRefreshStatuse
               <label className="block text-sm text-muted-foreground mb-1">Prefix</label>
               <input value={project.prefix} disabled className="w-32 rounded-md border border-border bg-background/50 px-3 py-2 text-sm text-muted-foreground" />
             </div>
-            <div>
+            <div className="relative">
               <label className="block text-sm text-muted-foreground mb-1">Project Path</label>
               <p className="text-xs text-muted-foreground/70 mb-1">Local directory for this project. Used by agents to access the codebase.</p>
-              <input value={path} onChange={e => setPath(e.target.value)} placeholder="/path/to/project" className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary font-mono" />
+              <input
+                ref={pathInputRef}
+                value={path}
+                onChange={e => handlePathChange(e.target.value)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                onFocus={() => { if (pathSuggestions.length > 0) setShowSuggestions(true); }}
+                placeholder="/path/to/project"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary font-mono"
+              />
+              {showSuggestions && pathSuggestions.length > 0 && (
+                <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-md overflow-hidden">
+                  {pathSuggestions.map((dir) => (
+                    <button
+                      key={dir}
+                      type="button"
+                      onMouseDown={() => {
+                        setPath(dir);
+                        setShowSuggestions(false);
+                        setPathSuggestions([]);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm font-mono hover:bg-accent transition-colors truncate"
+                    >
+                      {dir}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <button onClick={handleSaveGeneral} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
               Save Changes
