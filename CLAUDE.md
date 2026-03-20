@@ -47,10 +47,11 @@ When the user requests a feature, bug fix, or improvement:
    - **Blocked** (status_id: 12): Cannot proceed due to a dependency or external blocker.
    - **Discarded** (status_id: 14): Intentionally abandoned.
 
-3. **On every status change, leave a comment on the issue** explaining why it moved. Until KAN-23 (comments system) is implemented, log the comment via `activity_log` using this pattern:
+3. **On every status change, leave a comment on the issue** explaining why it moved. Use the CLI comment command:
    ```bash
-   sqlite3 ~/.kanban/data.db "INSERT INTO activity_log (issue_id, field_changed, old_value, new_value, timestamp) VALUES (<issue_id>, 'comment', NULL, '<message>', datetime('now'));"
+   kanban-cli comment add <IDENTIFIER> --content "<message>"
    ```
+   **NEVER use sqlite3 directly** — always use the CLI or MCP server to interact with the database.
 
 4. **When starting work on a task:**
    - Move the issue to In Progress (status_id: 10)

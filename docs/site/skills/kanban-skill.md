@@ -59,8 +59,7 @@ When the user requests a feature, bug fix, or improvement:
 3. **On every status change, leave a comment** explaining why:
    ```bash
    kanban cli issue update <IDENTIFIER> --status <NEW_STATUS_ID>
-   # Log a comment via activity_log:
-   sqlite3 ~/.kanban/data.db "INSERT INTO activity_log (issue_id, field_changed, old_value, new_value, timestamp) VALUES (<issue_id>, 'comment', NULL, '<message>', datetime('now'));"
+   kanban cli comment add <IDENTIFIER> --content "<message>"
    ```
 
 4. **When starting work:**
@@ -118,16 +117,16 @@ kanban cli issue list --project 2  # Try project 2
 
 ### Find Status IDs
 
-Status IDs are visible in the board's Settings page under the "Statuses" tab, or query the database:
+Status IDs are visible in the board's Settings page under the "Statuses" tab, or use the CLI:
 
 ```bash
-sqlite3 ~/.kanban/data.db "SELECT id, name, category FROM statuses WHERE project_id = <YOUR_PROJECT_ID>;"
+kanban cli issue list --project <PROJECT_ID>  # Shows status names
 ```
 
 ### Find Member IDs
 
 ```bash
-sqlite3 ~/.kanban/data.db "SELECT id, name, display_name FROM members;"
+kanban cli member list --json  # Shows member IDs and names
 ```
 
 ## Example: Claude Code Setup

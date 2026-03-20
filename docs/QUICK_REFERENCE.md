@@ -246,10 +246,9 @@ kanban --database-url "sqlite:///path/to/db"
 ## Activity Logging Example
 
 ```bash
-# Log issue status change (manual)
-sqlite3 ~/.kanban/data.db \
-  "INSERT INTO activity_log (issue_id, field_changed, old_value, new_value, timestamp) \
-   VALUES (1, 'status_id', '2', '3', datetime('now'));"
+# Log issue status change and add comment
+kanban cli issue update KAN-1 --status 3
+kanban cli comment add KAN-1 --content "Moved to In Progress"
 ```
 
 ## Common Workflows
@@ -378,8 +377,8 @@ kanban mcp
 ## Troubleshooting
 
 ```bash
-# Check database status
-sqlite3 ~/.kanban/data.db "SELECT COUNT(*) FROM issues;"
+# Check issue count via CLI
+kanban cli issue list --project 1 --json | python3 -c "import sys,json; print(len(json.load(sys.stdin)))"
 
 # View last errors (CLI)
 kanban cli project list 2>&1 | tail
