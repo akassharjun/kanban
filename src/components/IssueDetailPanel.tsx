@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, History, MessageSquare, Activity, Star, GitBranch, GitPullRequest, GitCommitHorizontal, ExternalLink, CheckCircle2, XCircle, Clock, Loader2, Code, Link2, Unlink, ArrowRightLeft, Lightbulb, Zap, ChevronRight, Check, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
@@ -209,6 +210,12 @@ export function IssueDetailPanel({
   }, [issueId, projectId]);
 
   useEffect(() => { loadIssue(); }, [loadIssue]);
+
+  // Refresh when external changes occur (agent comments, task updates, etc.)
+  useEffect(() => {
+    const unlisten = listen("db-changed", () => { loadIssue(); });
+    return () => { unlisten.then(fn => fn()); };
+  }, [loadIssue]);
 
   // Record view when opening
   useEffect(() => {

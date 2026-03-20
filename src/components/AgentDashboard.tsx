@@ -493,14 +493,6 @@ export function AgentDashboard({ projectId, onViewReplay }: AgentDashboardProps)
                     </div>
                   )}
 
-                  {stats && stats.current_tasks && stats.current_tasks.length > 0 && (
-                    <div className="space-y-0.5">
-                      {stats.current_tasks.map((task: string) => (
-                        <div key={task} className="text-xs font-mono text-amber-500">▶ {task}</div>
-                      ))}
-                    </div>
-                  )}
-
                   <div className="flex items-center justify-between">
                     <div className="text-[10px] text-muted-foreground/30 font-mono">
                       last active: {formatTime(agent.last_activity_at || agent.last_heartbeat)}

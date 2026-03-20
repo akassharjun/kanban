@@ -425,13 +425,23 @@ pub fn complete_task(
             .fetch_one(&state.pool)
             .await?;
 
-            // Verify claimed_by matches agent_id
+            // Verify claimed_by matches agent_id (tolerant of race conditions)
+            // If the timeout recovery thread unclaimed the task between claim and complete,
+            // allow completion if the task is in a completable state
             match &contract.claimed_by {
                 Some(claimed) if claimed == &input.agent_id => {}
                 _ => {
-                    return Err(sqlx::Error::Protocol(
-                        "TASK_NOT_CLAIMED_BY_AGENT".to_string(),
-                    ));
+                    // Task was unclaimed (race condition) — reclaim it atomically
+                    let reclaimed = sqlx::query(
+                        "UPDATE task_contracts SET claimed_by = $1, claimed_at = $2 WHERE issue_id = $3 AND (claimed_by IS NULL OR claimed_by = $4)"
+                    )
+                    .bind(&input.agent_id).bind(&now).bind(issue_id).bind(&input.agent_id)
+                    .execute(&state.pool).await?;
+                    if reclaimed.rows_affected() == 0 {
+                        return Err(sqlx::Error::Protocol(
+                            format!("Task {} is not claimed by agent {}", input.identifier, input.agent_id),
+                        ));
+                    }
                 }
             }
 
@@ -738,6 +748,19 @@ pub fn fail_task(
             .bind(issue_id)
             .fetch_one(&state.pool)
             .await?;
+
+            // Tolerant claim check — reclaim if unclaimed by timeout recovery
+            let now_fail = chrono::Utc::now().format("%Y-%m-%d %H:%M:%SZ").to_string();
+            match &contract.claimed_by {
+                Some(claimed) if claimed == &agent_id => {}
+                _ => {
+                    let _ = sqlx::query(
+                        "UPDATE task_contracts SET claimed_by = $1, claimed_at = $2 WHERE issue_id = $3 AND (claimed_by IS NULL OR claimed_by = $4)"
+                    )
+                    .bind(&agent_id).bind(&now_fail).bind(issue_id).bind(&agent_id)
+                    .execute(&state.pool).await;
+                }
+            }
 
             let new_attempt_count = contract.attempt_count + 1;
 
