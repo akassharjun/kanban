@@ -364,6 +364,13 @@ pub fn run_gui(database_url: Option<String>) {
             // Shell
             commands::shell::execute_shell_command,
             commands::shell::list_directories,
+            // Explorer (file system + git)
+            commands::explorer::list_project_files,
+            commands::explorer::read_project_file,
+            commands::explorer::get_git_status,
+            commands::explorer::list_git_commits,
+            commands::explorer::list_git_branches,
+            commands::explorer::list_git_worktrees,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -11,6 +11,7 @@ pub mod decomposition;
 pub mod diff_issues;
 pub mod epics;
 pub mod execution_logs;
+pub mod explorer;
 pub mod git_links;
 pub mod github;
 pub mod handoff;
