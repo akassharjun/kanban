@@ -2511,10 +2511,16 @@ async fn handle_task(
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
-            if tc.claimed_by.as_deref() != Some(&agent) {
-                return Err(format!("Task {} is not claimed by agent {}", identifier, agent).into());
-            }
             let now = chrono::Utc::now().to_rfc3339();
+            if tc.claimed_by.as_deref() != Some(&agent) {
+                let reclaimed = sqlx::query(
+                    "UPDATE task_contracts SET claimed_by = $1, claimed_at = $2 WHERE issue_id = $3 AND (claimed_by IS NULL OR claimed_by = $4)"
+                ).bind(&agent).bind(&now).bind(issue.id).bind(&agent)
+                .execute(pool).await?;
+                if reclaimed.rows_affected() == 0 {
+                    return Err(format!("Task {} is not claimed by agent {}", identifier, agent).into());
+                }
+            }
             sqlx::query("UPDATE task_contracts SET task_state = 'executing' WHERE issue_id = $1")
                 .bind(issue.id)
                 .execute(pool)
@@ -2551,10 +2557,17 @@ async fn handle_task(
                 .bind(issue.id)
                 .fetch_one(pool)
                 .await?;
-            if tc.claimed_by.as_deref() != Some(&agent) {
-                return Err(format!("Task {} is not claimed by agent {}", identifier, agent).into());
-            }
             let now = chrono::Utc::now().to_rfc3339();
+            // Tolerant claim check — reclaim if unclaimed by timeout recovery
+            if tc.claimed_by.as_deref() != Some(&agent) {
+                let reclaimed = sqlx::query(
+                    "UPDATE task_contracts SET claimed_by = $1, claimed_at = $2 WHERE issue_id = $3 AND (claimed_by IS NULL OR claimed_by = $4)"
+                ).bind(&agent).bind(&now).bind(issue.id).bind(&agent)
+                .execute(pool).await?;
+                if reclaimed.rows_affected() == 0 {
+                    return Err(format!("Task {} is not claimed by agent {}", identifier, agent).into());
+                }
+            }
 
             // Get project config thresholds
             let config = sqlx::query_as::<_, ProjectAgentConfig>(
