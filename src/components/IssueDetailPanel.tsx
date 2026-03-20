@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "@/tauri/events";
 import { X, Copy, Trash2, Pencil, AlertCircle, SignalHigh, SignalMedium, SignalLow, Minus, FileText, ChevronDown, History, MessageSquare, Activity, Star, GitBranch, GitPullRequest, GitCommitHorizontal, ExternalLink, CheckCircle2, XCircle, Clock, Loader2, Code, Link2, Unlink, ArrowRightLeft, Lightbulb, Zap, ChevronRight, Check, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";

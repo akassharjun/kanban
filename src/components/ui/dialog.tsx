@@ -7,17 +7,27 @@ interface DialogOverlayProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const DialogOverlay = React.forwardRef<HTMLDivElement, DialogOverlayProps>(
-  ({ className, onClose, ...props }, ref) => (
-    <div
-      ref={ref}
-      className={cn(
-        "fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm",
-        className
-      )}
-      onClick={onClose}
-      {...props}
-    />
-  )
+  ({ className, onClose, ...props }, ref) => {
+    React.useEffect(() => {
+      if (!onClose) return;
+      const handler = (e: KeyboardEvent) => {
+        if (e.key === "Escape") { e.stopPropagation(); onClose(); }
+      };
+      window.addEventListener("keydown", handler, true); // capture phase
+      return () => window.removeEventListener("keydown", handler, true);
+    }, [onClose]);
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          "fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm",
+          className
+        )}
+        onClick={onClose}
+        {...props}
+      />
+    );
+  }
 );
 DialogOverlay.displayName = "DialogOverlay";
 
