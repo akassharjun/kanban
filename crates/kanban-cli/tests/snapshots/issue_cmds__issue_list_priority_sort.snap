@@ -1,0 +1,6 @@
+---
+source: crates/kanban-cli/tests/issue_cmds.rs
+expression: stdout
+---
+PRJ-2  high  fix crash
+PRJ-1  none  add login
