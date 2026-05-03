@@ -16,5 +16,7 @@ pub use error::{EntityKind, Error, Result, ValidationError};
 pub use ids::{format_identifier, new_id};
 pub use operation::{Operation, OperationOutcome};
 pub use time::{Clock, FixedClock, SystemClock, system_clock};
-pub use types::{Issue, Label, Priority, Project, ProjectStatus, Status, StatusCategory};
+pub use types::{
+    ActivityEntry, Issue, Label, Priority, Project, ProjectStatus, Status, StatusCategory,
+};
 pub use workspace::{Workspace, WorkspacePath};

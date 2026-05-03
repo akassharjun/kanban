@@ -130,6 +130,21 @@ impl Workspace {
         crate::store::read::issues::list(&self.conn, &filter)
     }
 
+    /// Read the activity log for one issue, in `id` (insertion) order.
+    ///
+    /// Returns one row per field-level change on the issue; the timeline is
+    /// purely derivative of `operation_log`, so it can be rebuilt from re-play.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the read fails.
+    pub fn query_issue_history(
+        &self,
+        issue_id: uuid::Uuid,
+    ) -> crate::error::Result<Vec<crate::types::ActivityEntry>> {
+        crate::store::read::log::for_issue(&self.conn, issue_id)
+    }
+
     /// Read the most-recent operation's `inverse_payload`.
     ///
     /// Used by tests; will be reused by `undo`.

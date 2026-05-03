@@ -22,12 +22,13 @@ impl Workspace {
         let tx = self.conn.transaction()?;
         operation_log::truncate_redo_branch(&tx)?;
 
-        // Capture pre-state needed to invert this op.
+        // Capture pre-state needed to invert this op (read DB while it still
+        // reflects the old state).
         let inverse = capture_inverse(&tx, &op)?;
         let inverse_payload = serde_json::to_string(&inverse)?;
 
-        dispatch(&tx, &op, now)?;
-
+        // Insert the operation_log row first so we have an op_id to attach
+        // to any activity rows the dispatch produces.
         let op_id = operation_log::insert_operation(
             &tx,
             op_type_name(&op),
@@ -35,6 +36,12 @@ impl Workspace {
             &inverse_payload,
             now,
         )?;
+
+        // Capture pre-state for activity emission, then mutate, then emit.
+        let pre = capture_activity_pre(&tx, &op)?;
+        dispatch(&tx, &op, now)?;
+        emit_activity(&tx, op_id, &op, &pre, now)?;
+
         tx.commit()?;
         Ok(OperationOutcome { op_id })
     }
@@ -97,4 +104,71 @@ fn capture_inverse(tx: &rusqlite::Transaction<'_>, op: &Operation) -> Result<Ope
             "inverse not yet implemented for {other:?}"
         ))),
     }
+}
+
+/// Pre-dispatch state captured to populate `activity_log` rows after dispatch
+/// has mutated the database. Only the variants that need history rows are
+/// populated — everything else stays `None`.
+#[derive(Default)]
+pub(crate) struct ActivityPre {
+    pub(crate) issue_pre: Option<crate::types::Issue>,
+}
+
+fn capture_activity_pre(tx: &rusqlite::Transaction<'_>, op: &Operation) -> Result<ActivityPre> {
+    let mut pre = ActivityPre::default();
+    if let Operation::UpdateIssueField(args) = op {
+        pre.issue_pre = Some(crate::store::read::issues::by_id_via_tx(tx, args.id)?);
+    }
+    Ok(pre)
+}
+
+fn emit_activity(
+    tx: &rusqlite::Transaction<'_>,
+    op_id: i64,
+    op: &Operation,
+    pre: &ActivityPre,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<()> {
+    if let Operation::UpdateIssueField(args) = op {
+        // capture_activity_pre always populates issue_pre for this op variant.
+        let Some(pre_issue) = pre.issue_pre.as_ref() else {
+            return Err(Error::InvalidSnapshot(
+                "internal: missing issue_pre for UpdateIssueField".into(),
+            ));
+        };
+        let (field, old, new) = match &args.change {
+            crate::operation::IssueFieldChange::Title(v) => {
+                ("title", Some(pre_issue.title.clone()), Some(v.clone()))
+            }
+            crate::operation::IssueFieldChange::Description(v) => {
+                ("description", pre_issue.description.clone(), v.clone())
+            }
+            crate::operation::IssueFieldChange::Status(v) => (
+                "status",
+                Some(pre_issue.status_id.to_string()),
+                Some(v.to_string()),
+            ),
+            crate::operation::IssueFieldChange::Priority(v) => (
+                "priority",
+                Some(pre_issue.priority.as_str().to_string()),
+                Some(v.as_str().to_string()),
+            ),
+            crate::operation::IssueFieldChange::DueDate(v) => (
+                "due_date",
+                pre_issue.due_date.map(|d| d.to_string()),
+                v.map(|d| d.to_string()),
+            ),
+        };
+        let issue_id_s = args.id.to_string();
+        crate::store::write::operation_log::insert_activity(
+            tx,
+            op_id,
+            Some(issue_id_s.as_str()),
+            field,
+            old.as_deref(),
+            new.as_deref(),
+            now,
+        )?;
+    }
+    Ok(())
 }

@@ -147,6 +147,17 @@ pub struct Label {
     pub color: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActivityEntry {
+    pub id: i64,
+    pub op_id: i64,
+    pub issue_id: Option<Uuid>,
+    pub field: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub at: DateTime<Utc>,
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
