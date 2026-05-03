@@ -5,6 +5,7 @@ pub mod error;
 pub mod ids;
 pub mod operation;
 pub mod query;
+pub(crate) mod serde_f64;
 pub mod snapshot;
 mod store;
 pub mod time;
