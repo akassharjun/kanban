@@ -7,11 +7,14 @@ use std::sync::Arc;
 
 /// Opaque handle to a kanban workspace.
 ///
-/// Holds an open SQLite connection and a clock. NOT `Sync` — multi-threaded
+/// Holds an open `SQLite` connection and a clock. NOT `Sync` — multi-threaded
 /// callers must own one `Workspace` per thread (or use a pool).
 pub struct Workspace {
+    // Fields are read by Tasks 10+ (applier, queries). Allow dead_code until wired up.
+    #[allow(dead_code)]
     pub(crate) conn: Connection,
     pub(crate) clock: Arc<dyn Clock>,
+    #[allow(dead_code)]
     pub(crate) path: WorkspacePath,
 }
 
@@ -23,12 +26,21 @@ pub enum WorkspacePath {
 
 impl Workspace {
     /// Open the workspace at `~/.kanban/data.db` (or `$KANBAN_DB`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database file cannot be opened or migrations fail,
+    /// or if `HOME` is not set and `KANBAN_DB` is unset.
     pub fn open_default() -> Result<Self> {
         let path = default_db_path()?;
         Self::open(&path)
     }
 
     /// Open a workspace at the given file path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be created, opened, or migrations fail.
     pub fn open(path: &Path) -> Result<Self> {
         let mut conn = connection::open_file(path)?;
         migrations::run(&mut conn)?;
@@ -40,6 +52,10 @@ impl Workspace {
     }
 
     /// Open an in-memory workspace (for tests).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the in-memory connection cannot be created or migrations fail.
     pub fn open_in_memory() -> Result<Self> {
         let mut conn = connection::open_in_memory()?;
         migrations::run(&mut conn)?;
@@ -72,6 +88,8 @@ fn default_db_path() -> Result<PathBuf> {
 }
 
 #[cfg(test)]
+// unwrap is acceptable in test code — panics are the intended failure mode.
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

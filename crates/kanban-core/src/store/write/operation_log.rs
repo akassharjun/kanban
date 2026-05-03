@@ -3,6 +3,8 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Transaction, params};
 
 /// Insert one row into `operation_log`. Returns the new `op_id`.
+// Used by Tasks 10+ (applier). Allow dead_code until wired up.
+#[allow(dead_code)]
 pub(crate) fn insert_operation(
     tx: &Transaction<'_>,
     op_type: &str,
@@ -18,7 +20,9 @@ pub(crate) fn insert_operation(
     Ok(tx.last_insert_rowid())
 }
 
-/// Insert one row into `activity_log` linked to a previously-inserted op_id.
+/// Insert one row into `activity_log` linked to a previously-inserted `op_id`.
+// Used by Tasks 10+ (applier). Allow dead_code until wired up.
+#[allow(dead_code)]
 pub(crate) fn insert_activity(
     tx: &Transaction<'_>,
     op_id: i64,
@@ -31,12 +35,21 @@ pub(crate) fn insert_activity(
     tx.execute(
         "INSERT INTO activity_log(op_id, issue_id, field, old_value, new_value, at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![op_id, issue_id, field, old_value, new_value, at.to_rfc3339()],
+        params![
+            op_id,
+            issue_id,
+            field,
+            old_value,
+            new_value,
+            at.to_rfc3339()
+        ],
     )?;
     Ok(())
 }
 
 /// Mark `op_id` as undone (1) or redone (0).
+// Used by Tasks 16+ (undo/redo). Allow dead_code until wired up.
+#[allow(dead_code)]
 pub(crate) fn set_op_undone(tx: &Transaction<'_>, op_id: i64, undone: bool) -> Result<()> {
     tx.execute(
         "UPDATE operation_log SET undone = ?1 WHERE id = ?2",
@@ -45,14 +58,18 @@ pub(crate) fn set_op_undone(tx: &Transaction<'_>, op_id: i64, undone: bool) -> R
     Ok(())
 }
 
-/// Discard the redo branch (any rows where undone=1). Called when a new forward op lands
+/// Discard the redo branch (any rows where `undone=1`). Called when a new forward op lands
 /// while a redo branch existed.
+// Used by Tasks 10+ (applier). Allow dead_code until wired up.
+#[allow(dead_code)]
 pub(crate) fn truncate_redo_branch(tx: &Transaction<'_>) -> Result<()> {
     tx.execute("DELETE FROM operation_log WHERE undone = 1", [])?;
     Ok(())
 }
 
 #[cfg(test)]
+// unwrap is acceptable in test code — panics are the intended failure mode.
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::store::{connection::open_in_memory, migrations};

@@ -1,8 +1,8 @@
 //! kanban-core: data model, applier, queries, migrations.
 
-mod store;
 pub mod error;
 pub mod ids;
+mod store;
 pub mod time;
 pub mod types;
 pub mod validate;

@@ -2,9 +2,8 @@ use crate::error::Result;
 use chrono::Utc;
 use rusqlite::{Connection, params};
 
-const MIGRATIONS: &[(i64, &str, &str)] = &[
-    (1, "init", include_str!("../../migrations/0001_init.sql")),
-];
+const MIGRATIONS: &[(i64, &str, &str)] =
+    &[(1, "init", include_str!("../../migrations/0001_init.sql"))];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(
@@ -15,11 +14,14 @@ pub fn run(conn: &mut Connection) -> Result<()> {
     )?;
 
     for (version, _name, sql) in MIGRATIONS {
-        let already: bool = conn.query_row(
-            "SELECT 1 FROM schema_migrations WHERE version = ?1",
-            params![version],
-            |_| Ok(true),
-        ).optional()?.unwrap_or(false);
+        let already: bool = conn
+            .query_row(
+                "SELECT 1 FROM schema_migrations WHERE version = ?1",
+                params![version],
+                |_| Ok(true),
+            )
+            .optional()?
+            .unwrap_or(false);
 
         if already {
             continue;
@@ -52,6 +54,8 @@ impl<T> OptionalRow<T> for rusqlite::Result<T> {
 }
 
 #[cfg(test)]
+// unwrap is acceptable in test code — panics are the intended failure mode.
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::store::connection::open_in_memory;
@@ -82,7 +86,10 @@ mod tests {
             "schema_migrations",
             "statuses",
         ] {
-            assert!(tables.contains(&expected.to_string()), "missing {expected} in {tables:?}");
+            assert!(
+                tables.contains(&expected.to_string()),
+                "missing {expected} in {tables:?}"
+            );
         }
     }
 
@@ -106,23 +113,27 @@ mod tests {
             "INSERT INTO projects(id,name,prefix,status,next_seq,created_at,updated_at)
              VALUES('p','P','PPP','active',1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO statuses(id,project_id,name,category,color,position)
              VALUES('s','p','Todo','unstarted','#000000',0)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO issues(id,project_id,seq,identifier,title,description,status_id,priority,sort_key,created_at,updated_at)
              VALUES('i','p',1,'PPP-1','add login','user can login','s','high',1.0,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
             [],
         ).unwrap();
 
-        let hits: i64 = conn.query_row(
-            "SELECT count(*) FROM issue_search WHERE issue_search MATCH 'login'",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let hits: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM issue_search WHERE issue_search MATCH 'login'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(hits, 1);
     }
 }

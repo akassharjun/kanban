@@ -26,6 +26,8 @@ fn apply_pragmas(conn: &Connection) -> Result<()> {
 }
 
 #[cfg(test)]
+// unwrap is acceptable in test code — panics are the intended failure mode.
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
