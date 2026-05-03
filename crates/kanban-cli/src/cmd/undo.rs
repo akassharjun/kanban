@@ -1,4 +1,5 @@
-//! `kanban undo` and `kanban redo` subcommands. Stubbed until undo-CLI task.
+//! `kanban undo` and `kanban redo` subcommands. Thin wrappers over
+//! [`Workspace::undo`] and [`Workspace::redo`].
 
 use crate::output::Out;
 use kanban_core::{Result, Workspace};
@@ -7,20 +8,32 @@ use kanban_core::{Result, Workspace};
 ///
 /// # Errors
 ///
-/// Returns [`kanban_core::Error::InvalidSnapshot`] until a later task wires it.
-pub fn run_undo(_ws: &mut Workspace, _out: &Out) -> Result<()> {
-    Err(kanban_core::Error::InvalidSnapshot(
-        "undo subcommand not yet implemented".into(),
-    ))
+/// Propagates errors from [`Workspace::undo`]. In particular,
+/// [`kanban_core::Error::Conflict`] is returned (and maps to exit code 3) when
+/// the operation log is empty.
+pub fn run_undo(ws: &mut Workspace, out: &Out) -> Result<()> {
+    let outcome = ws.undo()?;
+    if out.json {
+        out.print_json(&serde_json::json!({"ok": true, "op_id": outcome.op_id}))?;
+    } else {
+        println!("undone (op_id={})", outcome.op_id);
+    }
+    Ok(())
 }
 
 /// Redo the most recently undone operation.
 ///
 /// # Errors
 ///
-/// Returns [`kanban_core::Error::InvalidSnapshot`] until a later task wires it.
-pub fn run_redo(_ws: &mut Workspace, _out: &Out) -> Result<()> {
-    Err(kanban_core::Error::InvalidSnapshot(
-        "redo subcommand not yet implemented".into(),
-    ))
+/// Propagates errors from [`Workspace::redo`]. In particular,
+/// [`kanban_core::Error::Conflict`] is returned (and maps to exit code 3) when
+/// the redo branch is empty.
+pub fn run_redo(ws: &mut Workspace, out: &Out) -> Result<()> {
+    let outcome = ws.redo()?;
+    if out.json {
+        out.print_json(&serde_json::json!({"ok": true, "op_id": outcome.op_id}))?;
+    } else {
+        println!("redone (op_id={})", outcome.op_id);
+    }
+    Ok(())
 }
