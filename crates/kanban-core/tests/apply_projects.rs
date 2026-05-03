@@ -220,3 +220,34 @@ fn archive_project_unknown_id_errors() {
         .unwrap_err();
     assert!(err.to_string().contains("not found"), "{err}");
 }
+
+use kanban_core::operation::DeleteProject;
+
+#[test]
+fn delete_project_removes_row_and_cascades_statuses() {
+    let mut ws = Workspace::open_in_memory().unwrap();
+    let id = new_id();
+    ws.apply(Operation::CreateProject(CreateProject {
+        id,
+        name: "X".into(),
+        prefix: "DEL".into(),
+        description: None,
+        icon: None,
+    }))
+    .unwrap();
+    ws.apply(Operation::DeleteProject(DeleteProject { id }))
+        .unwrap();
+
+    assert!(ws.query_project_by_id(id).is_err());
+    let s = ws.query_statuses_for_project(id).unwrap();
+    assert!(s.is_empty(), "statuses should cascade: got {s:?}");
+}
+
+#[test]
+fn delete_project_unknown_id_errors() {
+    let mut ws = Workspace::open_in_memory().unwrap();
+    let err = ws
+        .apply(Operation::DeleteProject(DeleteProject { id: new_id() }))
+        .unwrap_err();
+    assert!(err.to_string().contains("not found"), "{err}");
+}
