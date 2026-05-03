@@ -204,6 +204,66 @@ impl Workspace {
         )?;
         Ok(serde_json::from_str(&payload)?)
     }
+
+    /// Export the entire workspace to a [`WorkspaceSnapshot`].
+    ///
+    /// Reads every project, status, label, issue, and issue/label join row
+    /// using the existing read helpers and assembles them into a single
+    /// snapshot value tagged with [`SNAPSHOT_SCHEMA_VERSION`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if any of the underlying reads fail.
+    pub fn export_snapshot(&self) -> crate::error::Result<crate::snapshot::WorkspaceSnapshot> {
+        use crate::snapshot::{IssueLabelLink, SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
+
+        let projects = crate::store::read::projects::list_all(&self.conn)?;
+
+        let mut statuses = Vec::new();
+        let mut labels = Vec::new();
+        for p in &projects {
+            statuses.extend(crate::store::read::statuses::for_project(&self.conn, p.id)?);
+            labels.extend(crate::store::read::labels::for_project(&self.conn, p.id)?);
+        }
+
+        let issues =
+            crate::store::read::issues::list(&self.conn, &crate::query::IssueFilter::default())?;
+
+        let mut issue_labels = Vec::new();
+        let mut stmt = self
+            .conn
+            .prepare("SELECT issue_id, label_id FROM issue_labels")?;
+        let rows = stmt.query_map([], |r| {
+            let issue_id_s: String = r.get(0)?;
+            let label_id_s: String = r.get(1)?;
+            Ok((issue_id_s, label_id_s))
+        })?;
+        for r in rows {
+            let (issue_id_s, label_id_s) = r?;
+            issue_labels.push(IssueLabelLink {
+                issue_id: uuid::Uuid::parse_str(&issue_id_s).map_err(|e| {
+                    crate::error::Error::InvalidSnapshot(format!(
+                        "issue_labels.issue_id is not a uuid: {e}"
+                    ))
+                })?,
+                label_id: uuid::Uuid::parse_str(&label_id_s).map_err(|e| {
+                    crate::error::Error::InvalidSnapshot(format!(
+                        "issue_labels.label_id is not a uuid: {e}"
+                    ))
+                })?,
+            });
+        }
+
+        Ok(WorkspaceSnapshot {
+            schema_version: SNAPSHOT_SCHEMA_VERSION,
+            exported_at: chrono::Utc::now(),
+            projects,
+            statuses,
+            issues,
+            labels,
+            issue_labels,
+        })
+    }
 }
 
 fn default_db_path() -> Result<PathBuf> {
