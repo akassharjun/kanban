@@ -14,6 +14,7 @@
 //! ```
 
 #![allow(clippy::unwrap_used)]
+#![allow(clippy::cast_possible_truncation)]
 
 use assert_cmd::Command;
 use std::path::PathBuf;
@@ -24,7 +25,7 @@ use std::time::Instant;
 /// This test is ignored by default to avoid flakiness on CI. Run locally with
 /// `cargo test --workspace -- --ignored` or `cargo test --workspace --release -- --ignored`.
 #[test]
-#[ignore]
+#[ignore = "measures wall-clock timing; noisy on shared CI — run locally with `cargo test --workspace -- --ignored`"]
 fn cold_start_invocation_under_50ms_p95() {
     let dir = tempfile::tempdir().unwrap();
     let db: PathBuf = dir.path().join("data.db");
