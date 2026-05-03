@@ -46,7 +46,15 @@ pub(crate) const ISSUE_LIST_BASE: &str = "
 SELECT id,project_id,seq,identifier,title,description,status_id,priority,due_date,sort_key,created_at,updated_at
 FROM issues";
 
-fn row_to_issue(r: &rusqlite::Row<'_>) -> rusqlite::Result<Issue> {
+/// Same projection as [`ISSUE_LIST_BASE`] but with all columns qualified by
+/// `issues.`. Used by FTS5-joined queries where the `issue_search` virtual
+/// table also exposes `title`/`description`, making unqualified references
+/// ambiguous.
+pub(crate) const ISSUE_LIST_BASE_QUALIFIED: &str = "
+SELECT issues.id,issues.project_id,issues.seq,issues.identifier,issues.title,issues.description,issues.status_id,issues.priority,issues.due_date,issues.sort_key,issues.created_at,issues.updated_at
+FROM issues";
+
+pub(crate) fn row_to_issue(r: &rusqlite::Row<'_>) -> rusqlite::Result<Issue> {
     let id: String = r.get(0)?;
     let pid: String = r.get(1)?;
     let sid: String = r.get(6)?;

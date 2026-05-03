@@ -142,6 +142,26 @@ impl Workspace {
         crate::store::read::issues::list(&self.conn, &filter)
     }
 
+    /// Full-text search across issue titles and descriptions, composed with `filter`.
+    ///
+    /// Backed by the FTS5 `issue_search` virtual table. Result order is by FTS
+    /// relevance (`rank`) rather than the filter's `SortBy`. The filter's
+    /// `search_text` field, if set, is overwritten by `query`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the query fails or the FTS5 expression is malformed.
+    // Filter is taken by value because `search` mutates its `search_text` field
+    // before use; callers get a clean ownership story.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn search(
+        &self,
+        query: &str,
+        filter: crate::query::IssueFilter,
+    ) -> crate::error::Result<Vec<crate::types::Issue>> {
+        crate::store::read::search::search(&self.conn, query, filter)
+    }
+
     /// Read the activity log for one issue, in `id` (insertion) order.
     ///
     /// Returns one row per field-level change on the issue; the timeline is
