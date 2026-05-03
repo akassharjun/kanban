@@ -10,8 +10,6 @@ use std::sync::Arc;
 /// Holds an open `SQLite` connection and a clock. NOT `Sync` — multi-threaded
 /// callers must own one `Workspace` per thread (or use a pool).
 pub struct Workspace {
-    // Fields are read by Tasks 10+ (applier, queries). Allow dead_code until wired up.
-    #[allow(dead_code)]
     pub(crate) conn: Connection,
     pub(crate) clock: Arc<dyn Clock>,
     #[allow(dead_code)]
@@ -71,6 +69,40 @@ impl Workspace {
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
         self.clock = clock;
         self
+    }
+
+    /// Look up a project by id.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::error::Error::NotFound`] if no project with `id` exists,
+    /// or a database error if the read fails.
+    pub fn query_project_by_id(
+        &self,
+        id: uuid::Uuid,
+    ) -> crate::error::Result<crate::types::Project> {
+        crate::store::read::projects::by_id(&self.conn, id)
+    }
+
+    /// List all projects in creation order.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the read fails.
+    pub fn query_projects(&self) -> crate::error::Result<Vec<crate::types::Project>> {
+        crate::store::read::projects::list_all(&self.conn)
+    }
+
+    /// List all statuses for `project_id` in display order.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the read fails.
+    pub fn query_statuses_for_project(
+        &self,
+        project_id: uuid::Uuid,
+    ) -> crate::error::Result<Vec<crate::types::Status>> {
+        crate::store::read::statuses::for_project(&self.conn, project_id)
     }
 }
 
