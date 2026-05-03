@@ -7,6 +7,7 @@ pub mod operation;
 mod store;
 pub mod time;
 pub mod types;
+pub mod undo;
 pub mod validate;
 pub mod workspace;
 

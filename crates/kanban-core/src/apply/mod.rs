@@ -25,14 +25,7 @@ impl Workspace {
         let inverse = capture_inverse(&tx, &op)?;
         let inverse_payload = serde_json::to_string(&inverse)?;
 
-        match &op {
-            Operation::CreateProject(args) => projects::create(&tx, args, now)?,
-            Operation::UpdateProject(args) => projects::update(&tx, args, now)?,
-            Operation::ArchiveProject(args) => projects::archive(&tx, args, now)?,
-            Operation::DeleteProject(args) => projects::delete(&tx, args)?,
-            // Issue/label arms land in Phase 8/9 — until then return InvalidSnapshot.
-            other => return Err(Error::InvalidSnapshot(format!("unsupported op: {other:?}"))),
-        }
+        dispatch(&tx, &op, now)?;
 
         let op_id = operation_log::insert_operation(
             &tx,
@@ -44,6 +37,24 @@ impl Workspace {
         tx.commit()?;
         Ok(OperationOutcome { op_id })
     }
+}
+
+/// Execute the per-op mutation inside an existing transaction without touching
+/// the operation log. Shared by `Workspace::apply`, `undo`, and `redo`.
+pub(crate) fn dispatch(
+    tx: &rusqlite::Transaction<'_>,
+    op: &Operation,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<()> {
+    match op {
+        Operation::CreateProject(args) => projects::create(tx, args, now)?,
+        Operation::UpdateProject(args) => projects::update(tx, args, now)?,
+        Operation::ArchiveProject(args) => projects::archive(tx, args, now)?,
+        Operation::DeleteProject(args) => projects::delete(tx, args)?,
+        // Issue/label arms land in Phase 8/9 — until then return InvalidSnapshot.
+        other => return Err(Error::InvalidSnapshot(format!("unsupported op: {other:?}"))),
+    }
+    Ok(())
 }
 
 fn op_type_name(op: &Operation) -> &'static str {
