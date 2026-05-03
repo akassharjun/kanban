@@ -54,13 +54,6 @@ proptest! {
         let mut applied = Vec::new();
         let mut ids: Vec<uuid::Uuid> = Vec::new();
         let mut used_prefixes = std::collections::HashSet::new();
-        // Track local view of each project's status so we can skip cases that
-        // exercise the known `inverse_of_delete` gap: it captures the project's
-        // fields but not its status, so deleting a non-Active project and then
-        // undoing restores the row as Active. Skipping `Delete` against an
-        // Archived project keeps the round-trip invariant exercised on every
-        // other path.
-        let mut statuses: Vec<ProjectStatus> = Vec::new();
 
         for s in &steps {
             let res = match s {
@@ -69,7 +62,6 @@ proptest! {
                     used_prefixes.insert(prefix.clone());
                     let id = new_id();
                     ids.push(id);
-                    statuses.push(ProjectStatus::Active);
                     ws.apply(Operation::CreateProject(CreateProject {
                         id, name: name.clone(), prefix: prefix.clone(),
                         description: None, icon: None,
@@ -83,16 +75,13 @@ proptest! {
                 }
                 ProjectStep::Archive { idx } => {
                     let Some(&id) = ids.get(*idx) else { continue };
-                    let r = ws.apply(Operation::ArchiveProject(kanban_core::operation::ArchiveProject { id }));
-                    if r.is_ok() {
-                        statuses[*idx] = ProjectStatus::Archived;
-                    }
-                    r
+                    ws.apply(Operation::ArchiveProject(kanban_core::operation::ArchiveProject { id }))
                 }
                 ProjectStep::Delete { idx } => {
                     let Some(&id) = ids.get(*idx) else { continue };
-                    // Skip Delete against non-Active projects (see comment above).
-                    if statuses.get(*idx).copied() != Some(ProjectStatus::Active) { continue; }
+                    // Delete now round-trips for projects in any state, since
+                    // inverse_of_delete captures the full subtree as an
+                    // ImportSnapshot rather than a CreateProject op.
                     ws.apply(Operation::DeleteProject(DeleteProject { id }))
                 }
             };
@@ -116,7 +105,6 @@ proptest! {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // `Delete.idx` is intentionally unread — see Delete arm comment.
 enum IssueStep {
     Create { title: String },
     UpdateTitle { idx: usize, title: String },
@@ -133,17 +121,17 @@ fn issue_step() -> impl Strategy<Value = IssueStep> {
         Just(Priority::Medium),
         Just(Priority::Low),
     ];
-    // Keys are quantized to integers (cast to f64) so they round-trip losslessly
-    // through serde_json's float deserializer — see comment in the proptest body.
+    // Reorder keys exercise arbitrary f64 values now that ReorderIssue and
+    // Issue.sort_key are serialized through the lossless bit-pattern helper.
+    // NaN is excluded because (NaN == NaN) is false and the property test
+    // compares snapshots with structural equality.
+    let finite_f64 = any::<f64>().prop_filter("not NaN", |v| !v.is_nan());
     prop_oneof![
         "[a-zA-Z ]{1,12}".prop_map(|t| IssueStep::Create { title: t }),
         (0usize..6, "[a-zA-Z]{1,8}").prop_map(|(idx, title)| IssueStep::UpdateTitle { idx, title }),
         (0usize..6, priorities.clone())
             .prop_map(|(idx, priority)| IssueStep::UpdatePriority { idx, priority }),
-        (0usize..6, -100i32..100i32).prop_map(|(idx, k)| IssueStep::Reorder {
-            idx,
-            key: f64::from(k)
-        }),
+        (0usize..6, finite_f64).prop_map(|(idx, key)| IssueStep::Reorder { idx, key }),
         (0usize..6).prop_map(|idx| IssueStep::Delete { idx }),
     ]
 }
@@ -175,19 +163,12 @@ proptest! {
         })).unwrap();
         let sid = ws.query_statuses_for_project(pid).unwrap()[0].id;
 
-        // We skip Delete steps to avoid the known `inverse_of_delete` gap: it
-        // rebuilds CreateIssue from the live row, but `seq`/`identifier`/
-        // `sort_key`/timestamps are re-derived by `apply::issues::create`, so
-        // delete+undo round-trip mismatches the snapshot. Filtering Delete
-        // keeps every other path exercised. (See plan §"CRITICAL bug to be
-        // aware of"; the full fix lands when ImportSnapshot replaces these
-        // inverses.)
-        //
-        // Reorder keys are integer-quantized in the strategy because the
-        // Operation payload round-trips through serde_json on undo/redo, and
-        // serde_json's f64 deserializer is not bit-exact for arbitrary
-        // doubles — it loses one ulp on values like 2.2901265025181274. Any
-        // integer fits exactly into f64 mantissa, so we sidestep that.
+        // Delete now round-trips: inverse_of_delete captures the issue row
+        // (with its seq/identifier/sort_key/timestamps) plus issue_labels
+        // links as an ImportSnapshot, so undo restores the issue in place
+        // rather than re-creating it with new computed columns. Reorder
+        // keys exercise arbitrary f64 values now that the sort_key field is
+        // serialized losslessly via its bit pattern.
         let mut snapshots = vec![issue_snapshot(&ws, pid)];
         let mut ids: Vec<uuid::Uuid> = Vec::new();
 
@@ -218,9 +199,12 @@ proptest! {
                     let Some(&id) = ids.get(*idx) else { continue };
                     ws.apply(Operation::ReorderIssue(ReorderIssue { id, new_sort_key: *key }))
                 }
-                IssueStep::Delete { idx: _ } => {
-                    // Skip: see comment above re: inverse_of_delete gap.
-                    continue;
+                IssueStep::Delete { idx } => {
+                    let Some(&id) = ids.get(*idx) else { continue };
+                    // Leave the local ids vec untouched: subsequent ops
+                    // against this index will simply error with NotFound,
+                    // which the existing `if res.is_ok()` gate handles.
+                    ws.apply(Operation::DeleteIssue(kanban_core::operation::DeleteIssue { id }))
                 }
             };
             if res.is_ok() { snapshots.push(issue_snapshot(&ws, pid)); }
@@ -238,7 +222,6 @@ proptest! {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // `Delete.idx` is intentionally unread — see Delete arm comment.
 enum LabelStep {
     Create { name: String, color: String },
     Attach { issue_idx: usize, label_idx: usize },
@@ -323,19 +306,19 @@ proptest! {
             issue_ids.push(id);
         }
 
-        // We skip Delete steps to avoid the architectural gap in
-        // `inverse_of_delete` for labels: deleting a label CASCADEs and removes
-        // its issue_label rows, but the captured inverse (CreateLabel) does
-        // not restore those attachments. Filtering Delete keeps every other
-        // path exercised. (Same shape as the project/issue Delete gap.)
+        // Delete now round-trips: inverse_of_delete captures the label row
+        // plus its issue_labels rows as an ImportSnapshot, so undo restores
+        // both the label and any attachments the CASCADE delete tore down.
         //
-        // We also skip Attach against an already-attached pair, and Detach
+        // We still skip Attach against an already-attached pair, and Detach
         // against a non-attached pair. Both are no-ops at the data layer
         // (INSERT OR IGNORE / DELETE-of-missing-row), but their captured
         // inverses are unconditional — so undoing them mutates state that
-        // the forward op left untouched, breaking round-trip. Tracking local
-        // attachment state to filter those is faithful to how a CLI/UI would
-        // gate the ops in practice.
+        // the forward op left untouched, breaking round-trip. Tracking
+        // local attachment state to filter those is faithful to how a
+        // CLI/UI would gate the ops in practice. (This is a separate
+        // architectural concern from the Delete gap and is intentionally
+        // left in scope of a future polish pass.)
         let mut snapshots = vec![label_snapshot(&ws, pid)];
         let mut label_ids: Vec<uuid::Uuid> = Vec::new();
         let mut used_names = std::collections::HashSet::new();
@@ -370,9 +353,16 @@ proptest! {
                     if r.is_ok() { attached.remove(&(iid, lid)); }
                     r
                 }
-                LabelStep::Delete { idx: _ } => {
-                    // Skip: see comment above re: inverse_of_delete attachment-loss gap.
-                    continue;
+                LabelStep::Delete { idx } => {
+                    let Some(&id) = label_ids.get(*idx) else { continue };
+                    // Drop any locally-tracked attachments referencing this
+                    // label so subsequent Attach/Detach filtering stays in
+                    // sync with the workspace's CASCADE'd reality.
+                    let r = ws.apply(Operation::DeleteLabel(kanban_core::operation::DeleteLabel { id }));
+                    if r.is_ok() {
+                        attached.retain(|&(_, lid)| lid != id);
+                    }
+                    r
                 }
             };
             if res.is_ok() { snapshots.push(label_snapshot(&ws, pid)); }
