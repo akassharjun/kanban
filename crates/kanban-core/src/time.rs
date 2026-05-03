@@ -58,6 +58,9 @@ mod tests {
         let clock = SystemClock;
         let now = clock.now();
         let delta = (Utc::now() - now).num_seconds().abs();
-        assert!(delta < 5, "system clock should be near Utc::now: {delta}s drift");
+        assert!(
+            delta < 5,
+            "system clock should be near Utc::now: {delta}s drift"
+        );
     }
 }

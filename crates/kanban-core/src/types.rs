@@ -46,10 +46,12 @@ impl std::str::FromStr for Priority {
             "high" => Ok(Priority::High),
             "medium" => Ok(Priority::Medium),
             "low" => Ok(Priority::Low),
-            other => Err(crate::error::Error::Validation(crate::error::ValidationError {
-                field: "priority".into(),
-                reason: format!("unknown value '{other}'"),
-            })),
+            other => Err(crate::error::Error::Validation(
+                crate::error::ValidationError {
+                    field: "priority".into(),
+                    reason: format!("unknown value '{other}'"),
+                },
+            )),
         }
     }
 }
@@ -146,6 +148,7 @@ pub struct Label {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

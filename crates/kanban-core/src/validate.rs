@@ -1,6 +1,10 @@
 use crate::error::{Error, Result, ValidationError};
 
 /// Project prefix: 3–6 uppercase ASCII letters, e.g., "KAN", "AUTH".
+///
+/// # Errors
+/// Returns [`Error::Validation`] if the value is empty, not 3–6 chars, or contains
+/// non-uppercase-ASCII characters.
 pub fn project_prefix(value: &str) -> Result<()> {
     if value.is_empty() {
         return Err(invalid("prefix", "must not be empty"));
@@ -15,6 +19,9 @@ pub fn project_prefix(value: &str) -> Result<()> {
 }
 
 /// Non-empty trimmed string field. Returns the trimmed value on success.
+///
+/// # Errors
+/// Returns [`Error::Validation`] if the trimmed value is empty.
 pub fn nonempty_field<'a>(field: &str, value: &'a str) -> Result<&'a str> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -24,9 +31,15 @@ pub fn nonempty_field<'a>(field: &str, value: &'a str) -> Result<&'a str> {
 }
 
 /// Hex color: `#RRGGBB`.
+///
+/// # Errors
+/// Returns [`Error::Validation`] if the value is not a 7-character `#RRGGBB` hex string.
 pub fn hex_color(value: &str) -> Result<()> {
     if value.len() != 7 || !value.starts_with('#') {
-        return Err(invalid("color", "must be a 7-char hex string starting with #"));
+        return Err(invalid(
+            "color",
+            "must be a 7-char hex string starting with #",
+        ));
     }
     if !value[1..].chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(invalid("color", "must contain only hex digits"));
@@ -42,6 +55,7 @@ fn invalid(field: &str, reason: &str) -> Error {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
