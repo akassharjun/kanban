@@ -121,3 +121,73 @@ fn newly_created_project_has_active_status() {
     let p = ws.query_project_by_id(id).unwrap();
     assert_eq!(p.status, ProjectStatus::Active);
 }
+
+use kanban_core::operation::{ProjectPatch, UpdateProject};
+
+#[test]
+fn update_project_changes_name_and_updates_timestamp() {
+    let mut ws = Workspace::open_in_memory().unwrap();
+    let id = new_id();
+    ws.apply(Operation::CreateProject(CreateProject {
+        id,
+        name: "Old".into(),
+        prefix: "UPD".into(),
+        description: None,
+        icon: None,
+    }))
+    .unwrap();
+    let before = ws.query_project_by_id(id).unwrap();
+
+    std::thread::sleep(std::time::Duration::from_millis(10));
+    ws.apply(Operation::UpdateProject(UpdateProject {
+        id,
+        patch: ProjectPatch {
+            name: Some("New".into()),
+            ..Default::default()
+        },
+    }))
+    .unwrap();
+
+    let after = ws.query_project_by_id(id).unwrap();
+    assert_eq!(after.name, "New");
+    assert!(after.updated_at >= before.updated_at);
+}
+
+#[test]
+fn update_project_clears_description_with_some_none() {
+    let mut ws = Workspace::open_in_memory().unwrap();
+    let id = new_id();
+    ws.apply(Operation::CreateProject(CreateProject {
+        id,
+        name: "X".into(),
+        prefix: "DSC".into(),
+        description: Some("hi".into()),
+        icon: None,
+    }))
+    .unwrap();
+    ws.apply(Operation::UpdateProject(UpdateProject {
+        id,
+        patch: ProjectPatch {
+            description: Some(None),
+            ..Default::default()
+        },
+    }))
+    .unwrap();
+    let p = ws.query_project_by_id(id).unwrap();
+    assert!(p.description.is_none());
+}
+
+#[test]
+fn update_project_unknown_id_returns_not_found() {
+    let mut ws = Workspace::open_in_memory().unwrap();
+    let err = ws
+        .apply(Operation::UpdateProject(UpdateProject {
+            id: new_id(),
+            patch: ProjectPatch {
+                name: Some("nope".into()),
+                ..Default::default()
+            },
+        }))
+        .unwrap_err();
+    assert!(err.to_string().contains("not found"), "{err}");
+}
