@@ -1,0 +1,6 @@
+---
+source: crates/kanban-cli/tests/label_cmds.rs
+expression: stdout
+---
+bug  #ff0000
+perf  #00ff00
