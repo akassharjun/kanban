@@ -191,3 +191,32 @@ fn update_project_unknown_id_returns_not_found() {
         .unwrap_err();
     assert!(err.to_string().contains("not found"), "{err}");
 }
+
+use kanban_core::operation::ArchiveProject;
+
+#[test]
+fn archive_project_sets_status_archived() {
+    let mut ws = Workspace::open_in_memory().unwrap();
+    let id = new_id();
+    ws.apply(Operation::CreateProject(CreateProject {
+        id,
+        name: "X".into(),
+        prefix: "ARC".into(),
+        description: None,
+        icon: None,
+    }))
+    .unwrap();
+    ws.apply(Operation::ArchiveProject(ArchiveProject { id }))
+        .unwrap();
+    let p = ws.query_project_by_id(id).unwrap();
+    assert_eq!(p.status, ProjectStatus::Archived);
+}
+
+#[test]
+fn archive_project_unknown_id_errors() {
+    let mut ws = Workspace::open_in_memory().unwrap();
+    let err = ws
+        .apply(Operation::ArchiveProject(ArchiveProject { id: new_id() }))
+        .unwrap_err();
+    assert!(err.to_string().contains("not found"), "{err}");
+}
