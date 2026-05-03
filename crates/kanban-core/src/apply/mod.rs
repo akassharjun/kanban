@@ -4,6 +4,7 @@ use crate::store::write::operation_log;
 use crate::workspace::Workspace;
 
 pub(crate) mod issues;
+pub(crate) mod labels;
 pub(crate) mod projects;
 
 impl Workspace {
@@ -63,8 +64,11 @@ pub(crate) fn dispatch(
         Operation::UpdateIssueField(args) => issues::update_field(tx, args, now)?,
         Operation::ReorderIssue(args) => issues::reorder(tx, args, now)?,
         Operation::DeleteIssue(args) => issues::delete(tx, args)?,
-        // Remaining issue/label arms land in later tasks — until then return InvalidSnapshot.
-        other => return Err(Error::InvalidSnapshot(format!("unsupported op: {other:?}"))),
+        Operation::CreateLabel(args) => labels::create(tx, args)?,
+        Operation::UpdateLabel(args) => labels::update(tx, args)?,
+        Operation::DeleteLabel(args) => labels::delete(tx, args)?,
+        Operation::AttachLabel(args) => labels::attach(tx, args)?,
+        Operation::DetachLabel(args) => labels::detach(tx, args)?,
     }
     Ok(())
 }
@@ -99,10 +103,11 @@ fn capture_inverse(tx: &rusqlite::Transaction<'_>, op: &Operation) -> Result<Ope
         Operation::UpdateIssueField(args) => issues::inverse_of_update_field(tx, args),
         Operation::ReorderIssue(args) => issues::inverse_of_reorder(tx, args),
         Operation::DeleteIssue(args) => issues::inverse_of_delete(tx, args),
-        // Remaining issue/label inverses come in later tasks.
-        other => Err(Error::InvalidSnapshot(format!(
-            "inverse not yet implemented for {other:?}"
-        ))),
+        Operation::CreateLabel(args) => Ok(labels::inverse_of_create(args)),
+        Operation::DeleteLabel(args) => labels::inverse_of_delete(tx, args),
+        Operation::UpdateLabel(args) => labels::inverse_of_update(tx, args),
+        Operation::AttachLabel(args) => Ok(labels::inverse_of_attach(args)),
+        Operation::DetachLabel(args) => Ok(labels::inverse_of_detach(args)),
     }
 }
 
