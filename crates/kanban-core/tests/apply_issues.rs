@@ -2,7 +2,7 @@
 #![allow(clippy::panic)]
 
 use kanban_core::operation::{
-    CreateIssue, CreateProject, IssueFieldChange, Operation, UpdateIssueField,
+    CreateIssue, CreateLabel, CreateProject, IssueFieldChange, Operation, UpdateIssueField,
 };
 use kanban_core::types::Priority;
 use kanban_core::{Workspace, new_id};
@@ -75,10 +75,37 @@ fn create_issue_increments_seq_per_project() {
 
 #[test]
 fn create_issue_attaches_labels_in_one_op() {
-    let (ws, pid, sid) = fresh_with_project();
-    // Insert a label directly via apply once labels land — but for now we seed via the writer.
-    // This test is enabled in Task 25 once AttachLabel is wired through apply.
-    let _ = (ws, pid, sid);
+    let (mut ws, pid, sid) = fresh_with_project();
+    let label_id = new_id();
+    ws.apply(Operation::CreateLabel(CreateLabel {
+        id: label_id,
+        project_id: pid,
+        name: "feat".into(),
+        color: "#3b82f6".into(),
+    }))
+    .unwrap();
+    let issue_id = new_id();
+    ws.apply(Operation::CreateIssue(CreateIssue {
+        id: issue_id,
+        project_id: pid,
+        title: "x".into(),
+        description: None,
+        status_id: sid,
+        priority: Priority::None,
+        due_date: None,
+        label_ids: vec![label_id],
+    }))
+    .unwrap();
+
+    let count: i64 = ws
+        ._conn_for_integration_tests()
+        .query_row(
+            "SELECT COUNT(*) FROM issue_labels WHERE issue_id = ?1 AND label_id = ?2",
+            rusqlite::params![issue_id.to_string(), label_id.to_string()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
 }
 
 #[test]

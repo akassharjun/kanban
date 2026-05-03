@@ -157,6 +157,17 @@ impl Workspace {
         crate::store::read::log::for_issue(&self.conn, issue_id)
     }
 
+    /// Doc-hidden accessor for integration tests in this crate's `tests/` folder.
+    ///
+    /// Stable for the duration of v1; do NOT rely on this from external crates.
+    /// Plain `cfg(test)` doesn't apply across the integration-test compilation
+    /// boundary, so this is exposed publicly with `#[doc(hidden)]` instead.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn _conn_for_integration_tests(&self) -> &rusqlite::Connection {
+        &self.conn
+    }
+
     /// Read the most-recent operation's `inverse_payload`.
     ///
     /// Used by tests; will be reused by `undo`.
