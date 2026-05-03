@@ -1,8 +1,9 @@
 use crate::error::{Error, Result};
-use crate::operation::{CreateIssue, DeleteIssue, Operation};
+use crate::operation::{CreateIssue, DeleteIssue, IssueFieldChange, Operation, UpdateIssueField};
 use crate::store::write::issues as wi;
 use crate::validate;
 use chrono::{DateTime, Utc};
+use rusqlite::types::Value;
 use rusqlite::{Transaction, params};
 use uuid::Uuid;
 
@@ -105,5 +106,88 @@ pub(crate) fn inverse_of_delete(tx: &Transaction<'_>, args: &DeleteIssue) -> Res
         priority: issue.priority,
         due_date: issue.due_date,
         label_ids,
+    }))
+}
+
+pub(crate) fn update_field(
+    tx: &Transaction<'_>,
+    args: &UpdateIssueField,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let issue = crate::store::read::issues::by_id_via_tx(tx, args.id)?;
+    match &args.change {
+        IssueFieldChange::Title(new) => {
+            crate::validate::nonempty_field("title", new)?;
+            crate::store::write::issues::update_field(
+                tx,
+                args.id,
+                "title",
+                Value::Text(new.clone()),
+                now,
+            )?;
+        }
+        IssueFieldChange::Description(new) => {
+            let v = match new {
+                Some(s) => Value::Text(s.clone()),
+                None => Value::Null,
+            };
+            crate::store::write::issues::update_field(tx, args.id, "description", v, now)?;
+        }
+        IssueFieldChange::Status(new) => {
+            // Status must belong to the same project.
+            let same_project: bool = tx.query_row(
+                "SELECT COUNT(*) FROM statuses WHERE id = ?1 AND project_id = ?2",
+                params![new.to_string(), issue.project_id.to_string()],
+                |r| r.get::<_, i64>(0).map(|n| n > 0),
+            )?;
+            if !same_project {
+                return Err(Error::Validation(crate::error::ValidationError {
+                    field: "status".into(),
+                    reason: "must belong to the same project".into(),
+                }));
+            }
+            crate::store::write::issues::update_field(
+                tx,
+                args.id,
+                "status_id",
+                Value::Text(new.to_string()),
+                now,
+            )?;
+        }
+        IssueFieldChange::Priority(new) => {
+            crate::store::write::issues::update_field(
+                tx,
+                args.id,
+                "priority",
+                Value::Text(new.as_str().to_string()),
+                now,
+            )?;
+        }
+        IssueFieldChange::DueDate(new) => {
+            let v = match new {
+                Some(d) => Value::Text(d.to_string()),
+                None => Value::Null,
+            };
+            crate::store::write::issues::update_field(tx, args.id, "due_date", v, now)?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn inverse_of_update_field(
+    tx: &Transaction<'_>,
+    args: &UpdateIssueField,
+) -> Result<Operation> {
+    let issue = crate::store::read::issues::by_id_via_tx(tx, args.id)?;
+    let inverse_change = match &args.change {
+        IssueFieldChange::Title(_) => IssueFieldChange::Title(issue.title),
+        IssueFieldChange::Description(_) => IssueFieldChange::Description(issue.description),
+        IssueFieldChange::Status(_) => IssueFieldChange::Status(issue.status_id),
+        IssueFieldChange::Priority(_) => IssueFieldChange::Priority(issue.priority),
+        IssueFieldChange::DueDate(_) => IssueFieldChange::DueDate(issue.due_date),
+    };
+    Ok(Operation::UpdateIssueField(UpdateIssueField {
+        id: args.id,
+        change: inverse_change,
     }))
 }

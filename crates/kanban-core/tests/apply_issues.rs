@@ -1,7 +1,9 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::panic)]
 
-use kanban_core::operation::{CreateIssue, CreateProject, Operation};
+use kanban_core::operation::{
+    CreateIssue, CreateProject, IssueFieldChange, Operation, UpdateIssueField,
+};
 use kanban_core::types::Priority;
 use kanban_core::{Workspace, new_id};
 use std::sync::Arc;
@@ -171,4 +173,89 @@ fn concurrent_creates_do_not_collide() {
     let mut seqs: Vec<_> = issues.iter().map(|i| i.seq).collect();
     seqs.sort_unstable();
     assert_eq!(seqs, (1..=8).collect::<Vec<_>>());
+}
+
+#[test]
+fn update_issue_title() {
+    let (mut ws, pid, sid) = fresh_with_project();
+    let id = new_id();
+    ws.apply(Operation::CreateIssue(CreateIssue {
+        id,
+        project_id: pid,
+        title: "old".into(),
+        description: None,
+        status_id: sid,
+        priority: Priority::None,
+        due_date: None,
+        label_ids: vec![],
+    }))
+    .unwrap();
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id,
+        change: IssueFieldChange::Title("new".into()),
+    }))
+    .unwrap();
+    assert_eq!(ws.query_issue_by_id(id).unwrap().title, "new");
+}
+
+#[test]
+fn update_issue_priority_and_undo_restores_it() {
+    let (mut ws, pid, sid) = fresh_with_project();
+    let id = new_id();
+    ws.apply(Operation::CreateIssue(CreateIssue {
+        id,
+        project_id: pid,
+        title: "p".into(),
+        description: None,
+        status_id: sid,
+        priority: Priority::High,
+        due_date: None,
+        label_ids: vec![],
+    }))
+    .unwrap();
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id,
+        change: IssueFieldChange::Priority(Priority::Low),
+    }))
+    .unwrap();
+    assert_eq!(ws.query_issue_by_id(id).unwrap().priority, Priority::Low);
+    ws.undo().unwrap();
+    assert_eq!(ws.query_issue_by_id(id).unwrap().priority, Priority::High);
+}
+
+#[test]
+fn update_issue_status_to_status_in_other_project_errors() {
+    let (mut ws, pid_a, sid_a) = fresh_with_project();
+    // create a second project
+    let pid_b = new_id();
+    ws.apply(Operation::CreateProject(CreateProject {
+        id: pid_b,
+        name: "B".into(),
+        prefix: "BTW".into(),
+        description: None,
+        icon: None,
+    }))
+    .unwrap();
+    let sid_b = ws.query_statuses_for_project(pid_b).unwrap()[0].id;
+
+    let id = new_id();
+    ws.apply(Operation::CreateIssue(CreateIssue {
+        id,
+        project_id: pid_a,
+        title: "x".into(),
+        description: None,
+        status_id: sid_a,
+        priority: Priority::None,
+        due_date: None,
+        label_ids: vec![],
+    }))
+    .unwrap();
+
+    let err = ws
+        .apply(Operation::UpdateIssueField(UpdateIssueField {
+            id,
+            change: IssueFieldChange::Status(sid_b),
+        }))
+        .unwrap_err();
+    assert!(err.to_string().to_lowercase().contains("status"), "{err}");
 }
