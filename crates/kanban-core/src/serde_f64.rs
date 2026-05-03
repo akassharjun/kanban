@@ -24,7 +24,6 @@ pub(crate) mod bits {
     ///
     /// Returns the underlying serializer error if encoding fails.
     #[allow(clippy::trivially_copy_pass_by_ref)] // serde_with-style signature is mandatory.
-    #[allow(dead_code)] // wired into Operation/Issue field attributes in a follow-up commit.
     pub(crate) fn serialize<S: Serializer>(value: &f64, ser: S) -> Result<S::Ok, S::Error> {
         let bits = value.to_bits();
         format!("{bits:#018x}").serialize(ser)
@@ -39,7 +38,6 @@ pub(crate) mod bits {
     ///
     /// Returns a deserializer error if the input is not valid hex or is not
     /// representable as a `u64`.
-    #[allow(dead_code)] // wired into Operation/Issue field attributes in a follow-up commit.
     pub(crate) fn deserialize<'de, D: Deserializer<'de>>(de: D) -> Result<f64, D::Error> {
         let s = String::deserialize(de)?;
         let trimmed = s.strip_prefix("0x").unwrap_or(&s);

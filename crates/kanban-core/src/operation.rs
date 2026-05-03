@@ -93,6 +93,10 @@ pub enum IssueFieldChange {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReorderIssue {
     pub id: Uuid,
+    /// Stored losslessly as the `f64`'s `u64` bit pattern in JSON, because
+    /// `serde_json`'s default `f64` deserializer drifts by 1 ULP on arbitrary
+    /// doubles. The runtime `f64` and the `SQLite` `REAL` column are unaffected.
+    #[serde(with = "crate::serde_f64::bits")]
     pub new_sort_key: f64,
 }
 

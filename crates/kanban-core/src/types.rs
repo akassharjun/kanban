@@ -134,6 +134,10 @@ pub struct Issue {
     pub status_id: Uuid,
     pub priority: Priority,
     pub due_date: Option<NaiveDate>,
+    /// Stored losslessly as the `f64`'s `u64` bit pattern in JSON so snapshots
+    /// (`WorkspaceSnapshot`) round-trip bit-exactly through `ImportSnapshot`.
+    /// Mirrors the same wrapper applied to `ReorderIssue::new_sort_key`.
+    #[serde(with = "crate::serde_f64::bits")]
     pub sort_key: f64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
