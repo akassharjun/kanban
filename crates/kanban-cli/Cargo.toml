@@ -1,0 +1,27 @@
+[package]
+name = "kanban-cli"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Command-line interface for kanban-core."
+
+[[bin]]
+name = "kanban"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+kanban-core = { path = "../kanban-core" }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+insta = { workspace = true }
+tempfile = { workspace = true }
