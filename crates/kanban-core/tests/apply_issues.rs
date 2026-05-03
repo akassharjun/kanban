@@ -259,3 +259,37 @@ fn update_issue_status_to_status_in_other_project_errors() {
         .unwrap_err();
     assert!(err.to_string().to_lowercase().contains("status"), "{err}");
 }
+
+#[test]
+fn reorder_changes_sort_key_and_listing_order() {
+    use kanban_core::operation::ReorderIssue;
+    use kanban_core::query::IssueFilter;
+
+    let (mut ws, pid, sid) = fresh_with_project();
+    let mut ids = Vec::new();
+    for _ in 0..3 {
+        let id = new_id();
+        ids.push(id);
+        ws.apply(Operation::CreateIssue(CreateIssue {
+            id,
+            project_id: pid,
+            title: "x".into(),
+            description: None,
+            status_id: sid,
+            priority: Priority::None,
+            due_date: None,
+            label_ids: vec![],
+        }))
+        .unwrap();
+    }
+    // Move third before first.
+    let issues = ws.query_issues(IssueFilter::for_project(pid)).unwrap();
+    let first_key = issues[0].sort_key;
+    ws.apply(Operation::ReorderIssue(ReorderIssue {
+        id: ids[2],
+        new_sort_key: first_key - 1.0,
+    }))
+    .unwrap();
+    let issues = ws.query_issues(IssueFilter::for_project(pid)).unwrap();
+    assert_eq!(issues[0].id, ids[2]);
+}

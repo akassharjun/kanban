@@ -1,5 +1,7 @@
 use crate::error::{Error, Result};
-use crate::operation::{CreateIssue, DeleteIssue, IssueFieldChange, Operation, UpdateIssueField};
+use crate::operation::{
+    CreateIssue, DeleteIssue, IssueFieldChange, Operation, ReorderIssue, UpdateIssueField,
+};
 use crate::store::write::issues as wi;
 use crate::validate;
 use chrono::{DateTime, Utc};
@@ -189,5 +191,19 @@ pub(crate) fn inverse_of_update_field(
     Ok(Operation::UpdateIssueField(UpdateIssueField {
         id: args.id,
         change: inverse_change,
+    }))
+}
+
+pub(crate) fn reorder(tx: &Transaction<'_>, args: &ReorderIssue, now: DateTime<Utc>) -> Result<()> {
+    let _ = crate::store::read::issues::by_id_via_tx(tx, args.id)?;
+    crate::store::write::issues::set_sort_key(tx, args.id, args.new_sort_key, now)?;
+    Ok(())
+}
+
+pub(crate) fn inverse_of_reorder(tx: &Transaction<'_>, args: &ReorderIssue) -> Result<Operation> {
+    let issue = crate::store::read::issues::by_id_via_tx(tx, args.id)?;
+    Ok(Operation::ReorderIssue(ReorderIssue {
+        id: args.id,
+        new_sort_key: issue.sort_key,
     }))
 }

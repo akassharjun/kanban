@@ -54,6 +54,7 @@ pub(crate) fn dispatch(
         Operation::DeleteProject(args) => projects::delete(tx, args)?,
         Operation::CreateIssue(args) => issues::create(tx, args, now)?,
         Operation::UpdateIssueField(args) => issues::update_field(tx, args, now)?,
+        Operation::ReorderIssue(args) => issues::reorder(tx, args, now)?,
         Operation::DeleteIssue(args) => issues::delete(tx, args)?,
         // Remaining issue/label arms land in later tasks — until then return InvalidSnapshot.
         other => return Err(Error::InvalidSnapshot(format!("unsupported op: {other:?}"))),
@@ -89,6 +90,7 @@ fn capture_inverse(tx: &rusqlite::Transaction<'_>, op: &Operation) -> Result<Ope
         Operation::ArchiveProject(args) => projects::inverse_of_archive(tx, args),
         Operation::CreateIssue(args) => Ok(issues::inverse_of_create(args)),
         Operation::UpdateIssueField(args) => issues::inverse_of_update_field(tx, args),
+        Operation::ReorderIssue(args) => issues::inverse_of_reorder(tx, args),
         Operation::DeleteIssue(args) => issues::inverse_of_delete(tx, args),
         // Remaining issue/label inverses come in later tasks.
         other => Err(Error::InvalidSnapshot(format!(
