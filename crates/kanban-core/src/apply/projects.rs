@@ -1,5 +1,7 @@
 use crate::error::{Error, Result};
-use crate::operation::{ArchiveProject, CreateProject, DeleteProject, UpdateProject};
+use crate::operation::{
+    ArchiveProject, CreateProject, DeleteProject, Operation, ProjectPatch, UpdateProject,
+};
 use crate::store::write::{projects as wp, statuses as ws};
 use crate::types::ProjectStatus;
 use crate::validate;
@@ -92,4 +94,43 @@ fn exists(tx: &Transaction<'_>, id: uuid::Uuid) -> Result<bool> {
         |r| r.get(0),
     )?;
     Ok(n > 0)
+}
+
+pub(crate) fn inverse_of_delete(tx: &Transaction<'_>, args: &DeleteProject) -> Result<Operation> {
+    let p = crate::store::read::projects::by_id_via_tx(tx, args.id)?;
+    Ok(Operation::CreateProject(CreateProject {
+        id: p.id,
+        name: p.name,
+        prefix: p.prefix,
+        description: p.description,
+        icon: p.icon,
+    }))
+}
+
+pub(crate) fn inverse_of_update(tx: &Transaction<'_>, args: &UpdateProject) -> Result<Operation> {
+    let p = crate::store::read::projects::by_id_via_tx(tx, args.id)?;
+    Ok(Operation::UpdateProject(UpdateProject {
+        id: p.id,
+        patch: ProjectPatch {
+            name: args.patch.name.as_ref().map(|_| p.name.clone()),
+            description: args
+                .patch
+                .description
+                .as_ref()
+                .map(|_| p.description.clone()),
+            icon: args.patch.icon.as_ref().map(|_| p.icon.clone()),
+            status: args.patch.status.as_ref().map(|_| p.status),
+        },
+    }))
+}
+
+pub(crate) fn inverse_of_archive(tx: &Transaction<'_>, args: &ArchiveProject) -> Result<Operation> {
+    let p = crate::store::read::projects::by_id_via_tx(tx, args.id)?;
+    Ok(Operation::UpdateProject(UpdateProject {
+        id: p.id,
+        patch: ProjectPatch {
+            status: Some(p.status),
+            ..Default::default()
+        },
+    }))
 }

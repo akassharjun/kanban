@@ -1,4 +1,5 @@
 #![allow(clippy::unwrap_used)]
+#![allow(clippy::panic)]
 
 use kanban_core::operation::{CreateProject, Operation};
 use kanban_core::types::ProjectStatus;
@@ -250,4 +251,49 @@ fn delete_project_unknown_id_errors() {
         .apply(Operation::DeleteProject(DeleteProject { id: new_id() }))
         .unwrap_err();
     assert!(err.to_string().contains("not found"), "{err}");
+}
+
+#[test]
+fn inverse_of_create_project_is_delete_with_same_id() {
+    let mut ws = Workspace::open_in_memory().unwrap();
+    let id = new_id();
+    let op = Operation::CreateProject(CreateProject {
+        id,
+        name: "X".into(),
+        prefix: "INV".into(),
+        description: None,
+        icon: None,
+    });
+    ws.apply(op.clone()).unwrap();
+    let inv: Operation = ws.last_inverse().unwrap();
+    match inv {
+        Operation::DeleteProject(d) => assert_eq!(d.id, id),
+        other => panic!("expected DeleteProject, got {other:?}"),
+    }
+}
+
+#[test]
+fn inverse_of_delete_project_restores_full_record() {
+    let mut ws = Workspace::open_in_memory().unwrap();
+    let id = new_id();
+    ws.apply(Operation::CreateProject(CreateProject {
+        id,
+        name: "Restore Me".into(),
+        prefix: "RES".into(),
+        description: Some("d".into()),
+        icon: Some("\u{1f680}".into()),
+    }))
+    .unwrap();
+    ws.apply(Operation::DeleteProject(DeleteProject { id }))
+        .unwrap();
+    let inv = ws.last_inverse().unwrap();
+    match inv {
+        Operation::CreateProject(c) => {
+            assert_eq!(c.id, id);
+            assert_eq!(c.name, "Restore Me");
+            assert_eq!(c.prefix, "RES");
+            assert_eq!(c.description.as_deref(), Some("d"));
+        }
+        other => panic!("expected CreateProject, got {other:?}"),
+    }
 }

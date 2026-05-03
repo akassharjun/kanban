@@ -21,6 +21,22 @@ pub(crate) fn by_id(conn: &Connection, id: Uuid) -> Result<Project> {
     })
 }
 
+pub(crate) fn by_id_via_tx(tx: &rusqlite::Transaction<'_>, id: Uuid) -> Result<Project> {
+    tx.query_row(
+        "SELECT id,name,prefix,description,icon,status,next_seq,created_at,updated_at
+         FROM projects WHERE id = ?1",
+        params![id.to_string()],
+        row_to_project,
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Error::NotFound {
+            kind: crate::EntityKind::Project,
+            id: id.to_string(),
+        },
+        other => other.into(),
+    })
+}
+
 pub(crate) fn list_all(conn: &Connection) -> Result<Vec<Project>> {
     let mut stmt = conn.prepare(
         "SELECT id,name,prefix,description,icon,status,next_seq,created_at,updated_at

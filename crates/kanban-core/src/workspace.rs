@@ -104,6 +104,23 @@ impl Workspace {
     ) -> crate::error::Result<Vec<crate::types::Status>> {
         crate::store::read::statuses::for_project(&self.conn, project_id)
     }
+
+    /// Read the most-recent operation's `inverse_payload`.
+    ///
+    /// Used by tests; will be reused by `undo`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if no rows exist or the read fails, and a
+    /// serialization error if the payload is malformed.
+    pub fn last_inverse(&self) -> crate::error::Result<crate::operation::Operation> {
+        let payload: String = self.conn.query_row(
+            "SELECT inverse_payload FROM operation_log ORDER BY id DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(serde_json::from_str(&payload)?)
+    }
 }
 
 fn default_db_path() -> Result<PathBuf> {

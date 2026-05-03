@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::operation::{Operation, OperationOutcome};
+use crate::operation::{DeleteProject, Operation, OperationOutcome};
 use crate::store::write::operation_log;
 use crate::workspace::Workspace;
 
@@ -18,12 +18,12 @@ impl Workspace {
     pub fn apply(&mut self, op: Operation) -> Result<OperationOutcome> {
         let now = self.clock.now();
         let payload = serde_json::to_string(&op)?;
-        let inverse = compute_inverse(&op)?;
-        let inverse_payload = serde_json::to_string(&inverse)?;
-
         let tx = self.conn.transaction()?;
-        // Discard redo branch when a new forward op lands.
         operation_log::truncate_redo_branch(&tx)?;
+
+        // Capture pre-state needed to invert this op.
+        let inverse = capture_inverse(&tx, &op)?;
+        let inverse_payload = serde_json::to_string(&inverse)?;
 
         match &op {
             Operation::CreateProject(args) => projects::create(&tx, args, now)?,
@@ -64,29 +64,15 @@ fn op_type_name(op: &Operation) -> &'static str {
     }
 }
 
-/// Inverse computation. Implemented incrementally (Task 15, 23, 26).
-/// Until the inverse for a variant is implemented, we return a placeholder operation
-/// that, when applied, would error — undo against an unsupported op simply fails loud.
-pub(crate) fn compute_inverse(op: &Operation) -> Result<Operation> {
+fn capture_inverse(tx: &rusqlite::Transaction<'_>, op: &Operation) -> Result<Operation> {
     match op {
-        // Project inverses land in Task 15.
         Operation::CreateProject(args) => {
-            Ok(Operation::DeleteProject(crate::operation::DeleteProject {
-                id: args.id,
-            }))
+            Ok(Operation::DeleteProject(DeleteProject { id: args.id }))
         }
-        Operation::DeleteProject(args) => {
-            Ok(Operation::CreateProject(crate::operation::CreateProject {
-                id: args.id,
-                name: "<undo placeholder>".into(),
-                prefix: "UNDO".into(),
-                description: None,
-                icon: None,
-            }))
-        }
-        Operation::UpdateProject(args) => Ok(Operation::UpdateProject(args.clone())),
-        Operation::ArchiveProject(args) => Ok(Operation::ArchiveProject(args.clone())),
-        // Issue/label inverses land in later phases.
+        Operation::DeleteProject(args) => projects::inverse_of_delete(tx, args),
+        Operation::UpdateProject(args) => projects::inverse_of_update(tx, args),
+        Operation::ArchiveProject(args) => projects::inverse_of_archive(tx, args),
+        // Issue/label inverses come in later phases.
         other => Err(Error::InvalidSnapshot(format!(
             "inverse not yet implemented for {other:?}"
         ))),
