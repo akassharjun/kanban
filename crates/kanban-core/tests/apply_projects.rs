@@ -286,14 +286,21 @@ fn inverse_of_delete_project_restores_full_record() {
     .unwrap();
     ws.apply(Operation::DeleteProject(DeleteProject { id }))
         .unwrap();
+    // The inverse of DeleteProject is now an ImportSnapshot of the project
+    // subtree (so cascaded statuses/labels/issues are preserved through
+    // undo). The captured snapshot must include the project row itself.
     let inv = ws.last_inverse().unwrap();
     match inv {
-        Operation::CreateProject(c) => {
-            assert_eq!(c.id, id);
-            assert_eq!(c.name, "Restore Me");
-            assert_eq!(c.prefix, "RES");
-            assert_eq!(c.description.as_deref(), Some("d"));
+        Operation::ImportSnapshot(snap) => {
+            assert_eq!(snap.snapshot.projects.len(), 1);
+            let p = &snap.snapshot.projects[0];
+            assert_eq!(p.id, id);
+            assert_eq!(p.name, "Restore Me");
+            assert_eq!(p.prefix, "RES");
+            assert_eq!(p.description.as_deref(), Some("d"));
+            // Default statuses are seeded on Create and must be in the inverse.
+            assert!(!snap.snapshot.statuses.is_empty());
         }
-        other => panic!("expected CreateProject, got {other:?}"),
+        other => panic!("expected ImportSnapshot, got {other:?}"),
     }
 }

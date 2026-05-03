@@ -210,3 +210,163 @@ pub(crate) fn inverse_of_import(
         "ImportSnapshot inverse computed via pre-snapshot capture, not in capture_inverse".into(),
     ))
 }
+
+// ----- Subtree exporters used by `inverse_of_delete_*` to produce an
+// `ImportSnapshot` operation that round-trips the deleted entity (and all
+// cascaded children) bit-exactly. Each leaves arrays for entities not in the
+// subtree empty, which is a no-op when fed back through `import`. -----
+
+/// Capture the project row + its statuses + its labels + its issues + the
+/// `issue_labels` rows for issues in the project. Used to build the inverse of
+/// `DeleteProject` so undo restores `status`, `next_seq`, timestamps, child
+/// statuses/labels/issues, and label attachments — none of which a plain
+/// `CreateProject` op would carry.
+pub(crate) fn export_project_subtree_via_tx(
+    tx: &Transaction<'_>,
+    project_id: uuid::Uuid,
+) -> Result<crate::snapshot::WorkspaceSnapshot> {
+    use crate::snapshot::{IssueLabelLink, SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
+
+    let project = crate::store::read::projects::by_id_via_tx(tx, project_id)?;
+    let statuses = crate::store::read::statuses::for_project_via_tx(tx, project_id)?;
+    let labels = crate::store::read::labels::for_project_via_tx(tx, project_id)?;
+
+    let mut issues = Vec::new();
+    {
+        let mut stmt = tx.prepare(
+            "SELECT id,project_id,seq,identifier,title,description,status_id,priority,
+                    due_date,sort_key,created_at,updated_at
+             FROM issues WHERE project_id = ?1",
+        )?;
+        let rows = stmt.query_map(
+            params![project_id.to_string()],
+            crate::store::read::issues::row_to_issue,
+        )?;
+        for r in rows {
+            issues.push(r?);
+        }
+    }
+
+    let mut issue_labels = Vec::new();
+    {
+        let mut stmt = tx.prepare(
+            "SELECT il.issue_id, il.label_id
+             FROM issue_labels il JOIN issues i ON i.id = il.issue_id
+             WHERE i.project_id = ?1",
+        )?;
+        let rows = stmt.query_map(params![project_id.to_string()], |r| {
+            let issue_id_s: String = r.get(0)?;
+            let label_id_s: String = r.get(1)?;
+            Ok((issue_id_s, label_id_s))
+        })?;
+        for r in rows {
+            let (iid, lid) = r?;
+            issue_labels.push(IssueLabelLink {
+                issue_id: uuid::Uuid::parse_str(&iid).map_err(|e| {
+                    Error::InvalidSnapshot(format!("issue_labels.issue_id is not a uuid: {e}"))
+                })?,
+                label_id: uuid::Uuid::parse_str(&lid).map_err(|e| {
+                    Error::InvalidSnapshot(format!("issue_labels.label_id is not a uuid: {e}"))
+                })?,
+            });
+        }
+    }
+
+    Ok(WorkspaceSnapshot {
+        schema_version: SNAPSHOT_SCHEMA_VERSION,
+        exported_at: chrono::Utc::now(),
+        projects: vec![project],
+        statuses,
+        labels,
+        issues,
+        issue_labels,
+    })
+}
+
+/// Capture the issue row + all `issue_labels` rows for that issue. Used to
+/// build the inverse of `DeleteIssue` so undo restores `seq`/`identifier`/
+/// `sort_key`/timestamps and label attachments.
+pub(crate) fn export_issue_subtree_via_tx(
+    tx: &Transaction<'_>,
+    issue_id: uuid::Uuid,
+) -> Result<crate::snapshot::WorkspaceSnapshot> {
+    use crate::snapshot::{IssueLabelLink, SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
+
+    let issue = crate::store::read::issues::by_id_via_tx(tx, issue_id)?;
+
+    let mut issue_labels = Vec::new();
+    {
+        let mut stmt =
+            tx.prepare("SELECT issue_id, label_id FROM issue_labels WHERE issue_id = ?1")?;
+        let rows = stmt.query_map(params![issue_id.to_string()], |r| {
+            let issue_id_s: String = r.get(0)?;
+            let label_id_s: String = r.get(1)?;
+            Ok((issue_id_s, label_id_s))
+        })?;
+        for r in rows {
+            let (iid, lid) = r?;
+            issue_labels.push(IssueLabelLink {
+                issue_id: uuid::Uuid::parse_str(&iid).map_err(|e| {
+                    Error::InvalidSnapshot(format!("issue_labels.issue_id is not a uuid: {e}"))
+                })?,
+                label_id: uuid::Uuid::parse_str(&lid).map_err(|e| {
+                    Error::InvalidSnapshot(format!("issue_labels.label_id is not a uuid: {e}"))
+                })?,
+            });
+        }
+    }
+
+    Ok(WorkspaceSnapshot {
+        schema_version: SNAPSHOT_SCHEMA_VERSION,
+        exported_at: chrono::Utc::now(),
+        projects: Vec::new(),
+        statuses: Vec::new(),
+        labels: Vec::new(),
+        issues: vec![issue],
+        issue_labels,
+    })
+}
+
+/// Capture the label row + all `issue_labels` rows that reference it. Used to
+/// build the inverse of `DeleteLabel` so undo restores attachments that the
+/// CASCADE delete tore down.
+pub(crate) fn export_label_subtree_via_tx(
+    tx: &Transaction<'_>,
+    label_id: uuid::Uuid,
+) -> Result<crate::snapshot::WorkspaceSnapshot> {
+    use crate::snapshot::{IssueLabelLink, SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
+
+    let label = crate::store::read::labels::by_id_via_tx(tx, label_id)?;
+
+    let mut issue_labels = Vec::new();
+    {
+        let mut stmt =
+            tx.prepare("SELECT issue_id, label_id FROM issue_labels WHERE label_id = ?1")?;
+        let rows = stmt.query_map(params![label_id.to_string()], |r| {
+            let issue_id_s: String = r.get(0)?;
+            let label_id_s: String = r.get(1)?;
+            Ok((issue_id_s, label_id_s))
+        })?;
+        for r in rows {
+            let (iid, lid) = r?;
+            issue_labels.push(IssueLabelLink {
+                issue_id: uuid::Uuid::parse_str(&iid).map_err(|e| {
+                    Error::InvalidSnapshot(format!("issue_labels.issue_id is not a uuid: {e}"))
+                })?,
+                label_id: uuid::Uuid::parse_str(&lid).map_err(|e| {
+                    Error::InvalidSnapshot(format!("issue_labels.label_id is not a uuid: {e}"))
+                })?,
+            });
+        }
+    }
+
+    Ok(WorkspaceSnapshot {
+        schema_version: SNAPSHOT_SCHEMA_VERSION,
+        exported_at: chrono::Utc::now(),
+        projects: Vec::new(),
+        statuses: Vec::new(),
+        labels: vec![label],
+        issues: Vec::new(),
+        issue_labels,
+    })
+}

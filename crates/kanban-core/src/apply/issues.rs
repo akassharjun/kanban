@@ -1,13 +1,13 @@
 use crate::error::{Error, Result};
 use crate::operation::{
-    CreateIssue, DeleteIssue, IssueFieldChange, Operation, ReorderIssue, UpdateIssueField,
+    ConflictPolicy, CreateIssue, DeleteIssue, ImportSnapshot, IssueFieldChange, Operation,
+    ReorderIssue, UpdateIssueField,
 };
 use crate::store::write::issues as wi;
 use crate::validate;
 use chrono::{DateTime, Utc};
 use rusqlite::types::Value;
 use rusqlite::{Transaction, params};
-use uuid::Uuid;
 
 pub(crate) fn create(tx: &Transaction<'_>, args: &CreateIssue, now: DateTime<Utc>) -> Result<()> {
     validate::nonempty_field("title", &args.title)?;
@@ -90,24 +90,15 @@ pub(crate) fn inverse_of_create(args: &CreateIssue) -> Operation {
     Operation::DeleteIssue(DeleteIssue { id: args.id })
 }
 
+/// Capture the inverse of `DeleteIssue` as an `ImportSnapshot` containing the
+/// issue row + its `issue_labels`. A plain `CreateIssue` would re-derive
+/// `seq`, `identifier`, `sort_key`, and timestamps, so undo would not restore
+/// the original identifier.
 pub(crate) fn inverse_of_delete(tx: &Transaction<'_>, args: &DeleteIssue) -> Result<Operation> {
-    let issue = crate::store::read::issues::by_id_via_tx(tx, args.id)?;
-    let mut label_ids = Vec::new();
-    let mut stmt = tx.prepare("SELECT label_id FROM issue_labels WHERE issue_id = ?1")?;
-    let rows = stmt.query_map(params![args.id.to_string()], |r| r.get::<_, String>(0))?;
-    for r in rows {
-        let id_s = r?;
-        label_ids.push(Uuid::parse_str(&id_s).map_err(|e| Error::InvalidSnapshot(e.to_string()))?);
-    }
-    Ok(Operation::CreateIssue(CreateIssue {
-        id: issue.id,
-        project_id: issue.project_id,
-        title: issue.title,
-        description: issue.description,
-        status_id: issue.status_id,
-        priority: issue.priority,
-        due_date: issue.due_date,
-        label_ids,
+    let snapshot = crate::apply::snapshot::export_issue_subtree_via_tx(tx, args.id)?;
+    Ok(Operation::ImportSnapshot(ImportSnapshot {
+        snapshot,
+        policy: ConflictPolicy::Overwrite,
     }))
 }
 

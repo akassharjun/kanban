@@ -1,6 +1,7 @@
 use crate::error::{Error, Result};
 use crate::operation::{
-    ArchiveProject, CreateProject, DeleteProject, Operation, ProjectPatch, UpdateProject,
+    ArchiveProject, ConflictPolicy, CreateProject, DeleteProject, ImportSnapshot, Operation,
+    ProjectPatch, UpdateProject,
 };
 use crate::store::write::{projects as wp, statuses as ws};
 use crate::types::ProjectStatus;
@@ -96,14 +97,16 @@ fn exists(tx: &Transaction<'_>, id: uuid::Uuid) -> Result<bool> {
     Ok(n > 0)
 }
 
+/// Capture the inverse of `DeleteProject` as an `ImportSnapshot` of the
+/// project subtree (project row + statuses + labels + issues +
+/// `issue_labels`). A plain `CreateProject` would lose the project's
+/// `status`/`next_seq`/timestamps and every cascaded child, so undo would
+/// silently restore an empty Active project.
 pub(crate) fn inverse_of_delete(tx: &Transaction<'_>, args: &DeleteProject) -> Result<Operation> {
-    let p = crate::store::read::projects::by_id_via_tx(tx, args.id)?;
-    Ok(Operation::CreateProject(CreateProject {
-        id: p.id,
-        name: p.name,
-        prefix: p.prefix,
-        description: p.description,
-        icon: p.icon,
+    let snapshot = crate::apply::snapshot::export_project_subtree_via_tx(tx, args.id)?;
+    Ok(Operation::ImportSnapshot(ImportSnapshot {
+        snapshot,
+        policy: ConflictPolicy::Overwrite,
     }))
 }
 

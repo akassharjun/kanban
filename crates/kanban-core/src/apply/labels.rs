@@ -1,6 +1,7 @@
 use crate::error::{Error, Result};
 use crate::operation::{
-    AttachLabel, CreateLabel, DeleteLabel, DetachLabel, LabelPatch, Operation, UpdateLabel,
+    AttachLabel, ConflictPolicy, CreateLabel, DeleteLabel, DetachLabel, ImportSnapshot, LabelPatch,
+    Operation, UpdateLabel,
 };
 use crate::store::write::labels as wl;
 use crate::validate;
@@ -59,13 +60,15 @@ pub(crate) fn inverse_of_create(args: &CreateLabel) -> Operation {
     Operation::DeleteLabel(DeleteLabel { id: args.id })
 }
 
+/// Capture the inverse of `DeleteLabel` as an `ImportSnapshot` containing
+/// the label row + every `issue_labels` row that referenced it. A plain
+/// `CreateLabel` would not restore the attachments that the `ON DELETE
+/// CASCADE` removed.
 pub(crate) fn inverse_of_delete(tx: &Transaction<'_>, args: &DeleteLabel) -> Result<Operation> {
-    let l = crate::store::read::labels::by_id_via_tx(tx, args.id)?;
-    Ok(Operation::CreateLabel(CreateLabel {
-        id: l.id,
-        project_id: l.project_id,
-        name: l.name,
-        color: l.color,
+    let snapshot = crate::apply::snapshot::export_label_subtree_via_tx(tx, args.id)?;
+    Ok(Operation::ImportSnapshot(ImportSnapshot {
+        snapshot,
+        policy: ConflictPolicy::Overwrite,
     }))
 }
 
