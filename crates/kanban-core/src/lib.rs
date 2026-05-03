@@ -4,6 +4,7 @@ pub mod apply;
 pub mod error;
 pub mod ids;
 pub mod operation;
+pub mod query;
 mod store;
 pub mod time;
 pub mod types;

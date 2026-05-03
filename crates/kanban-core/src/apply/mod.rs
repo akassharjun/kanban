@@ -3,6 +3,7 @@ use crate::operation::{DeleteProject, Operation, OperationOutcome};
 use crate::store::write::operation_log;
 use crate::workspace::Workspace;
 
+pub(crate) mod issues;
 pub(crate) mod projects;
 
 impl Workspace {
@@ -51,7 +52,9 @@ pub(crate) fn dispatch(
         Operation::UpdateProject(args) => projects::update(tx, args, now)?,
         Operation::ArchiveProject(args) => projects::archive(tx, args, now)?,
         Operation::DeleteProject(args) => projects::delete(tx, args)?,
-        // Issue/label arms land in Phase 8/9 — until then return InvalidSnapshot.
+        Operation::CreateIssue(args) => issues::create(tx, args, now)?,
+        Operation::DeleteIssue(args) => issues::delete(tx, args)?,
+        // Remaining issue/label arms land in later tasks — until then return InvalidSnapshot.
         other => return Err(Error::InvalidSnapshot(format!("unsupported op: {other:?}"))),
     }
     Ok(())
@@ -83,7 +86,9 @@ fn capture_inverse(tx: &rusqlite::Transaction<'_>, op: &Operation) -> Result<Ope
         Operation::DeleteProject(args) => projects::inverse_of_delete(tx, args),
         Operation::UpdateProject(args) => projects::inverse_of_update(tx, args),
         Operation::ArchiveProject(args) => projects::inverse_of_archive(tx, args),
-        // Issue/label inverses come in later phases.
+        Operation::CreateIssue(args) => Ok(issues::inverse_of_create(args)),
+        Operation::DeleteIssue(args) => issues::inverse_of_delete(tx, args),
+        // Remaining issue/label inverses come in later tasks.
         other => Err(Error::InvalidSnapshot(format!(
             "inverse not yet implemented for {other:?}"
         ))),

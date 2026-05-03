@@ -105,6 +105,31 @@ impl Workspace {
         crate::store::read::statuses::for_project(&self.conn, project_id)
     }
 
+    /// Look up an issue by id.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::error::Error::NotFound`] if no issue with `id` exists,
+    /// or a database error if the read fails.
+    pub fn query_issue_by_id(&self, id: uuid::Uuid) -> crate::error::Result<crate::types::Issue> {
+        crate::store::read::issues::by_id(&self.conn, id)
+    }
+
+    /// List issues matching `filter`, ordered as the filter directs.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the read fails.
+    // Filter is taken by value to give callers a clean `Default`-then-init pattern;
+    // the function only needs a borrow internally.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn query_issues(
+        &self,
+        filter: crate::query::IssueFilter,
+    ) -> crate::error::Result<Vec<crate::types::Issue>> {
+        crate::store::read::issues::list(&self.conn, &filter)
+    }
+
     /// Read the most-recent operation's `inverse_payload`.
     ///
     /// Used by tests; will be reused by `undo`.
