@@ -1,0 +1,5 @@
+---
+source: crates/kanban-cli/tests/issue_cmds.rs
+expression: stdout
+---
+[TIMESTAMP]  priority: none -> high

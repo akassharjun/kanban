@@ -1,0 +1,11 @@
+---
+source: crates/kanban-cli/tests/cmd_misc.rs
+expression: stdout
+---
+Todo  unstarted  #94a3b8
+Backlog  unstarted  #64748b
+In Progress  started  #3b82f6
+In Review  started  #a855f7
+Blocked  blocked  #ef4444
+Discarded  discarded  #6b7280
+Done  completed  #22c55e
