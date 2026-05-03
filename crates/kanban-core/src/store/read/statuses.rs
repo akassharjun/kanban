@@ -17,6 +17,22 @@ pub(crate) fn for_project(conn: &Connection, project_id: Uuid) -> Result<Vec<Sta
     Ok(out)
 }
 
+pub(crate) fn for_project_via_tx(
+    tx: &rusqlite::Transaction<'_>,
+    project_id: Uuid,
+) -> Result<Vec<Status>> {
+    let mut stmt = tx.prepare(
+        "SELECT id,project_id,name,category,color,position FROM statuses
+         WHERE project_id = ?1 ORDER BY position ASC",
+    )?;
+    let rows = stmt.query_map(params![project_id.to_string()], row_to_status)?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
 fn row_to_status(r: &rusqlite::Row<'_>) -> rusqlite::Result<Status> {
     let id: String = r.get(0)?;
     let pid: String = r.get(1)?;

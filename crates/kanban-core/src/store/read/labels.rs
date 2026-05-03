@@ -16,6 +16,21 @@ pub(crate) fn for_project(conn: &Connection, project_id: Uuid) -> Result<Vec<Lab
     Ok(out)
 }
 
+pub(crate) fn for_project_via_tx(
+    tx: &rusqlite::Transaction<'_>,
+    project_id: Uuid,
+) -> Result<Vec<Label>> {
+    let mut stmt = tx.prepare(
+        "SELECT id,project_id,name,color FROM labels WHERE project_id = ?1 ORDER BY name",
+    )?;
+    let rows = stmt.query_map(params![project_id.to_string()], row_to_label)?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
 pub(crate) fn by_id_via_tx(tx: &rusqlite::Transaction<'_>, id: Uuid) -> Result<Label> {
     tx.query_row(
         "SELECT id,project_id,name,color FROM labels WHERE id = ?1",

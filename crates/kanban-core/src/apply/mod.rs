@@ -6,6 +6,7 @@ use crate::workspace::Workspace;
 pub(crate) mod issues;
 pub(crate) mod labels;
 pub(crate) mod projects;
+pub(crate) mod snapshot;
 
 impl Workspace {
     /// The single public mutator. Validates, executes, and records `op` in one transaction.
@@ -24,8 +25,19 @@ impl Workspace {
         operation_log::truncate_redo_branch(&tx)?;
 
         // Capture pre-state needed to invert this op (read DB while it still
-        // reflects the old state).
-        let inverse = capture_inverse(&tx, &op)?;
+        // reflects the old state). `ImportSnapshot` is special-cased: its
+        // inverse is the pre-import workspace state captured as another
+        // `ImportSnapshot { policy: Overwrite }`.
+        let inverse = match &op {
+            Operation::ImportSnapshot(_) => {
+                let pre = export_snapshot_via_tx(&tx)?;
+                Operation::ImportSnapshot(crate::operation::ImportSnapshot {
+                    snapshot: pre,
+                    policy: crate::operation::ConflictPolicy::Overwrite,
+                })
+            }
+            _ => capture_inverse(&tx, &op)?,
+        };
         let inverse_payload = serde_json::to_string(&inverse)?;
 
         // Insert the operation_log row first so we have an op_id to attach
@@ -69,6 +81,7 @@ pub(crate) fn dispatch(
         Operation::DeleteLabel(args) => labels::delete(tx, args)?,
         Operation::AttachLabel(args) => labels::attach(tx, args)?,
         Operation::DetachLabel(args) => labels::detach(tx, args)?,
+        Operation::ImportSnapshot(args) => snapshot::import(tx, args)?,
     }
     Ok(())
 }
@@ -88,6 +101,7 @@ fn op_type_name(op: &Operation) -> &'static str {
         Operation::DeleteLabel(_) => "DeleteLabel",
         Operation::AttachLabel(_) => "AttachLabel",
         Operation::DetachLabel(_) => "DetachLabel",
+        Operation::ImportSnapshot(_) => "ImportSnapshot",
     }
 }
 
@@ -108,6 +122,7 @@ fn capture_inverse(tx: &rusqlite::Transaction<'_>, op: &Operation) -> Result<Ope
         Operation::UpdateLabel(args) => labels::inverse_of_update(tx, args),
         Operation::AttachLabel(args) => Ok(labels::inverse_of_attach(args)),
         Operation::DetachLabel(args) => Ok(labels::inverse_of_detach(args)),
+        Operation::ImportSnapshot(args) => snapshot::inverse_of_import(tx, args),
     }
 }
 
@@ -176,4 +191,74 @@ fn emit_activity(
         )?;
     }
     Ok(())
+}
+
+/// Equivalent of [`Workspace::export_snapshot`] but reading through an
+/// existing transaction so it can be composed with mutating operations
+/// inside `apply`. Used to capture the pre-import state as the inverse of
+/// an `ImportSnapshot` operation.
+fn export_snapshot_via_tx(
+    tx: &rusqlite::Transaction<'_>,
+) -> Result<crate::snapshot::WorkspaceSnapshot> {
+    use crate::snapshot::{IssueLabelLink, SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
+
+    let projects = {
+        let mut stmt = tx.prepare(
+            "SELECT id,name,prefix,description,icon,status,next_seq,created_at,updated_at
+             FROM projects ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map([], crate::store::read::projects::row_to_project_pub)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        out
+    };
+
+    let mut statuses = Vec::new();
+    let mut labels = Vec::new();
+    for p in &projects {
+        statuses.extend(crate::store::read::statuses::for_project_via_tx(tx, p.id)?);
+        labels.extend(crate::store::read::labels::for_project_via_tx(tx, p.id)?);
+    }
+
+    let mut issues = Vec::new();
+    {
+        let mut stmt = tx.prepare(crate::store::read::issues::ISSUE_LIST_BASE)?;
+        let rows = stmt.query_map([], crate::store::read::issues::row_to_issue)?;
+        for r in rows {
+            issues.push(r?);
+        }
+    }
+
+    let mut issue_labels = Vec::new();
+    {
+        let mut stmt = tx.prepare("SELECT issue_id, label_id FROM issue_labels")?;
+        let rows = stmt.query_map([], |r| {
+            let issue_id_s: String = r.get(0)?;
+            let label_id_s: String = r.get(1)?;
+            Ok((issue_id_s, label_id_s))
+        })?;
+        for r in rows {
+            let (issue_id_s, label_id_s) = r?;
+            issue_labels.push(IssueLabelLink {
+                issue_id: uuid::Uuid::parse_str(&issue_id_s).map_err(|e| {
+                    Error::InvalidSnapshot(format!("issue_labels.issue_id is not a uuid: {e}"))
+                })?,
+                label_id: uuid::Uuid::parse_str(&label_id_s).map_err(|e| {
+                    Error::InvalidSnapshot(format!("issue_labels.label_id is not a uuid: {e}"))
+                })?,
+            });
+        }
+    }
+
+    Ok(WorkspaceSnapshot {
+        schema_version: SNAPSHOT_SCHEMA_VERSION,
+        exported_at: chrono::Utc::now(),
+        projects,
+        statuses,
+        issues,
+        labels,
+        issue_labels,
+    })
 }

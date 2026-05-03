@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 pub const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkspaceSnapshot {
     pub schema_version: u32,
     pub exported_at: DateTime<Utc>,

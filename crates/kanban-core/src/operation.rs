@@ -21,6 +21,8 @@ pub enum Operation {
     DeleteLabel(DeleteLabel),
     AttachLabel(AttachLabel),
     DetachLabel(DetachLabel),
+
+    ImportSnapshot(ImportSnapshot),
 }
 
 // ----- Project ops -----
@@ -141,4 +143,20 @@ pub struct DetachLabel {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperationOutcome {
     pub op_id: i64,
+}
+
+// ----- Snapshot ops -----
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConflictPolicy {
+    Skip,
+    Overwrite,
+    Fail,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ImportSnapshot {
+    pub snapshot: crate::snapshot::WorkspaceSnapshot,
+    pub policy: ConflictPolicy,
 }

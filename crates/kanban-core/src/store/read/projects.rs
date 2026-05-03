@@ -50,6 +50,13 @@ pub(crate) fn list_all(conn: &Connection) -> Result<Vec<Project>> {
     Ok(out)
 }
 
+/// `pub(crate)` re-export of the private [`row_to_project`] helper so the
+/// apply layer can build projects directly from rows yielded by a transaction
+/// `prepare`.
+pub(crate) fn row_to_project_pub(r: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
+    row_to_project(r)
+}
+
 fn row_to_project(r: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
     let id_s: String = r.get(0)?;
     let status_s: String = r.get(5)?;
