@@ -7,3 +7,4 @@
 .kanban-test/
 .env
 .env.local
+.superpowers/
