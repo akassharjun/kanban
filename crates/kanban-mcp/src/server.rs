@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use rmcp::handler::server::router::tool::ToolRouter;
+use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     CallToolResult, Content, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo,
 };
@@ -72,6 +73,52 @@ impl KanbanServer {
     async fn list_projects(&self) -> Result<CallToolResult, McpError> {
         let projects = self.blocking_read(Workspace::query_projects).await?;
         let out: Vec<ProjectOut> = projects.into_iter().map(ProjectOut::from).collect();
+        json_content(&out)
+    }
+
+    #[tool(
+        description = "List the status columns of a project, in board order. `project` is the prefix, e.g. AUTH."
+    )]
+    async fn list_statuses(
+        &self,
+        Parameters(args): Parameters<crate::inputs::ProjectRef>,
+    ) -> Result<CallToolResult, McpError> {
+        let prefix = args.project.clone();
+        let statuses = self
+            .blocking_read(move |ws| {
+                let Some(p) = ws.query_project_by_prefix(&prefix)? else {
+                    return Ok(None);
+                };
+                Ok(Some(ws.query_statuses_for_project(p.id)?))
+            })
+            .await?;
+        let statuses = statuses.ok_or_else(|| crate::error::not_found("project", &args.project))?;
+        let out: Vec<crate::convert::StatusOut> = statuses
+            .into_iter()
+            .map(crate::convert::StatusOut::from)
+            .collect();
+        json_content(&out)
+    }
+
+    #[tool(description = "List the labels of a project. `project` is the prefix, e.g. AUTH.")]
+    async fn list_labels(
+        &self,
+        Parameters(args): Parameters<crate::inputs::ProjectRef>,
+    ) -> Result<CallToolResult, McpError> {
+        let prefix = args.project.clone();
+        let labels = self
+            .blocking_read(move |ws| {
+                let Some(p) = ws.query_project_by_prefix(&prefix)? else {
+                    return Ok(None);
+                };
+                Ok(Some(ws.query_labels_for_project(p.id)?))
+            })
+            .await?;
+        let labels = labels.ok_or_else(|| crate::error::not_found("project", &args.project))?;
+        let out: Vec<crate::convert::LabelOut> = labels
+            .into_iter()
+            .map(crate::convert::LabelOut::from)
+            .collect();
         json_content(&out)
     }
 }

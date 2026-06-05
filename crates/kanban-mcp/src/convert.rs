@@ -1,8 +1,5 @@
 //! Output shapes returned to the MCP client. Human-facing: prefixes/keys/names,
 //! never UUIDs or sort keys.
-// `StatusOut`/`LabelOut`/`IssueOut` are consumed by the issue/label tools in
-// Tasks 5-6; allow dead_code until then. Remove this once they are wired up.
-#![allow(dead_code)]
 use kanban_core::types::{Issue, Label, Project, Status};
 use serde::Serialize;
 
@@ -50,6 +47,8 @@ impl From<Label> for LabelOut {
     }
 }
 
+// `IssueOut` is consumed by the issue tools in Task 6; allow dead_code until then.
+#[allow(dead_code)]
 #[derive(Serialize)]
 pub struct IssueOut {
     pub key: String,
@@ -62,6 +61,7 @@ pub struct IssueOut {
 
 impl IssueOut {
     /// Build from a core `Issue` plus a resolved status NAME.
+    #[allow(dead_code)]
     #[must_use]
     pub fn from_issue(i: Issue, status_name: &str) -> Self {
         Self {

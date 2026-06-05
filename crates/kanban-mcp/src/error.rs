@@ -21,7 +21,6 @@ pub fn to_mcp(err: kanban_core::Error) -> McpError {
 }
 
 /// A "not found by human identifier" error (project prefix / issue key).
-#[allow(dead_code)] // consumed by the resolution tools from Task 5 onward
 #[must_use]
 pub fn not_found(resource: &str, key: &str) -> McpError {
     McpError::resource_not_found(format!("{resource} not found: {key}"), None)
