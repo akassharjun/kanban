@@ -92,3 +92,39 @@ export function useApply(prefixForCache?: string) {
     onSettled: (_data, _err, op) => invalidateFor(qc, op, prefixForCache),
   });
 }
+
+/**
+ * Undo the last applied operation via `commands.undo`. Because undo can touch
+ * any entity, it invalidates every query on settle rather than scoping.
+ */
+export function useUndo() {
+  const qc = useQueryClient();
+  return useMutation<unknown, unknown, void>({
+    mutationFn: async () => {
+      const r = await commands.undo();
+      if (r.status !== "ok") throw asApiError(r.error);
+      return r.data;
+    },
+    onSettled: () => {
+      void qc.invalidateQueries();
+    },
+  });
+}
+
+/**
+ * Redo the last undone operation via `commands.redo`. Invalidates every query
+ * on settle (see `useUndo`).
+ */
+export function useRedo() {
+  const qc = useQueryClient();
+  return useMutation<unknown, unknown, void>({
+    mutationFn: async () => {
+      const r = await commands.redo();
+      if (r.status !== "ok") throw asApiError(r.error);
+      return r.data;
+    },
+    onSettled: () => {
+      void qc.invalidateQueries();
+    },
+  });
+}
