@@ -25,6 +25,7 @@ pub enum Operation {
     CreateStatus(CreateStatus),
     UpdateStatus(UpdateStatus),
     DeleteStatus(DeleteStatus),
+    ReorderStatus(ReorderStatus),
 
     ImportSnapshot(ImportSnapshot),
 }
@@ -176,6 +177,12 @@ pub struct StatusPatch {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeleteStatus {
     pub id: Uuid,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReorderStatus {
+    pub id: Uuid,
+    pub new_position: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

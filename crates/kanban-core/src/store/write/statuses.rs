@@ -74,6 +74,14 @@ pub(crate) fn delete(tx: &Transaction<'_>, id: Uuid) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn update_position(tx: &Transaction<'_>, id: Uuid, position: i64) -> Result<()> {
+    tx.execute(
+        "UPDATE statuses SET position = ?1 WHERE id = ?2",
+        params![position, id.to_string()],
+    )?;
+    Ok(())
+}
+
 pub(crate) fn seed_defaults(tx: &Transaction<'_>, project_id: Uuid) -> Result<Vec<Uuid>> {
     let mut ids = Vec::with_capacity(DEFAULTS.len());
     for (name, category, color, position) in DEFAULTS {

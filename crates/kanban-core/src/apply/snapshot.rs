@@ -349,6 +349,27 @@ pub(crate) fn export_status_row(
     })
 }
 
+/// Capture all of a project's status rows as a snapshot (other entity arrays
+/// empty). Used to build the inverse of `ReorderStatus`: re-importing every
+/// status row under `Overwrite` restores all prior `position` values.
+pub(crate) fn export_project_statuses(
+    tx: &Transaction<'_>,
+    project_id: uuid::Uuid,
+) -> Result<crate::snapshot::WorkspaceSnapshot> {
+    use crate::snapshot::{SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
+
+    let statuses = crate::store::read::statuses::for_project_via_tx(tx, project_id)?;
+    Ok(WorkspaceSnapshot {
+        schema_version: SNAPSHOT_SCHEMA_VERSION,
+        exported_at: chrono::Utc::now(),
+        projects: Vec::new(),
+        statuses,
+        labels: Vec::new(),
+        issues: Vec::new(),
+        issue_labels: Vec::new(),
+    })
+}
+
 /// Capture the label row + all `issue_labels` rows that reference it. Used to
 /// build the inverse of `DeleteLabel` so undo restores attachments that the
 /// CASCADE delete tore down.

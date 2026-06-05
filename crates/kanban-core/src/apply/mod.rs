@@ -84,7 +84,8 @@ pub(crate) fn dispatch(
         Operation::DetachLabel(args) => labels::detach(tx, args)?,
         Operation::CreateStatus(args) => statuses::create(tx, args)?,
         Operation::UpdateStatus(args) => statuses::update(tx, args)?,
-        Operation::DeleteStatus(args) => statuses::delete_plain(tx, args)?,
+        Operation::DeleteStatus(args) => statuses::delete(tx, args)?,
+        Operation::ReorderStatus(args) => statuses::reorder(tx, args)?,
         Operation::ImportSnapshot(args) => snapshot::import(tx, args)?,
     }
     Ok(())
@@ -108,6 +109,7 @@ fn op_type_name(op: &Operation) -> &'static str {
         Operation::CreateStatus(_) => "CreateStatus",
         Operation::UpdateStatus(_) => "UpdateStatus",
         Operation::DeleteStatus(_) => "DeleteStatus",
+        Operation::ReorderStatus(_) => "ReorderStatus",
         Operation::ImportSnapshot(_) => "ImportSnapshot",
     }
 }
@@ -132,6 +134,7 @@ fn capture_inverse(tx: &rusqlite::Transaction<'_>, op: &Operation) -> Result<Ope
         Operation::CreateStatus(args) => Ok(statuses::inverse_of_create(args)),
         Operation::UpdateStatus(args) => statuses::inverse_of_update(tx, args),
         Operation::DeleteStatus(args) => statuses::inverse_of_delete(tx, args),
+        Operation::ReorderStatus(args) => statuses::inverse_of_reorder(tx, args),
         Operation::ImportSnapshot(args) => snapshot::inverse_of_import(tx, args),
     }
 }
