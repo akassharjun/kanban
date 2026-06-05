@@ -41,6 +41,26 @@ pub struct CreateProjectInput {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateIssueInput {
+    /// Project prefix, e.g. "AUTH".
+    pub project: String,
+    /// Issue title.
+    pub title: String,
+    /// Optional markdown description.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Optional status name; defaults to the project's first column.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Optional priority: none, low, medium, high, urgent. Defaults to medium.
+    #[serde(default)]
+    pub priority: Option<String>,
+    /// Optional due date, YYYY-MM-DD.
+    #[serde(default)]
+    pub due_date: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchIssues {
     /// Full-text query.
     pub query: String,

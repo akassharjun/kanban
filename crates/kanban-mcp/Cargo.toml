@@ -20,6 +20,7 @@ path = "src/main.rs"
 
 [dependencies]
 kanban-core = { path = "../kanban-core" }
+chrono = { workspace = true }
 uuid = { workspace = true }
 rmcp = { workspace = true }
 schemars = { workspace = true }

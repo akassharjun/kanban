@@ -316,6 +316,94 @@ impl KanbanServer {
         .await?;
         json_content(&serde_json::json!({ "created": prefix }))
     }
+
+    #[tool(
+        description = "Create an issue in a project. status defaults to the first column, priority to medium. Returns the created issue including its assigned key."
+    )]
+    async fn create_issue(
+        &self,
+        Parameters(args): Parameters<crate::inputs::CreateIssueInput>,
+    ) -> Result<CallToolResult, McpError> {
+        use kanban_core::operation::{CreateIssue, Operation};
+        use kanban_core::types::Priority;
+
+        // phase 1: resolve project id + statuses
+        let prefix = args.project.clone();
+        let resolved = self
+            .blocking_read(move |ws| {
+                let Some(p) = ws.query_project_by_prefix(&prefix)? else {
+                    return Ok(None);
+                };
+                let statuses = ws.query_statuses_for_project(p.id)?;
+                Ok(Some((p.id, statuses)))
+            })
+            .await?;
+        let (project_id, statuses) =
+            resolved.ok_or_else(|| crate::error::not_found("project", &args.project))?;
+
+        // status: named or first column
+        let status_id = match &args.status {
+            Some(name) => {
+                statuses
+                    .iter()
+                    .find(|s| &s.name == name)
+                    .ok_or_else(|| {
+                        crate::error::unknown_name(
+                            "status",
+                            name,
+                            &args.project,
+                            &statuses.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
+                        )
+                    })?
+                    .id
+            }
+            None => statuses
+                .first()
+                .map(|s| s.id)
+                .ok_or_else(|| McpError::internal_error("project has no statuses", None))?,
+        };
+
+        let priority: Priority = match &args.priority {
+            Some(p) => p.parse().map_err(|_| {
+                McpError::invalid_params(
+                    "priority must be one of none, low, medium, high, urgent",
+                    None,
+                )
+            })?,
+            None => Priority::Medium,
+        };
+        let due_date = match &args.due_date {
+            Some(d) => Some(
+                chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                    .map_err(|_| McpError::invalid_params("due_date must be YYYY-MM-DD", None))?,
+            ),
+            None => None,
+        };
+
+        // phase 2: apply + read back the created issue (so we can return its key)
+        let id = uuid::Uuid::now_v7();
+        let title = args.title.clone();
+        let description = args.description.clone();
+        let issue = self
+            .blocking_mut(move |ws| {
+                ws.apply(Operation::CreateIssue(CreateIssue {
+                    id,
+                    project_id,
+                    title,
+                    description,
+                    status_id,
+                    priority,
+                    due_date,
+                    label_ids: vec![],
+                }))?;
+                ws.query_issue_by_id(id)
+            })
+            .await?;
+
+        let map = crate::convert::status_name_map(&statuses);
+        let name = map.get(&issue.status_id).cloned().unwrap_or_default();
+        json_content(&crate::convert::IssueOut::from_issue(issue, &name))
+    }
 }
 
 #[tool_handler]

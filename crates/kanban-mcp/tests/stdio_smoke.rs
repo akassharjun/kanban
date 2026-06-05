@@ -249,6 +249,95 @@ async fn create_project_tool() {
 }
 
 #[tokio::test]
+async fn create_issue_tool() {
+    // Empty workspace, then create a project so we can add issues to it.
+    let dir = tempfile::tempdir().unwrap();
+    let ws = Workspace::open(&dir.path().join("data.db")).unwrap();
+
+    let server = KanbanServer::with_workspace(ws);
+    let (server_t, client_t) = tokio::io::duplex(8192);
+
+    let server_handle = tokio::spawn(async move {
+        let svc = server.serve(server_t).await?;
+        svc.waiting().await?;
+        anyhow::Ok(())
+    });
+
+    let client = TestClient.serve(client_t).await.unwrap();
+
+    let tools = client.list_all_tools().await.unwrap();
+    assert!(tools.iter().any(|t| t.name == "create_issue"));
+
+    client
+        .call_tool(
+            CallToolRequestParams::new("create_project")
+                .with_arguments(rmcp::object!({"name": "Auth Service", "prefix": "AUTH"})),
+        )
+        .await
+        .unwrap();
+
+    // Create an issue with defaults: returns the full IssueOut with the
+    // core-assigned key ("AUTH-1"), default first status ("Todo"), default
+    // priority ("medium").
+    let result = client
+        .call_tool(
+            CallToolRequestParams::new("create_issue")
+                .with_arguments(rmcp::object!({"project": "AUTH", "title": "Add login"})),
+        )
+        .await
+        .unwrap();
+    let text = result.content[0]
+        .as_text()
+        .expect("first content block is text");
+    let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
+    assert_eq!(parsed["key"], "AUTH-1", "got: {parsed}");
+    assert_eq!(parsed["title"], "Add login", "got: {parsed}");
+    assert_eq!(parsed["status"], "Todo", "got: {parsed}");
+    assert_eq!(parsed["priority"], "medium", "got: {parsed}");
+
+    // Bad priority is rejected.
+    let err =
+        client
+            .call_tool(CallToolRequestParams::new("create_issue").with_arguments(
+                rmcp::object!({"project": "AUTH", "title": "x", "priority": "bogus"}),
+            ))
+            .await;
+    assert!(
+        err.is_err(),
+        "expected error for bad priority, got: {err:?}"
+    );
+
+    // Unknown status name is rejected.
+    let err = client
+        .call_tool(CallToolRequestParams::new("create_issue").with_arguments(
+            rmcp::object!({"project": "AUTH", "title": "x", "status": "NoSuchStatus"}),
+        ))
+        .await;
+    assert!(
+        err.is_err(),
+        "expected error for unknown status, got: {err:?}"
+    );
+
+    // Unknown project is rejected.
+    let err = client
+        .call_tool(
+            CallToolRequestParams::new("create_issue")
+                .with_arguments(rmcp::object!({"project": "NOPE", "title": "x"})),
+        )
+        .await;
+    assert!(
+        err.is_err(),
+        "expected error for unknown project, got: {err:?}"
+    );
+
+    client.cancel().await.unwrap();
+    server_handle
+        .await
+        .expect("server task panicked")
+        .expect("server task errored");
+}
+
+#[tokio::test]
 async fn list_statuses_and_labels() {
     let dir = tempfile::tempdir().unwrap();
     let mut ws = Workspace::open(&dir.path().join("data.db")).unwrap();
