@@ -10,6 +10,10 @@ description = "Stdio MCP server exposing kanban-core to AI assistants."
 [lints]
 workspace = true
 
+[lib]
+name = "kanban_mcp"
+path = "src/lib.rs"
+
 [[bin]]
 name = "kanban-mcp"
 path = "src/main.rs"
@@ -30,3 +34,4 @@ tracing-subscriber = { workspace = true }
 # feature for the in-process integration tests.
 rmcp = { workspace = true, features = ["client"] }
 tempfile = { workspace = true }
+uuid = { workspace = true }

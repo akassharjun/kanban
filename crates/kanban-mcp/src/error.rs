@@ -1,9 +1,11 @@
 //! Map kanban-core errors (and resolution misses) to MCP tool errors.
-// consumed by the server tools from Task 4 onward
+// `not_found`/`unknown_name` are consumed by the resolution tools from Task 5
+// onward; `to_mcp` is used by the server now.
 #![allow(dead_code)]
 use rmcp::ErrorData as McpError;
 
 /// Convert a `kanban_core::Error` into an MCP tool error with an LLM-actionable message.
+#[must_use]
 pub fn to_mcp(err: kanban_core::Error) -> McpError {
     use kanban_core::Error;
     match err {
@@ -22,11 +24,13 @@ pub fn to_mcp(err: kanban_core::Error) -> McpError {
 }
 
 /// A "not found by human identifier" error (project prefix / issue key).
+#[must_use]
 pub fn not_found(resource: &str, key: &str) -> McpError {
     McpError::resource_not_found(format!("{resource} not found: {key}"), None)
 }
 
 /// A "name not found within a project" error that lists the valid options.
+#[must_use]
 pub fn unknown_name(kind: &str, name: &str, project: &str, available: &[String]) -> McpError {
     McpError::invalid_params(
         format!(
