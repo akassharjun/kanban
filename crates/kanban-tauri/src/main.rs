@@ -5,10 +5,16 @@ use kanban_tauri::state::AppState;
 #[allow(clippy::expect_used)]
 fn main() {
     let app_state = AppState::from_default().expect("failed to open kanban workspace");
+    let specta = kanban_tauri::specta_builder();
 
     tauri::Builder::default()
         .manage(app_state)
         .plugin(tauri_plugin_shell::init())
+        .invoke_handler(specta.invoke_handler())
+        .setup(move |app| {
+            specta.mount_events(app);
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
