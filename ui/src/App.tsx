@@ -3,6 +3,7 @@ import { RouterProvider, createBrowserRouter } from "react-router";
 import { ThemeProvider } from "@/theme/ThemeProvider";
 import Layout from "./routes/_layout";
 import IndexRoute from "./routes/index";
+import ProjectRoute from "./routes/projects.$prefix";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,7 +20,8 @@ const router = createBrowserRouter([
     element: <Layout />,
     children: [
       { path: "/", element: <IndexRoute /> },
-      // /p/:prefix and /p/:prefix/i/:key wired in later tasks
+      { path: "/p/:prefix", element: <ProjectRoute /> },
+      // /p/:prefix/i/:key wired in later tasks
     ],
   },
 ]);
