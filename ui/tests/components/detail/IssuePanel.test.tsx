@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -15,7 +15,8 @@ vi.mock("@/data/queries", () => ({
       title: "Hello",
       description: "# body",
       status_id: "s1",
-      priority: "high",
+      priority: "medium",
+      due_date: null,
     },
     isLoading: false,
     isError: false,
@@ -53,10 +54,43 @@ describe("IssuePanel", () => {
   it("dispatches updateIssueField on status change", async () => {
     mutate.mockReset();
     render(<IssuePanel />, { wrapper });
-    await userEvent.selectOptions(screen.getByRole("combobox"), "s2");
+    await userEvent.selectOptions(screen.getByLabelText(/status/i), "s2");
     expect(mutate).toHaveBeenCalled();
     const op = mutate.mock.calls.at(-1)?.[0] as { op: string; args: { change: unknown } };
     expect(op.op).toBe("UpdateIssueField");
     expect(op.args.change).toEqual({ field: "Status", value: "s2" });
+  });
+
+  it("dispatches updateIssueField on priority change", async () => {
+    mutate.mockReset();
+    render(<IssuePanel />, { wrapper });
+    await userEvent.selectOptions(screen.getByLabelText(/priority/i), "high");
+    expect(mutate).toHaveBeenCalled();
+    const op = mutate.mock.calls.at(-1)?.[0] as { op: string; args: { change: unknown } };
+    expect(op.op).toBe("UpdateIssueField");
+    expect(op.args.change).toEqual({ field: "Priority", value: "high" });
+  });
+
+  it("dispatches updateIssueField on due-date change", () => {
+    mutate.mockReset();
+    render(<IssuePanel />, { wrapper });
+    fireEvent.change(screen.getByLabelText(/due date/i), {
+      target: { value: "2026-12-31" },
+    });
+    expect(mutate).toHaveBeenCalled();
+    const op = mutate.mock.calls.at(-1)?.[0] as { op: string; args: { change: unknown } };
+    expect(op.op).toBe("UpdateIssueField");
+    expect(op.args.change).toEqual({ field: "DueDate", value: "2026-12-31" });
+  });
+
+  it("dispatches deleteIssue after confirming delete", async () => {
+    mutate.mockReset();
+    render(<IssuePanel />, { wrapper });
+    await userEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    expect(mutate).toHaveBeenCalled();
+    const op = mutate.mock.calls.at(-1)?.[0] as { op: string; args: { id: string } };
+    expect(op.op).toBe("DeleteIssue");
+    expect(op.args.id).toBe("u1");
   });
 });
