@@ -59,16 +59,14 @@ function invalidateFor(qc: QueryClient, op: Operation, prefix?: string): void {
   }
   if (["CreateIssue", "UpdateIssueField", "ReorderIssue", "DeleteIssue"].includes(tag)) {
     if (prefix) void qc.invalidateQueries({ queryKey: qk.issues(prefix) });
-    if (tag === "UpdateIssueField") {
-      const id = (op.args as Partial<WithId>).id;
-      if (id) void qc.invalidateQueries({ queryKey: qk.issue(id) });
-    }
+    void qc.invalidateQueries({ queryKey: ["issues"] }); // refresh any open detail panel
   }
   if (["AttachLabel", "DetachLabel", "CreateLabel", "UpdateLabel", "DeleteLabel"].includes(tag)) {
     if (prefix) {
       void qc.invalidateQueries({ queryKey: qk.labels(prefix) });
       void qc.invalidateQueries({ queryKey: qk.issues(prefix) });
     }
+    void qc.invalidateQueries({ queryKey: ["issues"] }); // detail panel chips
   }
   if (tag === "ImportSnapshot") void qc.invalidateQueries();
 }

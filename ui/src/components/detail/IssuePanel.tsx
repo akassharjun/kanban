@@ -5,6 +5,7 @@ import { useApply } from "@/data/mutations";
 import { ops, change, PRIORITIES, type Priority } from "@/data/ops";
 import { EditableField } from "./EditableField";
 import { EditableDescription } from "./EditableDescription";
+import { LabelPicker } from "./LabelPicker";
 
 export function IssuePanel() {
   const { prefix = "", key = "" } = useParams();
@@ -25,6 +26,7 @@ export function IssuePanel() {
   if (!issue) return null;
 
   const close = () => navigate(`/p/${prefix}`);
+  const labels = issue.labels ?? [];
 
   return (
     <>
@@ -99,6 +101,39 @@ export function IssuePanel() {
               className="rounded border border-black/15 bg-transparent px-1.5 py-0.5 text-xs dark:border-white/15"
             />
           </label>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-black/10 px-5 py-2.5 text-xs dark:border-white/10">
+          {labels.map((l) => (
+            <span
+              key={l.id}
+              className="inline-flex items-center gap-1 rounded-full border border-black/10 px-2 py-0.5 dark:border-white/10"
+              style={{ backgroundColor: `${l.color}22` }}
+            >
+              <span
+                aria-hidden
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: l.color }}
+              />
+              <span>{l.name}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${l.name}`}
+                onClick={() =>
+                  apply.mutate(ops.detachLabel({ issue_id: issue.id, label_id: l.id }))
+                }
+                className="text-neutral-500 hover:text-neutral-900 dark:hover:text-white"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <LabelPicker
+            prefix={prefix}
+            issueId={issue.id}
+            projectId={issue.project_id}
+            attached={labels}
+          />
         </div>
 
         <section className="px-5 pt-4">

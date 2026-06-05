@@ -47,6 +47,20 @@ describe("useApply optimistic dispatcher", () => {
     expect(cache?.map((i) => i.id)).toEqual(["u1", "u2"]); // rolled back
   });
 
+  it("invalidates the issues key-space on AttachLabel so the open panel refetches", async () => {
+    applyMock.mockResolvedValueOnce({ status: "ok", data: { op_id: 8 } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+
+    const { result } = renderHook(() => useApply("AUTH"), { wrapper: makeWrapper(client) });
+    await act(async () => {
+      result.current.mutate(ops.attachLabel({ issue_id: "u1", label_id: "l1" }));
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["issues"] });
+  });
+
   it("optimistically adds a created project to the cache on success", async () => {
     applyMock.mockResolvedValueOnce({ status: "ok", data: { op_id: 7 } });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
