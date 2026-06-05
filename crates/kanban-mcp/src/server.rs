@@ -107,6 +107,17 @@ impl KanbanServer {
     }
 }
 
+/// Fractional sort-key midpoint between two optional neighbours.
+/// Mirrors the GUI's 1024-gap convention.
+fn midpoint(before: Option<f64>, after: Option<f64>) -> f64 {
+    match (before, after) {
+        (Some(b), Some(a)) => f64::midpoint(b, a),
+        (Some(b), None) => b + 1024.0,
+        (None, Some(a)) => a - 1024.0,
+        (None, None) => 1024.0,
+    }
+}
+
 /// Serialize a value to a pretty-JSON text content block.
 pub(crate) fn json_content<T: serde::Serialize>(value: &T) -> Result<CallToolResult, McpError> {
     let text = serde_json::to_string_pretty(value)
@@ -491,6 +502,106 @@ impl KanbanServer {
         let map = crate::convert::status_name_map(&statuses);
         let name = map.get(&issue.status_id).cloned().unwrap_or_default();
         json_content(&crate::convert::IssueOut::from_issue(issue, &name))
+    }
+
+    #[tool(
+        description = "Move an issue: change its status column and/or reorder it before/after a sibling issue (by key). Returns the moved issue."
+    )]
+    async fn move_issue(
+        &self,
+        Parameters(args): Parameters<crate::inputs::MoveIssueInput>,
+    ) -> Result<CallToolResult, McpError> {
+        use kanban_core::operation::{IssueFieldChange, Operation, ReorderIssue, UpdateIssueField};
+        use kanban_core::query::IssueFilter;
+        use kanban_core::types::Issue;
+
+        // phase 1: resolve the dragged issue + the project's statuses + all project issues
+        let key = args.key.clone();
+        let resolved = self
+            .blocking_read(move |ws| {
+                let Some(issue) = ws.query_issue_by_identifier(&key)? else {
+                    return Ok(None);
+                };
+                let statuses = ws.query_statuses_for_project(issue.project_id)?;
+                let issues = ws.query_issues(IssueFilter::for_project(issue.project_id))?;
+                Ok(Some((issue, statuses, issues)))
+            })
+            .await?;
+        let (issue, statuses, project_issues) =
+            resolved.ok_or_else(|| crate::error::not_found("issue", &args.key))?;
+
+        // target status: named, else keep current
+        let target_status_id = match &args.status {
+            Some(name) => {
+                statuses
+                    .iter()
+                    .find(|s| &s.name == name)
+                    .ok_or_else(|| {
+                        crate::error::unknown_name(
+                            "status",
+                            name,
+                            &args.key,
+                            &statuses.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
+                        )
+                    })?
+                    .id
+            }
+            None => issue.status_id,
+        };
+
+        // target column: issues in the target status, excluding the dragged issue, by sort_key
+        let mut col: Vec<&Issue> = project_issues
+            .iter()
+            .filter(|i| i.status_id == target_status_id && i.id != issue.id)
+            .collect();
+        col.sort_by(|a, b| a.sort_key.total_cmp(&b.sort_key));
+
+        // neighbours from before/after sibling, else append to the end
+        let (before_sk, after_sk) = if let Some(bkey) = &args.before {
+            let idx = col
+                .iter()
+                .position(|i| &i.identifier == bkey)
+                .ok_or_else(|| crate::error::not_found("sibling issue", bkey))?;
+            let before = if idx > 0 {
+                Some(col[idx - 1].sort_key)
+            } else {
+                None
+            };
+            (before, Some(col[idx].sort_key))
+        } else if let Some(akey) = &args.after {
+            let idx = col
+                .iter()
+                .position(|i| &i.identifier == akey)
+                .ok_or_else(|| crate::error::not_found("sibling issue", akey))?;
+            let after = col.get(idx + 1).map(|i| i.sort_key);
+            (Some(col[idx].sort_key), after)
+        } else {
+            (col.last().map(|i| i.sort_key), None)
+        };
+        let new_sort_key = midpoint(before_sk, after_sk);
+
+        // phase 3: apply status change (if any) + reorder, re-read
+        let issue_id = issue.id;
+        let current_status = issue.status_id;
+        let moved = self
+            .blocking_mut(move |ws| {
+                if target_status_id != current_status {
+                    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+                        id: issue_id,
+                        change: IssueFieldChange::Status(target_status_id),
+                    }))?;
+                }
+                ws.apply(Operation::ReorderIssue(ReorderIssue {
+                    id: issue_id,
+                    new_sort_key,
+                }))?;
+                ws.query_issue_by_id(issue_id)
+            })
+            .await?;
+
+        let map = crate::convert::status_name_map(&statuses);
+        let name = map.get(&moved.status_id).cloned().unwrap_or_default();
+        json_content(&crate::convert::IssueOut::from_issue(moved, &name))
     }
 }
 

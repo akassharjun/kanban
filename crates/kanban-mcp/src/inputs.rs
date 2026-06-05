@@ -82,6 +82,21 @@ pub struct UpdateIssueInput {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct MoveIssueInput {
+    /// Issue key to move, e.g. "AUTH-12".
+    pub key: String,
+    /// Optional target status name (e.g. "In Progress"). If omitted, the column is unchanged.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Optional sibling key: place the moved issue immediately BEFORE this issue.
+    #[serde(default)]
+    pub before: Option<String>,
+    /// Optional sibling key: place the moved issue immediately AFTER this issue.
+    #[serde(default)]
+    pub after: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchIssues {
     /// Full-text query.
     pub query: String,
