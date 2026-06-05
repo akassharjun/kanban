@@ -34,4 +34,19 @@ describe("ThemeProvider", () => {
     render(<ThemeProvider><span /></ThemeProvider>);
     expect(document.documentElement.classList.contains("dark")).toBe(false);
   });
+
+  it("follows the OS preference when theme is 'system'", () => {
+    // System prefers dark — the 'system' choice should resolve to dark.
+    vi.stubGlobal("matchMedia", () => ({
+      matches: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      media: "(prefers-color-scheme: dark)",
+      onchange: null,
+      dispatchEvent: () => true,
+    }));
+    (useSettings as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ data: { theme: "system" } });
+    render(<ThemeProvider><span /></ThemeProvider>);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+  });
 });
