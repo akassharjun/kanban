@@ -73,6 +73,7 @@ pub struct IssueDto {
     pub sort_key: f64,
     pub created_at: String,
     pub updated_at: String,
+    pub labels: Option<Vec<LabelDto>>,
 }
 
 impl From<Issue> for IssueDto {
@@ -90,6 +91,7 @@ impl From<Issue> for IssueDto {
             sort_key: i.sort_key,
             created_at: i.created_at.to_rfc3339(),
             updated_at: i.updated_at.to_rfc3339(),
+            labels: None,
         }
     }
 }

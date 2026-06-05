@@ -213,7 +213,7 @@ export type ApiError =
  * Result of applying an operation: the new `operation_log` row id.
  */
 export type ApplyResult = { op_id: number }
-export type IssueDto = { id: string; project_id: string; seq: number; identifier: string; title: string; description: string | null; status_id: string; priority: string; due_date: string | null; sort_key: number; created_at: string; updated_at: string }
+export type IssueDto = { id: string; project_id: string; seq: number; identifier: string; title: string; description: string | null; status_id: string; priority: string; due_date: string | null; sort_key: number; created_at: string; updated_at: string; labels: LabelDto[] | null }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type LabelDto = { id: string; project_id: string; name: string; color: string }
 export type ProjectDto = { id: string; name: string; prefix: string; description: string | null; icon: string | null; status: string; created_at: string; updated_at: string }
