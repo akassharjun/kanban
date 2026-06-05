@@ -1,6 +1,6 @@
 # Kanban — Project Brain
 
-Local-first project management. v1 covers projects, issues, labels, default statuses, search, sort, undo/redo, and JSON I/O via a Rust core library and CLI. GUI (Tauri), MCP server, and AI-agent orchestration ship in later specs.
+Local-first project management. v1 covers projects, issues, labels, default statuses, search, sort, undo/redo, and JSON I/O via a Rust core library and CLI. The GUI (Tauri, Spec #2) and the MCP server (Spec #3) have shipped; AI-agent orchestration follows in later specs.
 
 ## Stack
 
@@ -40,9 +40,19 @@ The GUI is `crates/kanban-tauri` (Rust shell) + `ui/` (Vite + React 19 + Tailwin
 - **`workspace_settings`** (migration `0002`) stores app-level prefs (theme) via `Workspace::get_setting`/`set_setting` — a **documented exception** to the single-mutator invariant; settings have no undo semantics.
 - **DTOs, not core types, cross the bridge.** `kanban-tauri/src/dto.rs` defines specta `Type` DTOs (`ProjectDto`, `IssueDto`, …) with ids/dates/enums as strings; core types stay specta-free.
 - **`tauri-specta` generates `ui/src/data/bindings.ts`** (git-tracked) via the `export_bindings` test; CI fails on drift. `specta-typescript` is configured with `BigIntExportBehavior::Number` so `i64` fields become TS `number`.
-- **No live cross-process watcher.** The GUI refetches on window focus (`refetchOnWindowFocus`); a SQLite `update_hook` watcher is deferred to Spec #3.
-- **E2E (`tauri-driver`) is deferred to Spec #3** (no macOS WebDriver support); Spec #2 ships Vitest + RTL coverage. See `ui/e2e/README.md`.
+- **No live cross-process watcher.** The GUI refetches on window focus (`refetchOnWindowFocus`); a SQLite `update_hook` watcher is deferred to a later spec.
+- **E2E (`tauri-driver`) is deferred to a later spec** (no macOS WebDriver support); Spec #2 ships Vitest + RTL coverage. See `ui/e2e/README.md`.
 - **UI tooling on Apple Silicon:** if the default `node` is x86_64 (nvm), run ui scripts under a native arm64 node (`PATH="/opt/homebrew/bin:$PATH" npx pnpm@9.12.0 …`) or rollup/esbuild crash. See `DEVELOPMENT.md`.
+
+## MCP layer (Spec #3)
+
+The MCP server is `crates/kanban-mcp` — a stdio server (on `rmcp`) exposing `kanban-core` to AI assistants (Claude Desktop/Code). Design: `docs/superpowers/specs/2026-06-05-kanban-v2-spec-3-mcp-server-design.md`.
+
+- Opens the default workspace (`Workspace::open_default`) — shares `~/.kanban/data.db` with the CLI and GUI (SQLite WAL, multi-process safe).
+- Each async `#[tool]` runs the sync core inside `tokio::task::spawn_blocking` over an `Arc<Mutex<Workspace>>` (the `blocking_read`/`blocking_mut` helpers); the guard never crosses `.await`. **Writes go through `Workspace::apply`** — single-mutator invariant preserved.
+- **Semantic tools**, not a generic apply: reads (`list_projects`, `list_statuses`, `list_labels`, `list_issues`, `get_issue`, `search_issues`) + writes (`create_project`, `create_issue`, `update_issue`, `move_issue`, `undo`, `redo`). Tools resolve human identifiers — project `prefix`, issue `key`, status/label `name` — to core UUIDs; misses map to `not_found`/`unknown_name` MCP errors. Output DTOs (`convert.rs`) are human-facing (no UUIDs/sort_keys).
+- Resolution uses the existing unique indexes via `Workspace::query_project_by_prefix`/`query_issue_by_identifier` (no new migration). `move_issue` computes a fractional sort-key midpoint (1024-gap, like the GUI). Tested per-tool over an in-process `tokio::io::duplex` transport.
+- **Agent orchestration (registry, task contracts, decomposition, validation) is deferred to Spec #4+.**
 
 ## TDD discipline
 
@@ -78,7 +88,9 @@ These don't block v1 but should be addressed before broader release:
 
 ## Spec/plan trail
 
-- `docs/superpowers/specs/2026-05-03-kanban-v2-core-cli-design.md` — the v1 design.
+- `docs/superpowers/specs/2026-05-03-kanban-v2-core-cli-design.md` — the v1 (core + CLI) design.
 - `docs/superpowers/plans/2026-05-03-kanban-v2-core-cli-plan.md` — the 41-task TDD plan that built it.
+- `docs/superpowers/specs/2026-05-05-kanban-v2-spec-2-gui-shell-design.md` — Spec #2 (Tauri GUI shell).
+- `docs/superpowers/specs/2026-06-05-kanban-v2-spec-3-mcp-server-design.md` — Spec #3 (MCP server).
 
-Future specs (GUI, MCP, AI-agent orchestration) live alongside in `docs/superpowers/specs/`.
+Each spec has a matching plan in `docs/superpowers/plans/`. AI-agent orchestration (Spec #4+) will live alongside.

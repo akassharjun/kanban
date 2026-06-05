@@ -20,8 +20,7 @@ use crate::state::AppState;
 
 /// Resolve a project by its `prefix`, returning `None` if no project matches.
 fn project_by_prefix(ws: &Workspace, prefix: &str) -> Result<Option<Project>, ApiError> {
-    let projects = ws.query_projects()?;
-    Ok(projects.into_iter().find(|p| p.prefix == prefix))
+    Ok(ws.query_project_by_prefix(prefix)?)
 }
 
 /// List all projects.
@@ -74,23 +73,15 @@ pub fn list_issues_inner(ws: &Workspace, prefix: &str) -> Result<Vec<IssueDto>, 
 /// Get a single issue by its `identifier` (e.g. `AUTH-12`).
 ///
 /// Identifiers are globally unique (prefix is unique per project, seq unique
-/// within a project), so a workspace-wide scan returns the correct row.
-///
-/// FOLLOWUP(perf): this scans all issues then filters in Rust. Fine at desktop
-/// scale; if it ever matters, add `store::read::issues::by_identifier` (indexed
-/// `WHERE identifier = ?1`) to kanban-core and call it here.
+/// within a project), so a workspace-wide lookup returns the correct row.
 ///
 /// # Errors
 ///
 /// Returns `ApiError::NotFound` if no issue has the given identifier, or an
 /// error if the underlying query fails.
 pub fn get_issue_inner(ws: &Workspace, key: &str) -> Result<IssueDto, ApiError> {
-    match ws
-        .query_issues(IssueFilter::default())?
-        .into_iter()
-        .find(|i| i.identifier == key)
-    {
-        Some(i) => Ok(IssueDto::from(i)),
+    match ws.query_issue_by_identifier(key)? {
+        Some(issue) => Ok(IssueDto::from(issue)),
         None => Err(ApiError::NotFound {
             resource: "issue".into(),
             key: key.into(),
