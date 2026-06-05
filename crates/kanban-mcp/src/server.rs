@@ -515,6 +515,13 @@ impl KanbanServer {
         use kanban_core::query::IssueFilter;
         use kanban_core::types::Issue;
 
+        if args.before.is_some() && args.after.is_some() {
+            return Err(McpError::invalid_params(
+                "before and after are mutually exclusive; provide at most one",
+                None,
+            ));
+        }
+
         // phase 1: resolve the dragged issue + the project's statuses + all project issues
         let key = args.key.clone();
         let resolved = self

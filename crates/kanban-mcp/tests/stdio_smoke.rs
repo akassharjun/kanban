@@ -609,6 +609,36 @@ async fn move_issue_tool() {
         "expected error for unknown sibling, got: {err:?}"
     );
 
+    // `after` reorder: move AUTH-3 to land after AUTH-2 in Todo -> [AUTH-2, AUTH-3].
+    client
+        .call_tool(
+            CallToolRequestParams::new("move_issue")
+                .with_arguments(rmcp::object!({"key": "AUTH-3", "after": "AUTH-2"})),
+        )
+        .await
+        .unwrap();
+    let todo_keys = list_keys(
+        &client,
+        rmcp::object!({"project": "AUTH", "status": "Todo"}),
+    )
+    .await;
+    assert_eq!(
+        todo_keys,
+        vec!["AUTH-2", "AUTH-3"],
+        "after-reorder, got: {todo_keys:?}"
+    );
+
+    // `before` and `after` are mutually exclusive.
+    let err = client
+        .call_tool(CallToolRequestParams::new("move_issue").with_arguments(
+            rmcp::object!({"key": "AUTH-2", "before": "AUTH-3", "after": "AUTH-3"}),
+        ))
+        .await;
+    assert!(
+        err.is_err(),
+        "expected error for before+after, got: {err:?}"
+    );
+
     client.cancel().await.unwrap();
     server_handle
         .await
