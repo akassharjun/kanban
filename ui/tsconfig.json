@@ -17,7 +17,8 @@
     "noFallthroughCasesInSwitch": true,
     "verbatimModuleSyntax": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] }
+    "paths": { "@/*": ["src/*"] },
+    "types": ["vitest/globals"]
   },
   "include": ["src", "tests", "e2e"],
   "references": [{ "path": "./tsconfig.node.json" }]
