@@ -15,4 +15,7 @@ ui/.vite/
 ui/.turbo/
 ui/playwright-report/
 ui/test-results/
+ui/*.tsbuildinfo
+ui/vite.config.js
+ui/vite.config.d.ts
 target/release/bundle/
