@@ -71,6 +71,13 @@ pub fn list_issues_inner(ws: &Workspace, prefix: &str) -> Result<Vec<IssueDto>, 
 
 /// Get a single issue by its `identifier` (e.g. `AUTH-12`).
 ///
+/// Identifiers are globally unique (prefix is unique per project, seq unique
+/// within a project), so a workspace-wide scan returns the correct row.
+///
+/// FOLLOWUP(perf): this scans all issues then filters in Rust. Fine at desktop
+/// scale; if it ever matters, add `store::read::issues::by_identifier` (indexed
+/// `WHERE identifier = ?1`) to kanban-core and call it here.
+///
 /// # Errors
 ///
 /// Returns `ApiError::NotFound` if no issue has the given identifier, or an
