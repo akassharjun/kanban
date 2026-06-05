@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/theme/ThemeProvider";
 import Layout from "./routes/_layout";
 import IndexRoute from "./routes/index";
 import ProjectRoute from "./routes/projects.$prefix";
+import IssueRoute from "./routes/projects.$prefix.issues.$key";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,7 +22,7 @@ const router = createBrowserRouter([
     children: [
       { path: "/", element: <IndexRoute /> },
       { path: "/p/:prefix", element: <ProjectRoute /> },
-      // /p/:prefix/i/:key wired in later tasks
+      { path: "/p/:prefix/i/:key", element: <IssueRoute /> },
     ],
   },
 ]);
