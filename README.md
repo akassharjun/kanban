@@ -35,6 +35,20 @@ Projects and issues created from the CLI appear in the GUI after its window
 receives focus (the board refetches on focus; there is no live cross-process
 watcher yet).
 
+## Use from an AI assistant (MCP)
+
+`kanban-mcp` is a stdio [MCP](https://modelcontextprotocol.io) server that lets an
+AI assistant (Claude Desktop, Claude Code) read and manage your board in natural
+language — list/create/update/move issues, search, undo. It shares the same
+`~/.kanban/data.db` as the CLI and GUI.
+
+```sh
+cargo build -p kanban-mcp --release   # binary at target/release/kanban-mcp
+```
+
+Register it with your client (see `DEVELOPMENT.md`), then ask the assistant to,
+e.g., "create a project AUTH and add an issue to implement OAuth login."
+
 ## Development
 
-See `DEVELOPMENT.md` for build, test, and contribution conventions (CLI and GUI).
+See `DEVELOPMENT.md` for build, test, and contribution conventions (CLI, GUI, MCP).

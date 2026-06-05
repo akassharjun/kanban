@@ -82,4 +82,46 @@ The first ship is unsigned. A downloaded `.app` may be quarantined on macOS:
 xattr -dr com.apple.quarantine /Applications/kanban.app
 ```
 
-Apple Developer signing lands in Spec #3.
+Apple Developer signing lands in a later spec.
+
+## MCP server (Spec #3)
+
+`crates/kanban-mcp` is a stdio MCP server (built on [`rmcp`](https://crates.io/crates/rmcp))
+exposing `kanban-core` to AI assistants. It opens the default workspace
+(`~/.kanban/data.db`, or `$KANBAN_DB`) — the same DB as the CLI and GUI — and
+serves these tools: `list_projects`, `list_statuses`, `list_labels`,
+`list_issues`, `get_issue`, `search_issues`, `create_project`, `create_issue`,
+`update_issue`, `move_issue`, `undo`, `redo`. Projects are addressed by prefix
+(`AUTH`), issues by key (`AUTH-12`), statuses/labels by name. Every write goes
+through `Workspace::apply`.
+
+```sh
+cargo build -p kanban-mcp --release   # target/release/kanban-mcp
+cargo test -p kanban-mcp              # unit + in-process stdio integration tests
+```
+
+### Register with Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "kanban": {
+      "command": "/absolute/path/to/target/release/kanban-mcp",
+      "env": { "KANBAN_DB": "/Users/you/.kanban/data.db" }
+    }
+  }
+}
+```
+
+(`KANBAN_DB` is optional — it defaults to `~/.kanban/data.db`.)
+
+### Register with Claude Code
+
+```sh
+claude mcp add kanban -- /absolute/path/to/target/release/kanban-mcp
+```
+
+or add the equivalent entry to `.mcp.json`. The server logs to stderr (stdout is
+the JSON-RPC channel).
