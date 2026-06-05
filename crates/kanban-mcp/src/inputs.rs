@@ -61,6 +61,27 @@ pub struct CreateIssueInput {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateIssueInput {
+    /// Issue key, e.g. "AUTH-12".
+    pub key: String,
+    /// New title.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// New markdown description (empty string clears the visible text).
+    #[serde(default)]
+    pub description: Option<String>,
+    /// New priority: none, low, medium, high, urgent.
+    #[serde(default)]
+    pub priority: Option<String>,
+    /// New status name (e.g. "In Progress").
+    #[serde(default)]
+    pub status: Option<String>,
+    /// New due date, YYYY-MM-DD.
+    #[serde(default)]
+    pub due_date: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchIssues {
     /// Full-text query.
     pub query: String,

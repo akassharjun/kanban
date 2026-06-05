@@ -338,6 +338,135 @@ async fn create_issue_tool() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn update_issue_tool() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ws = Workspace::open(&dir.path().join("data.db")).unwrap();
+    let project_id = Uuid::now_v7();
+    ws.apply(Operation::CreateProject(CreateProject {
+        id: project_id,
+        name: "Auth".into(),
+        prefix: "AUTH".into(),
+        description: None,
+        icon: None,
+    }))
+    .unwrap();
+
+    let statuses = ws.query_statuses_for_project(project_id).unwrap();
+    let todo = statuses
+        .iter()
+        .find(|s| s.name == "Todo")
+        .expect("a 'Todo' default status");
+
+    ws.apply(Operation::CreateIssue(CreateIssue {
+        id: Uuid::now_v7(),
+        project_id,
+        title: "Old".into(),
+        description: None,
+        status_id: todo.id,
+        priority: Priority::Medium,
+        due_date: None,
+        label_ids: vec![],
+    }))
+    .unwrap();
+
+    let server = KanbanServer::with_workspace(ws);
+    let (server_t, client_t) = tokio::io::duplex(8192);
+
+    let server_handle = tokio::spawn(async move {
+        let svc = server.serve(server_t).await?;
+        svc.waiting().await?;
+        anyhow::Ok(())
+    });
+
+    let client = TestClient.serve(client_t).await.unwrap();
+
+    let tools = client.list_all_tools().await.unwrap();
+    assert!(tools.iter().any(|t| t.name == "update_issue"));
+
+    // Update title + priority; status stays "Todo".
+    let result =
+        client
+            .call_tool(CallToolRequestParams::new("update_issue").with_arguments(
+                rmcp::object!({"key": "AUTH-1", "title": "New", "priority": "high"}),
+            ))
+            .await
+            .unwrap();
+    let text = result.content[0]
+        .as_text()
+        .expect("first content block is text");
+    let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
+    assert_eq!(parsed["title"], "New", "got: {parsed}");
+    assert_eq!(parsed["priority"], "high", "got: {parsed}");
+    assert_eq!(parsed["status"], "Todo", "got: {parsed}");
+
+    // Update status only.
+    let result = client
+        .call_tool(
+            CallToolRequestParams::new("update_issue")
+                .with_arguments(rmcp::object!({"key": "AUTH-1", "status": "In Progress"})),
+        )
+        .await
+        .unwrap();
+    let text = result.content[0]
+        .as_text()
+        .expect("first content block is text");
+    let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
+    assert_eq!(parsed["status"], "In Progress", "got: {parsed}");
+
+    // get_issue reflects both updates.
+    let result = client
+        .call_tool(
+            CallToolRequestParams::new("get_issue")
+                .with_arguments(rmcp::object!({"key": "AUTH-1"})),
+        )
+        .await
+        .unwrap();
+    let text = result.content[0]
+        .as_text()
+        .expect("first content block is text");
+    let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
+    assert_eq!(parsed["title"], "New", "got: {parsed}");
+    assert_eq!(parsed["status"], "In Progress", "got: {parsed}");
+
+    // No fields -> invalid_params error.
+    let err = client
+        .call_tool(
+            CallToolRequestParams::new("update_issue")
+                .with_arguments(rmcp::object!({"key": "AUTH-1"})),
+        )
+        .await;
+    assert!(err.is_err(), "expected error for no fields, got: {err:?}");
+
+    // Unknown issue key -> not_found error.
+    let err = client
+        .call_tool(
+            CallToolRequestParams::new("update_issue")
+                .with_arguments(rmcp::object!({"key": "AUTH-999", "title": "x"})),
+        )
+        .await;
+    assert!(err.is_err(), "expected error for unknown key, got: {err:?}");
+
+    // Unknown status name -> error.
+    let err = client
+        .call_tool(
+            CallToolRequestParams::new("update_issue")
+                .with_arguments(rmcp::object!({"key": "AUTH-1", "status": "Nope"})),
+        )
+        .await;
+    assert!(
+        err.is_err(),
+        "expected error for unknown status, got: {err:?}"
+    );
+
+    client.cancel().await.unwrap();
+    server_handle
+        .await
+        .expect("server task panicked")
+        .expect("server task errored");
+}
+
+#[tokio::test]
 async fn list_statuses_and_labels() {
     let dir = tempfile::tempdir().unwrap();
     let mut ws = Workspace::open(&dir.path().join("data.db")).unwrap();

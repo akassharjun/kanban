@@ -404,6 +404,94 @@ impl KanbanServer {
         let name = map.get(&issue.status_id).cloned().unwrap_or_default();
         json_content(&crate::convert::IssueOut::from_issue(issue, &name))
     }
+
+    #[tool(
+        description = "Update fields of an issue (by key). Provide any of title, description, priority, status, due_date. Returns the updated issue."
+    )]
+    async fn update_issue(
+        &self,
+        Parameters(args): Parameters<crate::inputs::UpdateIssueInput>,
+    ) -> Result<CallToolResult, McpError> {
+        use kanban_core::operation::{IssueFieldChange, Operation, UpdateIssueField};
+        use kanban_core::types::Priority;
+
+        if args.title.is_none()
+            && args.description.is_none()
+            && args.priority.is_none()
+            && args.status.is_none()
+            && args.due_date.is_none()
+        {
+            return Err(McpError::invalid_params(
+                "provide at least one field to update (title, description, priority, status, due_date)",
+                None,
+            ));
+        }
+
+        // phase 1: resolve issue id + its project's statuses
+        let key = args.key.clone();
+        let resolved = self
+            .blocking_read(move |ws| {
+                let Some(issue) = ws.query_issue_by_identifier(&key)? else {
+                    return Ok(None);
+                };
+                let statuses = ws.query_statuses_for_project(issue.project_id)?;
+                Ok(Some((issue.id, statuses)))
+            })
+            .await?;
+        let (issue_id, statuses) =
+            resolved.ok_or_else(|| crate::error::not_found("issue", &args.key))?;
+
+        // phase 2: build the list of field changes (McpError resolution here)
+        let mut changes: Vec<IssueFieldChange> = Vec::new();
+        if let Some(t) = args.title {
+            changes.push(IssueFieldChange::Title(t));
+        }
+        if let Some(d) = args.description {
+            changes.push(IssueFieldChange::Description(Some(d)));
+        }
+        if let Some(p) = &args.priority {
+            let parsed: Priority = p.parse().map_err(|_| {
+                McpError::invalid_params(
+                    "priority must be one of none, low, medium, high, urgent",
+                    None,
+                )
+            })?;
+            changes.push(IssueFieldChange::Priority(parsed));
+        }
+        if let Some(name) = &args.status {
+            let s = statuses.iter().find(|s| &s.name == name).ok_or_else(|| {
+                crate::error::unknown_name(
+                    "status",
+                    name,
+                    &args.key,
+                    &statuses.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
+                )
+            })?;
+            changes.push(IssueFieldChange::Status(s.id));
+        }
+        if let Some(d) = &args.due_date {
+            let date = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                .map_err(|_| McpError::invalid_params("due_date must be YYYY-MM-DD", None))?;
+            changes.push(IssueFieldChange::DueDate(Some(date)));
+        }
+
+        // phase 3: apply each change, then re-read
+        let issue = self
+            .blocking_mut(move |ws| {
+                for change in changes {
+                    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+                        id: issue_id,
+                        change,
+                    }))?;
+                }
+                ws.query_issue_by_id(issue_id)
+            })
+            .await?;
+
+        let map = crate::convert::status_name_map(&statuses);
+        let name = map.get(&issue.status_id).cloned().unwrap_or_default();
+        json_content(&crate::convert::IssueOut::from_issue(issue, &name))
+    }
 }
 
 #[tool_handler]
