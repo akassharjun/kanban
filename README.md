@@ -16,6 +16,25 @@ kanban undo
 
 By default the workspace lives at `~/.kanban/data.db`. Override with `KANBAN_DB=/path/to.db`.
 
+## Desktop app
+
+A macOS desktop GUI (Tauri + React) ships alongside the CLI, built on the same
+`kanban-core` library: a drag-and-drop kanban board, a markdown issue detail
+panel, project sidebar, and light/dark/system theming.
+
+Download the latest macOS DMG from
+[GitHub Releases](https://github.com/akassharjun/kanban/releases). The first
+release is **unsigned**; on first launch you may need to clear the quarantine
+attribute:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/kanban.app
+```
+
+Projects and issues created from the CLI appear in the GUI after its window
+receives focus (the board refetches on focus; there is no live cross-process
+watcher yet).
+
 ## Development
 
-See `DEVELOPMENT.md` for build, test, and contribution conventions.
+See `DEVELOPMENT.md` for build, test, and contribution conventions (CLI and GUI).

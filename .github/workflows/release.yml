@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags: ["v2.*"]
+
+# First-ship is UNSIGNED (no Apple Developer enrollment). Users run an
+# `xattr -dr com.apple.quarantine` workaround documented in the README.
+#
+# NOTE: this workflow is exercised at the first `v2.*` tag. The bundle is built
+# with `cargo tauri build` from the crate dir (our app crate lives at
+# crates/kanban-tauri, not the conventional src-tauri/), so the Tauri CLI finds
+# its tauri.conf.json in the working directory and the workspace `target/`.
+jobs:
+  bundle-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Install UI deps
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      # `cargo tauri build` runs the configured beforeBuildCommand
+      # (`pnpm --dir ../../ui build`) and bundles a universal macOS app.
+      - name: Build universal macOS bundle
+        working-directory: crates/kanban-tauri
+        run: cargo tauri build --target universal-apple-darwin --bundles dmg,app
+
+      - name: Upload artifacts to the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz

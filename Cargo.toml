@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/kanban-core", "crates/kanban-cli"]
+members = ["crates/kanban-core", "crates/kanban-cli", "crates/kanban-tauri"]
 
 [workspace.package]
 edition = "2024"
@@ -33,3 +33,12 @@ assert_cmd = "2"
 insta = { version = "1", features = ["yaml", "filters"] }
 proptest = "1"
 tempfile = "3"
+
+# new for kanban-tauri
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+tauri-specta = { version = "2.0.0-rc.21", features = ["derive", "typescript"] }
+specta = { version = "2.0.0-rc.22", features = ["derive", "serde_json"] }
+specta-typescript = "0.0.9"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+tauri-plugin-shell = "2"

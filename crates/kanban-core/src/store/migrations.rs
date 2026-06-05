@@ -2,8 +2,14 @@ use crate::error::Result;
 use chrono::Utc;
 use rusqlite::{Connection, params};
 
-const MIGRATIONS: &[(i64, &str, &str)] =
-    &[(1, "init", include_str!("../../migrations/0001_init.sql"))];
+const MIGRATIONS: &[(i64, &str, &str)] = &[
+    (1, "init", include_str!("../../migrations/0001_init.sql")),
+    (
+        2,
+        "workspace_settings",
+        include_str!("../../migrations/0002_workspace_settings.sql"),
+    ),
+];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(
@@ -85,6 +91,7 @@ mod tests {
             "projects",
             "schema_migrations",
             "statuses",
+            "workspace_settings",
         ] {
             assert!(
                 tables.contains(&expected.to_string()),
@@ -101,7 +108,7 @@ mod tests {
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 1);
+        assert_eq!(count, 2);
     }
 
     #[test]

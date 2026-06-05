@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --color-accent: oklch(67% 0.18 250);
+  --color-accent-fg: white;
+}
+
+.dark {
+  --color-accent: oklch(72% 0.16 250);
+}
+
+html, body, #root { height: 100%; }
+body { margin: 0; }

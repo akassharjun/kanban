@@ -10,7 +10,7 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  test:
+  rust:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,5 +31,50 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # `--all-targets` compiles the kanban-tauri binary (running the
+      # `generate_context!` macro) and runs the `export_bindings` integration
+      # test, which regenerates ui/src/data/bindings.ts.
       - name: Test
         run: cargo test --workspace --all-targets
+
+      # The export_bindings test (above) rewrites the git-tracked bindings file.
+      # If it differs from what was committed, the bindings are stale — fail.
+      - name: Verify generated TS bindings are up to date
+        run: git diff --exit-code ui/src/data/bindings.ts
+
+  ui:
+    runs-on: macos-latest
+    needs: rust
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit + component tests
+        run: pnpm test:unit
+
+      - name: Build
+        run: pnpm build
+
+  # NOTE: tauri-driver E2E (Playwright) is deferred to Spec #3 — tauri-driver has
+  # no macOS WebDriver support. See ui/e2e/README.md. A full `tauri build` bundle
+  # is exercised by the release workflow (.github/workflows/release.yml).
