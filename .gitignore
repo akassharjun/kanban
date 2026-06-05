@@ -8,3 +8,4 @@
 .env
 .env.local
 .superpowers/
+.claude/worktrees/
