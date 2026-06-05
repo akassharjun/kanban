@@ -94,4 +94,16 @@ mod tests {
             _ => panic!("wrong variant"),
         }
     }
+
+    #[test]
+    fn maps_invalid_snapshot_to_validation_snapshot_field() {
+        let api: ApiError = Error::InvalidSnapshot("schema version mismatch".into()).into();
+        match api {
+            ApiError::Validation { field, message } => {
+                assert_eq!(field, "snapshot");
+                assert_eq!(message, "schema version mismatch");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
 }
