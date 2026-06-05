@@ -15,6 +15,7 @@ use kanban_core::types::Project;
 
 use crate::dto::{IssueDto, LabelDto, ProjectDto, StatusDto};
 use crate::error::ApiError;
+use crate::settings::{Settings, ThemeChoice};
 use crate::state::AppState;
 
 /// Resolve a project by its `prefix`, returning `None` if no project matches.
@@ -366,6 +367,60 @@ pub async fn redo(state: tauri::State<'_, AppState>) -> Result<ApplyResult, ApiE
     tokio::task::spawn_blocking(move || {
         let mut guard = lock_workspace(&ws)?;
         redo_inner(&mut guard)
+    })
+    .await
+    .map_err(|e| join_error(&e))?
+}
+
+/// Read the GUI settings (theme), defaulting to `System` if unset/unknown.
+///
+/// # Errors
+/// Returns an error if the underlying read fails.
+pub fn get_settings_inner(ws: &Workspace) -> Result<Settings, ApiError> {
+    let raw = ws.get_setting("theme")?.unwrap_or_else(|| "system".into());
+    let theme = ThemeChoice::parse(&raw).unwrap_or(ThemeChoice::System);
+    Ok(Settings { theme })
+}
+
+/// Persist the theme choice and return the updated settings.
+///
+/// # Errors
+/// Returns an error if the underlying write fails.
+pub fn update_settings_inner(ws: &Workspace, theme: ThemeChoice) -> Result<Settings, ApiError> {
+    ws.set_setting("theme", theme.as_str())?;
+    Ok(Settings { theme })
+}
+
+/// Tauri command: read the GUI settings.
+///
+/// # Errors
+/// Returns an error if the mutex is poisoned, the task fails to join, or the read fails.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_settings(state: tauri::State<'_, AppState>) -> Result<Settings, ApiError> {
+    let ws = std::sync::Arc::clone(&state.workspace);
+    tokio::task::spawn_blocking(move || {
+        let guard = lock_workspace(&ws)?;
+        get_settings_inner(&guard)
+    })
+    .await
+    .map_err(|e| join_error(&e))?
+}
+
+/// Tauri command: persist the theme choice.
+///
+/// # Errors
+/// Returns an error if the mutex is poisoned, the task fails to join, or the write fails.
+#[tauri::command]
+#[specta::specta]
+pub async fn update_settings(
+    state: tauri::State<'_, AppState>,
+    theme: ThemeChoice,
+) -> Result<Settings, ApiError> {
+    let ws = std::sync::Arc::clone(&state.workspace);
+    tokio::task::spawn_blocking(move || {
+        let guard = lock_workspace(&ws)?;
+        update_settings_inner(&guard, theme)
     })
     .await
     .map_err(|e| join_error(&e))?
