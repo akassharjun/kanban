@@ -9,6 +9,7 @@
 //! The async wrappers are registered with Tauri's invoke handler in Task 10.
 
 use kanban_core::Workspace;
+use kanban_core::operation::Operation;
 use kanban_core::query::IssueFilter;
 use kanban_core::types::Project;
 
@@ -268,6 +269,103 @@ pub async fn list_labels(
     tokio::task::spawn_blocking(move || {
         let guard = lock_workspace(&ws)?;
         list_labels_inner(&guard, &project)
+    })
+    .await
+    .map_err(|e| join_error(&e))?
+}
+
+/// Result of applying an operation: the new `operation_log` row id.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct ApplyResult {
+    pub op_id: i64,
+}
+
+/// Apply an operation to the workspace (the single domain mutator).
+///
+/// # Errors
+/// Returns an error if the operation is invalid or the write fails.
+pub fn apply_inner(ws: &mut Workspace, op: Operation) -> Result<ApplyResult, ApiError> {
+    let outcome = ws.apply(op)?;
+    Ok(ApplyResult {
+        op_id: outcome.op_id,
+    })
+}
+
+/// Undo the most recent operation.
+///
+/// # Errors
+/// Returns an error if there is nothing to undo or the write fails.
+pub fn undo_inner(ws: &mut Workspace) -> Result<ApplyResult, ApiError> {
+    let outcome = ws.undo()?;
+    Ok(ApplyResult {
+        op_id: outcome.op_id,
+    })
+}
+
+/// Redo the most recently undone operation.
+///
+/// # Errors
+/// Returns an error if there is nothing to redo or the write fails.
+pub fn redo_inner(ws: &mut Workspace) -> Result<ApplyResult, ApiError> {
+    let outcome = ws.redo()?;
+    Ok(ApplyResult {
+        op_id: outcome.op_id,
+    })
+}
+
+/// Tauri command: apply an operation (the single domain mutator).
+///
+/// The operation is received as JSON and deserialized into `Operation`; the
+/// frontend's `ops.ts` builders construct the correct shape (Operation is not
+/// part of the generated bindings because it is not a specta `Type`).
+///
+/// # Errors
+/// Returns `ApiError::Validation` if the JSON is not a valid operation, or an
+/// error if the mutex is poisoned, the task fails to join, or the write fails.
+#[tauri::command]
+#[specta::specta]
+pub async fn apply(
+    state: tauri::State<'_, AppState>,
+    op: serde_json::Value,
+) -> Result<ApplyResult, ApiError> {
+    let ws = std::sync::Arc::clone(&state.workspace);
+    tokio::task::spawn_blocking(move || {
+        let op: Operation = serde_json::from_value(op).map_err(|e| ApiError::Validation {
+            field: "op".into(),
+            message: e.to_string(),
+        })?;
+        let mut guard = lock_workspace(&ws)?;
+        apply_inner(&mut guard, op)
+    })
+    .await
+    .map_err(|e| join_error(&e))?
+}
+
+/// Tauri command: undo the most recent operation.
+/// # Errors
+/// Returns an error if there is nothing to undo, the mutex is poisoned, the task fails to join, or the write fails.
+#[tauri::command]
+#[specta::specta]
+pub async fn undo(state: tauri::State<'_, AppState>) -> Result<ApplyResult, ApiError> {
+    let ws = std::sync::Arc::clone(&state.workspace);
+    tokio::task::spawn_blocking(move || {
+        let mut guard = lock_workspace(&ws)?;
+        undo_inner(&mut guard)
+    })
+    .await
+    .map_err(|e| join_error(&e))?
+}
+
+/// Tauri command: redo the most recently undone operation.
+/// # Errors
+/// Returns an error if there is nothing to redo, the mutex is poisoned, the task fails to join, or the write fails.
+#[tauri::command]
+#[specta::specta]
+pub async fn redo(state: tauri::State<'_, AppState>) -> Result<ApplyResult, ApiError> {
+    let ws = std::sync::Arc::clone(&state.workspace);
+    tokio::task::spawn_blocking(move || {
+        let mut guard = lock_workspace(&ws)?;
+        redo_inner(&mut guard)
     })
     .await
     .map_err(|e| join_error(&e))?
