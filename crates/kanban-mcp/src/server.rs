@@ -505,6 +505,20 @@ impl KanbanServer {
     }
 
     #[tool(
+        description = "Undo the most recent change. Note: a multi-field issue update or a move applies as more than one change, so it may take multiple undos to fully revert."
+    )]
+    async fn undo(&self) -> Result<CallToolResult, McpError> {
+        self.blocking_mut(|ws| ws.undo().map(|_| ())).await?;
+        json_content(&serde_json::json!({ "undone": true }))
+    }
+
+    #[tool(description = "Redo the most recently undone change.")]
+    async fn redo(&self) -> Result<CallToolResult, McpError> {
+        self.blocking_mut(|ws| ws.redo().map(|_| ())).await?;
+        json_content(&serde_json::json!({ "redone": true }))
+    }
+
+    #[tool(
         description = "Move an issue: change its status column and/or reorder it before/after a sibling issue (by key). Returns the moved issue."
     )]
     async fn move_issue(

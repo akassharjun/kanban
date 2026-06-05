@@ -647,6 +647,123 @@ async fn move_issue_tool() {
 }
 
 #[tokio::test]
+async fn undo_redo_tools() {
+    // Empty workspace — every action happens through the MCP tools.
+    let dir = tempfile::tempdir().unwrap();
+    let ws = Workspace::open(&dir.path().join("data.db")).unwrap();
+
+    let server = KanbanServer::with_workspace(ws);
+    let (server_t, client_t) = tokio::io::duplex(8192);
+
+    let server_handle = tokio::spawn(async move {
+        let svc = server.serve(server_t).await?;
+        svc.waiting().await?;
+        anyhow::Ok(())
+    });
+
+    let client = TestClient.serve(client_t).await.unwrap();
+
+    // Both tools appear in the tool list.
+    let tools = client.list_all_tools().await.unwrap();
+    assert!(
+        tools.iter().any(|t| t.name == "undo"),
+        "undo missing from tools"
+    );
+    assert!(
+        tools.iter().any(|t| t.name == "redo"),
+        "redo missing from tools"
+    );
+
+    // Create a project via MCP.
+    client
+        .call_tool(
+            CallToolRequestParams::new("create_project")
+                .with_arguments(rmcp::object!({"name": "Auth Service", "prefix": "AUTH"})),
+        )
+        .await
+        .unwrap();
+
+    // Confirm it exists.
+    let result = client
+        .call_tool(CallToolRequestParams::new("list_projects"))
+        .await
+        .unwrap();
+    let text = result.content[0].as_text().expect("text content");
+    let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
+    let projects = parsed.as_array().expect("projects array");
+    assert!(
+        projects.iter().any(|p| p["prefix"] == "AUTH"),
+        "expected AUTH before undo, got: {parsed}"
+    );
+
+    // Undo the create -> list_projects returns empty.
+    let result = client
+        .call_tool(CallToolRequestParams::new("undo"))
+        .await
+        .unwrap();
+    let text = result.content[0].as_text().expect("text content");
+    let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
+    assert_eq!(
+        parsed["undone"], true,
+        "expected undone:true, got: {parsed}"
+    );
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("list_projects"))
+        .await
+        .unwrap();
+    let text = result.content[0].as_text().expect("text content");
+    let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
+    let projects = parsed.as_array().expect("projects array");
+    assert!(
+        projects.is_empty(),
+        "expected empty list after undo, got: {parsed}"
+    );
+
+    // Redo -> AUTH is back.
+    let result = client
+        .call_tool(CallToolRequestParams::new("redo"))
+        .await
+        .unwrap();
+    let text = result.content[0].as_text().expect("text content");
+    let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
+    assert_eq!(
+        parsed["redone"], true,
+        "expected redone:true, got: {parsed}"
+    );
+
+    let result = client
+        .call_tool(CallToolRequestParams::new("list_projects"))
+        .await
+        .unwrap();
+    let text = result.content[0].as_text().expect("text content");
+    let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
+    let projects = parsed.as_array().expect("projects array");
+    assert!(
+        projects.iter().any(|p| p["prefix"] == "AUTH"),
+        "expected AUTH after redo, got: {parsed}"
+    );
+
+    // Undo once more (back to empty) then undo again -> error (nothing to undo).
+    client
+        .call_tool(CallToolRequestParams::new("undo"))
+        .await
+        .unwrap();
+
+    let err = client.call_tool(CallToolRequestParams::new("undo")).await;
+    assert!(
+        err.is_err(),
+        "expected error when nothing left to undo, got: {err:?}"
+    );
+
+    client.cancel().await.unwrap();
+    server_handle
+        .await
+        .expect("server task panicked")
+        .expect("server task errored");
+}
+
+#[tokio::test]
 async fn list_statuses_and_labels() {
     let dir = tempfile::tempdir().unwrap();
     let mut ws = Workspace::open(&dir.path().join("data.db")).unwrap();
