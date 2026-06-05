@@ -85,7 +85,12 @@ export function ProjectRow({ project }: ProjectRowProps) {
       <button
         type="button"
         aria-label={`Actions for ${project.prefix}`}
-        onClick={() => setMenuOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={() => {
+          setMenuOpen((o) => !o);
+          setConfirmingDelete(false);
+        }}
         className="ml-1 rounded px-1.5 text-neutral-500 hover:bg-black/5 dark:hover:bg-white/10"
       >
         ⋯

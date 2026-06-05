@@ -108,6 +108,20 @@ describe("ProjectRow", () => {
     expect(op.args).toEqual({ id: "p1" });
   });
 
+  it("toggling the menu resets a pending delete confirmation", async () => {
+    mutate.mockReset();
+    renderRow();
+    await userEvent.click(screen.getByRole("button", { name: /actions for AUTH/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+    expect(screen.getByRole("button", { name: /confirm delete/i })).toBeInTheDocument();
+    // Close then reopen the menu — the confirm state must NOT persist.
+    await userEvent.click(screen.getByRole("button", { name: /actions for AUTH/i }));
+    await userEvent.click(screen.getByRole("button", { name: /actions for AUTH/i }));
+    expect(screen.queryByRole("button", { name: /confirm delete/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^delete$/i })).toBeInTheDocument();
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
   it("archiving the active project navigates home", async () => {
     mutate.mockReset();
     navigate.mockReset();
