@@ -27,7 +27,7 @@ pub fn not_found(resource: &str, key: &str) -> McpError {
 }
 
 /// A "name not found within a project" error that lists the valid options.
-#[allow(dead_code)] // consumed by the resolution tools from Task 5 onward
+/// Used by `list_issues` to resolve a status name within a project.
 #[must_use]
 pub fn unknown_name(kind: &str, name: &str, project: &str, available: &[String]) -> McpError {
     McpError::invalid_params(

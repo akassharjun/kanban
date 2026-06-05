@@ -1,7 +1,16 @@
 //! Output shapes returned to the MCP client. Human-facing: prefixes/keys/names,
 //! never UUIDs or sort keys.
+use std::collections::HashMap;
+
 use kanban_core::types::{Issue, Label, Project, Status};
 use serde::Serialize;
+use uuid::Uuid;
+
+/// Map status id -> status name for a project's statuses.
+#[must_use]
+pub fn status_name_map(statuses: &[Status]) -> HashMap<Uuid, String> {
+    statuses.iter().map(|s| (s.id, s.name.clone())).collect()
+}
 
 #[derive(Serialize)]
 pub struct ProjectOut {
@@ -47,8 +56,6 @@ impl From<Label> for LabelOut {
     }
 }
 
-// `IssueOut` is consumed by the issue tools in Task 6; allow dead_code until then.
-#[allow(dead_code)]
 #[derive(Serialize)]
 pub struct IssueOut {
     pub key: String,
@@ -61,7 +68,6 @@ pub struct IssueOut {
 
 impl IssueOut {
     /// Build from a core `Issue` plus a resolved status NAME.
-    #[allow(dead_code)]
     #[must_use]
     pub fn from_issue(i: Issue, status_name: &str) -> Self {
         Self {
