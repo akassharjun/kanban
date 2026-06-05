@@ -327,6 +327,49 @@ pub(crate) fn export_issue_subtree_via_tx(
     })
 }
 
+/// Capture a single status row as a one-element snapshot. Used to build the
+/// inverse of `DeleteStatus` so undo restores `category`/`color`/`position`
+/// and the original id — none of which a plain `CreateStatus` op would carry
+/// without re-deriving them. `snapshot::import` upserts `snapshot.statuses`.
+pub(crate) fn export_status_row(
+    tx: &Transaction<'_>,
+    status_id: uuid::Uuid,
+) -> Result<crate::snapshot::WorkspaceSnapshot> {
+    use crate::snapshot::{SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
+
+    let status = crate::store::read::statuses::by_id_via_tx(tx, status_id)?;
+    Ok(WorkspaceSnapshot {
+        schema_version: SNAPSHOT_SCHEMA_VERSION,
+        exported_at: chrono::Utc::now(),
+        projects: Vec::new(),
+        statuses: vec![status],
+        labels: Vec::new(),
+        issues: Vec::new(),
+        issue_labels: Vec::new(),
+    })
+}
+
+/// Capture all of a project's status rows as a snapshot (other entity arrays
+/// empty). Used to build the inverse of `ReorderStatus`: re-importing every
+/// status row under `Overwrite` restores all prior `position` values.
+pub(crate) fn export_project_statuses(
+    tx: &Transaction<'_>,
+    project_id: uuid::Uuid,
+) -> Result<crate::snapshot::WorkspaceSnapshot> {
+    use crate::snapshot::{SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
+
+    let statuses = crate::store::read::statuses::for_project_via_tx(tx, project_id)?;
+    Ok(WorkspaceSnapshot {
+        schema_version: SNAPSHOT_SCHEMA_VERSION,
+        exported_at: chrono::Utc::now(),
+        projects: Vec::new(),
+        statuses,
+        labels: Vec::new(),
+        issues: Vec::new(),
+        issue_labels: Vec::new(),
+    })
+}
+
 /// Capture the label row + all `issue_labels` rows that reference it. Used to
 /// build the inverse of `DeleteLabel` so undo restores attachments that the
 /// CASCADE delete tore down.

@@ -61,6 +61,30 @@ describe("useApply optimistic dispatcher", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["issues"] });
   });
 
+  it("invalidates statuses + issues on CreateStatus", async () => {
+    applyMock.mockResolvedValueOnce({ status: "ok", data: { op_id: 9 } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+
+    const { result } = renderHook(() => useApply("AUTH"), { wrapper: makeWrapper(client) });
+    await act(async () => {
+      result.current.mutate(
+        ops.createStatus({
+          id: "s9",
+          project_id: "p1",
+          name: "QA",
+          category: "started",
+          color: "#94a3b8",
+          position: 3,
+        }),
+      );
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: qk.statuses("AUTH") });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: qk.issues("AUTH") });
+  });
+
   it("optimistically adds a created project to the cache on success", async () => {
     applyMock.mockResolvedValueOnce({ status: "ok", data: { op_id: 7 } });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

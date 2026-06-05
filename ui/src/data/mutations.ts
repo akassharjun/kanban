@@ -68,6 +68,12 @@ function invalidateFor(qc: QueryClient, op: Operation, prefix?: string): void {
     }
     void qc.invalidateQueries({ queryKey: ["issues"] }); // detail panel chips
   }
+  if (["CreateStatus", "UpdateStatus", "DeleteStatus", "ReorderStatus"].includes(tag)) {
+    if (prefix) {
+      void qc.invalidateQueries({ queryKey: qk.statuses(prefix) });
+      void qc.invalidateQueries({ queryKey: qk.issues(prefix) });
+    }
+  }
   if (tag === "ImportSnapshot") void qc.invalidateQueries();
 }
 

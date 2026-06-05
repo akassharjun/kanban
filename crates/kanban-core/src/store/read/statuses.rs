@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::types::{Status, StatusCategory};
 use rusqlite::{Connection, params};
 use std::str::FromStr;
@@ -31,6 +31,21 @@ pub(crate) fn for_project_via_tx(
         out.push(r?);
     }
     Ok(out)
+}
+
+pub(crate) fn by_id_via_tx(tx: &rusqlite::Transaction<'_>, id: Uuid) -> Result<Status> {
+    tx.query_row(
+        "SELECT id,project_id,name,category,color,position FROM statuses WHERE id = ?1",
+        params![id.to_string()],
+        row_to_status,
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Error::NotFound {
+            kind: crate::EntityKind::Status,
+            id: id.to_string(),
+        },
+        other => other.into(),
+    })
 }
 
 fn row_to_status(r: &rusqlite::Row<'_>) -> rusqlite::Result<Status> {

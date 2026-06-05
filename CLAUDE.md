@@ -43,7 +43,9 @@ The GUI is `crates/kanban-tauri` (Rust shell) + `ui/` (Vite + React 19 + Tailwin
 - **No live cross-process watcher.** The GUI refetches on window focus (`refetchOnWindowFocus`); a SQLite `update_hook` watcher is deferred to a later spec.
 - **E2E (`tauri-driver`) is deferred to a later spec** (no macOS WebDriver support); Spec #2 ships Vitest + RTL coverage. See `ui/e2e/README.md`.
 - **UI tooling on Apple Silicon:** if the default `node` is x86_64 (nvm), run ui scripts under a native arm64 node (`PATH="/opt/homebrew/bin:$PATH" npx pnpm@9.12.0 …`) or rollup/esbuild crash. If `node_modules` ends up with the wrong-arch rollup binary (a plain `install` reports "up to date" but `build` fails on `@rollup/rollup-darwin-arm64`), repair with `… pnpm@9.12.0 install --force`. `test:unit` can pass while `build` fails, so always run `build`. See `DEVELOPMENT.md`.
-- **GUI product completeness (Spec #4).** Issue detail-panel editing of priority, due date, and labels (chips + attach/detach/create), issue delete, ⌘Z/⌘⇧Z undo-redo (wrapping `commands.undo`/`redo` + broad query invalidation), and project rename/archive/delete from the sidebar — all via `ops.ts` builders through `apply`. The one core addition is `Workspace::query_labels_for_issue`, surfaced by `get_issue` as `IssueDto.labels: Option<Vec<LabelDto>>` (None for `list_issues`). Custom statuses (no status `Operation`) and members/assignee (not in schema) remain deferred to Spec #5+.
+- **GUI product completeness (Spec #4).** Issue detail-panel editing of priority, due date, and labels (chips + attach/detach/create), issue delete, ⌘Z/⌘⇧Z undo-redo (wrapping `commands.undo`/`redo` + broad query invalidation), and project rename/archive/delete from the sidebar — all via `ops.ts` builders through `apply`. The one core addition is `Workspace::query_labels_for_issue`, surfaced by `get_issue` as `IssueDto.labels: Option<Vec<LabelDto>>` (None for `list_issues`). Members/assignee (not in schema) remain deferred to Spec #6.
+
+- **Custom statuses (Spec #5).** Four undoable core ops — `CreateStatus`, `UpdateStatus` (via `StatusPatch`), `DeleteStatus`, `ReorderStatus` — mirroring the label ops (`apply/statuses.rs` + `store/{write,read}/statuses.rs` + `apply/mod.rs` arms; no migration, no DTO change). **`DeleteStatus` is guarded:** it refuses (`Error::Conflict`) if the status still has issues or is the project's last column (block-until-empty). `ReorderStatus` re-packs the project's columns to dense `0..n` positions; its undo inverse is an `ImportSnapshot` of the project's prior status ordering (delete's inverse snapshots the single row). Exposed in the GUI (board column add/rename/recolor/reorder/delete) and the CLI (`kanban status create/update/delete/reorder`); the generic Tauri `apply` and the MCP server need no changes.
 
 ## MCP layer (Spec #3)
 
@@ -94,5 +96,6 @@ These don't block v1 but should be addressed before broader release:
 - `docs/superpowers/specs/2026-05-05-kanban-v2-spec-2-gui-shell-design.md` — Spec #2 (Tauri GUI shell).
 - `docs/superpowers/specs/2026-06-05-kanban-v2-spec-3-mcp-server-design.md` — Spec #3 (MCP server).
 - `docs/superpowers/specs/2026-06-06-kanban-v2-spec-4-gui-product-completeness-design.md` — Spec #4 (GUI product completeness).
+- `docs/superpowers/specs/2026-06-06-kanban-v2-spec-5-custom-statuses-design.md` — Spec #5 (custom statuses).
 
-Each spec has a matching plan in `docs/superpowers/plans/`. Custom statuses, members/assignee, and AI-agent orchestration (Spec #5+) will live alongside.
+Each spec has a matching plan in `docs/superpowers/plans/`. Members/assignee (Spec #6) and AI-agent orchestration will live alongside.

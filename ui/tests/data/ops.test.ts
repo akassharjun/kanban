@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ops, change, sortKeyBits } from "@/data/ops";
+import { ops, change, sortKeyBits, STATUS_CATEGORIES } from "@/data/ops";
 
 describe("ops builders", () => {
   it("createProject wraps args under {op,args}", () => {
@@ -77,6 +77,71 @@ describe("ops builders", () => {
       op: "UpdateLabel",
       args: { id: "l1", patch: { color: "#0f0" } },
     });
+  });
+
+  it("createStatus wraps args under {op,args}", () => {
+    expect(
+      ops.createStatus({
+        id: "s1",
+        project_id: "p1",
+        name: "QA",
+        category: "started",
+        color: "#94a3b8",
+        position: 2,
+      }),
+    ).toEqual({
+      op: "CreateStatus",
+      args: {
+        id: "s1",
+        project_id: "p1",
+        name: "QA",
+        category: "started",
+        color: "#94a3b8",
+        position: 2,
+      },
+    });
+  });
+
+  it("updateStatus wraps a name patch", () => {
+    expect(ops.updateStatus({ id: "s1", name: "QA" })).toEqual({
+      op: "UpdateStatus",
+      args: { id: "s1", patch: { name: "QA" } },
+    });
+  });
+
+  it("updateStatus wraps a color patch", () => {
+    expect(ops.updateStatus({ id: "s1", color: "#0f0" })).toEqual({
+      op: "UpdateStatus",
+      args: { id: "s1", patch: { color: "#0f0" } },
+    });
+  });
+
+  it("updateStatus omits undefined fields from the patch", () => {
+    expect(ops.updateStatus({ id: "s1", category: "completed" })).toEqual({
+      op: "UpdateStatus",
+      args: { id: "s1", patch: { category: "completed" } },
+    });
+  });
+
+  it("deleteStatus takes just id", () => {
+    expect(ops.deleteStatus({ id: "s1" })).toEqual({ op: "DeleteStatus", args: { id: "s1" } });
+  });
+
+  it("reorderStatus carries id and new_position", () => {
+    expect(ops.reorderStatus({ id: "s1", new_position: 0 })).toEqual({
+      op: "ReorderStatus",
+      args: { id: "s1", new_position: 0 },
+    });
+  });
+
+  it("exposes the five status categories", () => {
+    expect(STATUS_CATEGORIES).toEqual([
+      "unstarted",
+      "started",
+      "blocked",
+      "completed",
+      "discarded",
+    ]);
   });
 
   it("archiveProject / deleteProject / deleteLabel take just id", () => {

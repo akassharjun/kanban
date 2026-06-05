@@ -11,6 +11,16 @@
 export const PRIORITIES = ["none", "low", "medium", "high", "urgent"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
+/** Status categories, matching core's `StatusCategory` (lowercase serde). */
+export const STATUS_CATEGORIES = [
+  "unstarted",
+  "started",
+  "blocked",
+  "completed",
+  "discarded",
+] as const;
+export type StatusCategory = (typeof STATUS_CATEGORIES)[number];
+
 export type IssueFieldChange =
   | { field: "Title"; value: string }
   | { field: "Description"; value: string | null }
@@ -107,6 +117,35 @@ export const ops = {
     if (args.description !== undefined) patch.description = args.description;
     return { op: "UpdateProject", args: { id: args.id, patch } };
   },
+
+  createStatus: (args: {
+    id: string;
+    project_id: string;
+    name: string;
+    category: string;
+    color: string;
+    position: number;
+  }): Operation => ({ op: "CreateStatus", args }),
+
+  updateStatus: (args: {
+    id: string;
+    name?: string;
+    category?: string;
+    color?: string;
+  }): Operation => {
+    const patch: Record<string, unknown> = {};
+    if (args.name !== undefined) patch.name = args.name;
+    if (args.category !== undefined) patch.category = args.category;
+    if (args.color !== undefined) patch.color = args.color;
+    return { op: "UpdateStatus", args: { id: args.id, patch } };
+  },
+
+  deleteStatus: (args: { id: string }): Operation => ({ op: "DeleteStatus", args }),
+
+  reorderStatus: (args: { id: string; new_position: number }): Operation => ({
+    op: "ReorderStatus",
+    args,
+  }),
 
   archiveProject: (args: { id: string }): Operation => ({ op: "ArchiveProject", args }),
 
