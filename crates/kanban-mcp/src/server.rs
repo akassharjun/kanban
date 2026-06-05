@@ -59,6 +59,25 @@ impl KanbanServer {
         .map_err(to_mcp)
     }
 
+    /// Run a mutating sync closure against the workspace on a blocking thread
+    /// (for `apply`/`undo`/`redo`). The mutex guard never crosses `.await`.
+    async fn blocking_mut<T, F>(&self, f: F) -> Result<T, McpError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut Workspace) -> Result<T, kanban_core::Error> + Send + 'static,
+    {
+        let ws = Arc::clone(&self.workspace);
+        tokio::task::spawn_blocking(move || {
+            let mut guard = ws
+                .lock()
+                .map_err(|_| kanban_core::Error::Conflict("workspace mutex poisoned".into()))?;
+            f(&mut guard)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("task join error: {e}"), None))?
+        .map_err(to_mcp)
+    }
+
     /// Resolve a project's statuses + run a project-scoped read in one lock.
     /// `f(ws, project_id, &statuses)` yields the read result. An unknown prefix
     /// maps to a not-found error.
@@ -274,6 +293,28 @@ impl KanbanServer {
             })
             .collect();
         json_content(&out)
+    }
+
+    #[tool(description = "Create a new project. `prefix` must be 2-8 uppercase letters.")]
+    async fn create_project(
+        &self,
+        Parameters(args): Parameters<crate::inputs::CreateProjectInput>,
+    ) -> Result<CallToolResult, McpError> {
+        use kanban_core::operation::{CreateProject, Operation};
+        let id = uuid::Uuid::now_v7();
+        let prefix = args.prefix.clone();
+        self.blocking_mut(move |ws| {
+            ws.apply(Operation::CreateProject(CreateProject {
+                id,
+                name: args.name,
+                prefix: args.prefix,
+                description: args.description,
+                icon: None,
+            }))
+            .map(|_| ())
+        })
+        .await?;
+        json_content(&serde_json::json!({ "created": prefix }))
     }
 }
 

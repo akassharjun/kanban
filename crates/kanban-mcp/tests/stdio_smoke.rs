@@ -182,6 +182,73 @@ async fn issue_read_tools() {
 }
 
 #[tokio::test]
+async fn create_project_tool() {
+    // Start from an EMPTY workspace (no seed project).
+    let dir = tempfile::tempdir().unwrap();
+    let ws = Workspace::open(&dir.path().join("data.db")).unwrap();
+
+    let server = KanbanServer::with_workspace(ws);
+    let (server_t, client_t) = tokio::io::duplex(8192);
+
+    let server_handle = tokio::spawn(async move {
+        let svc = server.serve(server_t).await?;
+        svc.waiting().await?;
+        anyhow::Ok(())
+    });
+
+    let client = TestClient.serve(client_t).await.unwrap();
+
+    let tools = client.list_all_tools().await.unwrap();
+    assert!(tools.iter().any(|t| t.name == "create_project"));
+
+    // Valid create succeeds and echoes the prefix.
+    let result = client
+        .call_tool(
+            CallToolRequestParams::new("create_project")
+                .with_arguments(rmcp::object!({"name": "Auth Service", "prefix": "AUTH"})),
+        )
+        .await
+        .unwrap();
+    let text = result.content[0]
+        .as_text()
+        .expect("first content block is text");
+    assert!(text.text.contains("AUTH"), "got: {}", text.text);
+
+    // list_projects now contains the created project.
+    let result = client
+        .call_tool(CallToolRequestParams::new("list_projects"))
+        .await
+        .unwrap();
+    let text = result.content[0]
+        .as_text()
+        .expect("first content block is text");
+    let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
+    let projects = parsed.as_array().expect("projects is an array");
+    assert!(
+        projects.iter().any(|p| p["prefix"] == "AUTH"),
+        "expected a project with prefix AUTH, got: {parsed}"
+    );
+
+    // Invalid prefix (lowercase) is rejected by core validation -> tool error.
+    let err = client
+        .call_tool(
+            CallToolRequestParams::new("create_project")
+                .with_arguments(rmcp::object!({"name": "x", "prefix": "lower"})),
+        )
+        .await;
+    assert!(
+        err.is_err(),
+        "expected error for invalid prefix, got: {err:?}"
+    );
+
+    client.cancel().await.unwrap();
+    server_handle
+        .await
+        .expect("server task panicked")
+        .expect("server task errored");
+}
+
+#[tokio::test]
 async fn list_statuses_and_labels() {
     let dir = tempfile::tempdir().unwrap();
     let mut ws = Workspace::open(&dir.path().join("data.db")).unwrap();

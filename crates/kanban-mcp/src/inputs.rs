@@ -30,6 +30,17 @@ pub struct IssueKey {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateProjectInput {
+    /// Display name, e.g. "Auth Service".
+    pub name: String,
+    /// Unique prefix: 2-8 uppercase letters, e.g. "AUTH".
+    pub prefix: String,
+    /// Optional description.
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchIssues {
     /// Full-text query.
     pub query: String,
