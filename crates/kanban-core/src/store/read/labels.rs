@@ -16,6 +16,20 @@ pub(crate) fn for_project(conn: &Connection, project_id: Uuid) -> Result<Vec<Lab
     Ok(out)
 }
 
+pub(crate) fn for_issue(conn: &Connection, issue_id: Uuid) -> Result<Vec<Label>> {
+    let mut stmt = conn.prepare(
+        "SELECT l.id, l.project_id, l.name, l.color \
+         FROM labels l JOIN issue_labels il ON il.label_id = l.id \
+         WHERE il.issue_id = ?1 ORDER BY l.name",
+    )?;
+    let rows = stmt.query_map(params![issue_id.to_string()], row_to_label)?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
 pub(crate) fn for_project_via_tx(
     tx: &rusqlite::Transaction<'_>,
     project_id: Uuid,

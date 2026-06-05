@@ -8,7 +8,8 @@
 //   - `ReorderIssue.new_sort_key` uses `serde_f64::bits` → a "0x"+16-hex string
 //     of the f64 big-endian bit pattern, NOT a plain JSON number.
 
-export type Priority = "none" | "low" | "medium" | "high" | "urgent";
+export const PRIORITIES = ["none", "low", "medium", "high", "urgent"] as const;
+export type Priority = (typeof PRIORITIES)[number];
 
 export type IssueFieldChange =
   | { field: "Title"; value: string }
@@ -69,6 +70,47 @@ export const ops = {
   }),
 
   deleteIssue: (args: { id: string }): Operation => ({ op: "DeleteIssue", args }),
+
+  createLabel: (args: {
+    id: string;
+    project_id: string;
+    name: string;
+    color: string;
+  }): Operation => ({ op: "CreateLabel", args }),
+
+  updateLabel: (args: { id: string; name?: string; color?: string }): Operation => {
+    const patch: Record<string, unknown> = {};
+    if (args.name !== undefined) patch.name = args.name;
+    if (args.color !== undefined) patch.color = args.color;
+    return { op: "UpdateLabel", args: { id: args.id, patch } };
+  },
+
+  deleteLabel: (args: { id: string }): Operation => ({ op: "DeleteLabel", args }),
+
+  attachLabel: (args: { issue_id: string; label_id: string }): Operation => ({
+    op: "AttachLabel",
+    args,
+  }),
+
+  detachLabel: (args: { issue_id: string; label_id: string }): Operation => ({
+    op: "DetachLabel",
+    args,
+  }),
+
+  updateProject: (args: {
+    id: string;
+    name?: string;
+    description?: string | null;
+  }): Operation => {
+    const patch: Record<string, unknown> = {};
+    if (args.name !== undefined) patch.name = args.name;
+    if (args.description !== undefined) patch.description = args.description;
+    return { op: "UpdateProject", args: { id: args.id, patch } };
+  },
+
+  archiveProject: (args: { id: string }): Operation => ({ op: "ArchiveProject", args }),
+
+  deleteProject: (args: { id: string }): Operation => ({ op: "DeleteProject", args }),
 } as const;
 
 export const change = {

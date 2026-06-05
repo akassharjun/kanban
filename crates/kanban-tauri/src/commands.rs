@@ -81,7 +81,12 @@ pub fn list_issues_inner(ws: &Workspace, prefix: &str) -> Result<Vec<IssueDto>, 
 /// error if the underlying query fails.
 pub fn get_issue_inner(ws: &Workspace, key: &str) -> Result<IssueDto, ApiError> {
     match ws.query_issue_by_identifier(key)? {
-        Some(issue) => Ok(IssueDto::from(issue)),
+        Some(issue) => {
+            let labels = ws.query_labels_for_issue(issue.id)?;
+            let mut dto = IssueDto::from(issue);
+            dto.labels = Some(labels.into_iter().map(LabelDto::from).collect());
+            Ok(dto)
+        }
         None => Err(ApiError::NotFound {
             resource: "issue".into(),
             key: key.into(),

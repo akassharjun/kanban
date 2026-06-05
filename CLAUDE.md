@@ -42,7 +42,8 @@ The GUI is `crates/kanban-tauri` (Rust shell) + `ui/` (Vite + React 19 + Tailwin
 - **`tauri-specta` generates `ui/src/data/bindings.ts`** (git-tracked) via the `export_bindings` test; CI fails on drift. `specta-typescript` is configured with `BigIntExportBehavior::Number` so `i64` fields become TS `number`.
 - **No live cross-process watcher.** The GUI refetches on window focus (`refetchOnWindowFocus`); a SQLite `update_hook` watcher is deferred to a later spec.
 - **E2E (`tauri-driver`) is deferred to a later spec** (no macOS WebDriver support); Spec #2 ships Vitest + RTL coverage. See `ui/e2e/README.md`.
-- **UI tooling on Apple Silicon:** if the default `node` is x86_64 (nvm), run ui scripts under a native arm64 node (`PATH="/opt/homebrew/bin:$PATH" npx pnpm@9.12.0 …`) or rollup/esbuild crash. See `DEVELOPMENT.md`.
+- **UI tooling on Apple Silicon:** if the default `node` is x86_64 (nvm), run ui scripts under a native arm64 node (`PATH="/opt/homebrew/bin:$PATH" npx pnpm@9.12.0 …`) or rollup/esbuild crash. If `node_modules` ends up with the wrong-arch rollup binary (a plain `install` reports "up to date" but `build` fails on `@rollup/rollup-darwin-arm64`), repair with `… pnpm@9.12.0 install --force`. `test:unit` can pass while `build` fails, so always run `build`. See `DEVELOPMENT.md`.
+- **GUI product completeness (Spec #4).** Issue detail-panel editing of priority, due date, and labels (chips + attach/detach/create), issue delete, ⌘Z/⌘⇧Z undo-redo (wrapping `commands.undo`/`redo` + broad query invalidation), and project rename/archive/delete from the sidebar — all via `ops.ts` builders through `apply`. The one core addition is `Workspace::query_labels_for_issue`, surfaced by `get_issue` as `IssueDto.labels: Option<Vec<LabelDto>>` (None for `list_issues`). Custom statuses (no status `Operation`) and members/assignee (not in schema) remain deferred to Spec #5+.
 
 ## MCP layer (Spec #3)
 
@@ -92,5 +93,6 @@ These don't block v1 but should be addressed before broader release:
 - `docs/superpowers/plans/2026-05-03-kanban-v2-core-cli-plan.md` — the 41-task TDD plan that built it.
 - `docs/superpowers/specs/2026-05-05-kanban-v2-spec-2-gui-shell-design.md` — Spec #2 (Tauri GUI shell).
 - `docs/superpowers/specs/2026-06-05-kanban-v2-spec-3-mcp-server-design.md` — Spec #3 (MCP server).
+- `docs/superpowers/specs/2026-06-06-kanban-v2-spec-4-gui-product-completeness-design.md` — Spec #4 (GUI product completeness).
 
-Each spec has a matching plan in `docs/superpowers/plans/`. AI-agent orchestration (Spec #4+) will live alongside.
+Each spec has a matching plan in `docs/superpowers/plans/`. Custom statuses, members/assignee, and AI-agent orchestration (Spec #5+) will live alongside.

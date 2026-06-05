@@ -59,16 +59,14 @@ function invalidateFor(qc: QueryClient, op: Operation, prefix?: string): void {
   }
   if (["CreateIssue", "UpdateIssueField", "ReorderIssue", "DeleteIssue"].includes(tag)) {
     if (prefix) void qc.invalidateQueries({ queryKey: qk.issues(prefix) });
-    if (tag === "UpdateIssueField") {
-      const id = (op.args as Partial<WithId>).id;
-      if (id) void qc.invalidateQueries({ queryKey: qk.issue(id) });
-    }
+    void qc.invalidateQueries({ queryKey: ["issues"] }); // refresh any open detail panel
   }
   if (["AttachLabel", "DetachLabel", "CreateLabel", "UpdateLabel", "DeleteLabel"].includes(tag)) {
     if (prefix) {
       void qc.invalidateQueries({ queryKey: qk.labels(prefix) });
       void qc.invalidateQueries({ queryKey: qk.issues(prefix) });
     }
+    void qc.invalidateQueries({ queryKey: ["issues"] }); // detail panel chips
   }
   if (tag === "ImportSnapshot") void qc.invalidateQueries();
 }
@@ -90,5 +88,41 @@ export function useApply(prefixForCache?: string) {
     onMutate: (op) => optimisticPatch(qc, op, prefixForCache),
     onError: (_err, _op, ctx) => ctx?.rollback?.(),
     onSettled: (_data, _err, op) => invalidateFor(qc, op, prefixForCache),
+  });
+}
+
+/**
+ * Undo the last applied operation via `commands.undo`. Because undo can touch
+ * any entity, it invalidates every query on settle rather than scoping.
+ */
+export function useUndo() {
+  const qc = useQueryClient();
+  return useMutation<unknown, unknown, void>({
+    mutationFn: async () => {
+      const r = await commands.undo();
+      if (r.status !== "ok") throw asApiError(r.error);
+      return r.data;
+    },
+    onSettled: () => {
+      void qc.invalidateQueries();
+    },
+  });
+}
+
+/**
+ * Redo the last undone operation via `commands.redo`. Invalidates every query
+ * on settle (see `useUndo`).
+ */
+export function useRedo() {
+  const qc = useQueryClient();
+  return useMutation<unknown, unknown, void>({
+    mutationFn: async () => {
+      const r = await commands.redo();
+      if (r.status !== "ok") throw asApiError(r.error);
+      return r.data;
+    },
+    onSettled: () => {
+      void qc.invalidateQueries();
+    },
   });
 }

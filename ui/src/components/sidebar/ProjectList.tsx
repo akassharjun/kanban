@@ -1,5 +1,5 @@
-import { NavLink } from "react-router";
 import { useProjects } from "@/data/queries";
+import { ProjectRow } from "./ProjectRow";
 
 export function ProjectList() {
   const { data, isLoading, isError } = useProjects();
@@ -10,20 +10,7 @@ export function ProjectList() {
   return (
     <nav className="flex flex-col gap-1">
       {data.map((p) => (
-        <NavLink
-          key={p.id}
-          to={`/p/${p.prefix}`}
-          className={({ isActive }) =>
-            `flex items-baseline gap-2 rounded-md px-3 py-1.5 text-sm ${
-              isActive
-                ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900"
-                : "text-neutral-700 hover:bg-black/5 dark:text-neutral-300 dark:hover:bg-white/10"
-            }`
-          }
-        >
-          <span className="font-mono text-xs opacity-70">{p.prefix}</span>
-          <span className="truncate">{p.name}</span>
-        </NavLink>
+        <ProjectRow key={p.id} project={p} />
       ))}
     </nav>
   );

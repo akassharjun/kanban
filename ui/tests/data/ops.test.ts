@@ -43,4 +43,45 @@ describe("ops builders", () => {
       args: { id: "u2", new_sort_key: "0x3ff8000000000000" },
     });
   });
+
+  it("createLabel wraps args", () => {
+    expect(ops.createLabel({ id: "l1", project_id: "p1", name: "bug", color: "#f00" })).toEqual({
+      op: "CreateLabel",
+      args: { id: "l1", project_id: "p1", name: "bug", color: "#f00" },
+    });
+  });
+
+  it("attachLabel uses issue_id + label_id", () => {
+    expect(ops.attachLabel({ issue_id: "u1", label_id: "l1" })).toEqual({
+      op: "AttachLabel",
+      args: { issue_id: "u1", label_id: "l1" },
+    });
+  });
+
+  it("detachLabel uses issue_id + label_id", () => {
+    expect(ops.detachLabel({ issue_id: "u1", label_id: "l1" })).toEqual({
+      op: "DetachLabel",
+      args: { issue_id: "u1", label_id: "l1" },
+    });
+  });
+
+  it("updateProject wraps a name patch", () => {
+    expect(ops.updateProject({ id: "p1", name: "Renamed" })).toEqual({
+      op: "UpdateProject",
+      args: { id: "p1", patch: { name: "Renamed" } },
+    });
+  });
+
+  it("updateLabel wraps a patch", () => {
+    expect(ops.updateLabel({ id: "l1", color: "#0f0" })).toEqual({
+      op: "UpdateLabel",
+      args: { id: "l1", patch: { color: "#0f0" } },
+    });
+  });
+
+  it("archiveProject / deleteProject / deleteLabel take just id", () => {
+    expect(ops.archiveProject({ id: "p1" })).toEqual({ op: "ArchiveProject", args: { id: "p1" } });
+    expect(ops.deleteProject({ id: "p1" })).toEqual({ op: "DeleteProject", args: { id: "p1" } });
+    expect(ops.deleteLabel({ id: "l1" })).toEqual({ op: "DeleteLabel", args: { id: "l1" } });
+  });
 });

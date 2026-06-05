@@ -5,16 +5,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // `vi.hoisted` so the mock factory (hoisted above module init) can reference it.
 const applyMock = vi.hoisted(() => vi.fn());
+const undoMock = vi.hoisted(() => vi.fn());
+const redoMock = vi.hoisted(() => vi.fn());
 vi.mock("@/data/bindings", () => ({
-  commands: { apply: applyMock, undo: vi.fn(), redo: vi.fn(), updateSettings: vi.fn() },
+  commands: { apply: applyMock, undo: undoMock, redo: redoMock, updateSettings: vi.fn() },
 }));
 
 beforeEach(() => {
   applyMock.mockReset();
   applyMock.mockResolvedValue({ status: "ok", data: { op_id: 42 } });
+  undoMock.mockReset();
+  undoMock.mockResolvedValue({ status: "ok", data: null });
+  redoMock.mockReset();
+  redoMock.mockResolvedValue({ status: "ok", data: null });
 });
 
-import { useApply } from "@/data/mutations";
+import { useApply, useUndo, useRedo } from "@/data/mutations";
 import { ops } from "@/data/ops";
 import { qk } from "@/data/queries";
 
@@ -41,6 +47,20 @@ describe("useApply optimistic dispatcher", () => {
     expect(cache?.map((i) => i.id)).toEqual(["u1", "u2"]); // rolled back
   });
 
+  it("invalidates the issues key-space on AttachLabel so the open panel refetches", async () => {
+    applyMock.mockResolvedValueOnce({ status: "ok", data: { op_id: 8 } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+
+    const { result } = renderHook(() => useApply("AUTH"), { wrapper: makeWrapper(client) });
+    await act(async () => {
+      result.current.mutate(ops.attachLabel({ issue_id: "u1", label_id: "l1" }));
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["issues"] });
+  });
+
   it("optimistically adds a created project to the cache on success", async () => {
     applyMock.mockResolvedValueOnce({ status: "ok", data: { op_id: 7 } });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -54,5 +74,48 @@ describe("useApply optimistic dispatcher", () => {
 
     const cache = client.getQueryData<Array<{ prefix: string }>>(qk.projects());
     expect(cache?.map((p) => p.prefix)).toContain("PAY");
+  });
+});
+
+describe("useUndo / useRedo", () => {
+  it("useUndo calls commands.undo and invalidates queries", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+
+    const { result } = renderHook(() => useUndo(), { wrapper: makeWrapper(client) });
+    await act(async () => {
+      result.current.mutate();
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(undoMock).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalled();
+  });
+
+  it("useRedo calls commands.redo and invalidates queries", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+
+    const { result } = renderHook(() => useRedo(), { wrapper: makeWrapper(client) });
+    await act(async () => {
+      result.current.mutate();
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(redoMock).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalled();
+  });
+
+  it("useUndo surfaces an error when the command fails", async () => {
+    undoMock.mockResolvedValueOnce({ status: "error", error: { kind: "Validation", message: "nothing to undo" } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const { result } = renderHook(() => useUndo(), { wrapper: makeWrapper(client) });
+    await act(async () => {
+      result.current.mutate();
+      await waitFor(() => expect(result.current.isError).toBe(true));
+    });
+
+    expect(result.current.error).toMatchObject({ kind: "Validation", message: "nothing to undo" });
   });
 });

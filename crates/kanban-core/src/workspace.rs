@@ -117,6 +117,18 @@ impl Workspace {
         crate::store::read::labels::for_project(&self.conn, project_id)
     }
 
+    /// List all labels attached to `issue_id` ordered by name.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the read fails.
+    pub fn query_labels_for_issue(
+        &self,
+        issue_id: uuid::Uuid,
+    ) -> crate::error::Result<Vec<crate::types::Label>> {
+        crate::store::read::labels::for_issue(&self.conn, issue_id)
+    }
+
     /// Look up an issue by id.
     ///
     /// # Errors

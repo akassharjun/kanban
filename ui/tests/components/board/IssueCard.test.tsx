@@ -19,6 +19,7 @@ const issue: IssueDto = {
   sort_key: 1,
   created_at: "",
   updated_at: "",
+  labels: null,
 };
 
 describe("IssueCard", () => {
