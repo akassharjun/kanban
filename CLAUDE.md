@@ -31,6 +31,19 @@ Local-first project management. v1 covers projects, issues, labels, default stat
 - **Inverse via ImportSnapshot.** `inverse_of_delete_*` returns `Operation::ImportSnapshot { snapshot, policy: Overwrite }` capturing the entity + cascaded children. This preserves status, seq, identifier, sort_key, attachments. Don't regress to `Create*` inverses.
 - **Lossless f64 in JSON payloads.** `Operation::ReorderIssue::new_sort_key` and `Issue::sort_key` use the `serde_f64::bits` helper. Don't switch to default serde f64.
 
+## Tauri layer (Spec #2 onward)
+
+The GUI is `crates/kanban-tauri` (Rust shell) + `ui/` (Vite + React 19 + Tailwind v4, pnpm). Design: `docs/superpowers/specs/2026-05-05-kanban-v2-spec-2-gui-shell-design.md`.
+
+- **All DB commands wrap the sync core in `tokio::task::spawn_blocking`**, cloning an `Arc<Mutex<Workspace>>` and locking *inside* the blocking closure — the guard never crosses `.await`. `AppState` holds `Arc<Mutex<Workspace>>`.
+- **`apply` is the single mutation command.** It takes the op as `serde_json::Value` (core's `Operation` is not a `specta::Type`), deserializes to `Operation`, and calls `Workspace::apply`. The frontend builds the `{op, args}` shape via `ui/src/data/ops.ts`. The 14 Operation variants remain the only path to issue/project/label/status writes.
+- **`workspace_settings`** (migration `0002`) stores app-level prefs (theme) via `Workspace::get_setting`/`set_setting` — a **documented exception** to the single-mutator invariant; settings have no undo semantics.
+- **DTOs, not core types, cross the bridge.** `kanban-tauri/src/dto.rs` defines specta `Type` DTOs (`ProjectDto`, `IssueDto`, …) with ids/dates/enums as strings; core types stay specta-free.
+- **`tauri-specta` generates `ui/src/data/bindings.ts`** (git-tracked) via the `export_bindings` test; CI fails on drift. `specta-typescript` is configured with `BigIntExportBehavior::Number` so `i64` fields become TS `number`.
+- **No live cross-process watcher.** The GUI refetches on window focus (`refetchOnWindowFocus`); a SQLite `update_hook` watcher is deferred to Spec #3.
+- **E2E (`tauri-driver`) is deferred to Spec #3** (no macOS WebDriver support); Spec #2 ships Vitest + RTL coverage. See `ui/e2e/README.md`.
+- **UI tooling on Apple Silicon:** if the default `node` is x86_64 (nvm), run ui scripts under a native arm64 node (`PATH="/opt/homebrew/bin:$PATH" npx pnpm@9.12.0 …`) or rollup/esbuild crash. See `DEVELOPMENT.md`.
+
 ## TDD discipline
 
 - Every `Operation` variant lands as a failing test first (apply on fresh in-memory DB, assert post-state, undo, assert pre-state restored). Then the applier code lands.
