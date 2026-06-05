@@ -127,6 +127,60 @@ impl Workspace {
         crate::store::read::issues::by_id(&self.conn, id)
     }
 
+    /// Look up a project by its unique `prefix`. Returns `Ok(None)` if absent.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the read fails.
+    pub fn query_project_by_prefix(
+        &self,
+        prefix: &str,
+    ) -> crate::error::Result<Option<crate::types::Project>> {
+        use rusqlite::OptionalExtension;
+        let id: Option<uuid::Uuid> = self
+            .conn
+            .query_row(
+                "SELECT id FROM projects WHERE prefix = ?1",
+                [prefix],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .map(|s| uuid::Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| crate::error::Error::InvalidSnapshot(format!("bad project uuid: {e}")))?;
+        match id {
+            Some(id) => Ok(Some(self.query_project_by_id(id)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Look up an issue by its unique `identifier` (e.g. `AUTH-12`). Returns `Ok(None)` if absent.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the read fails.
+    pub fn query_issue_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> crate::error::Result<Option<crate::types::Issue>> {
+        use rusqlite::OptionalExtension;
+        let id: Option<uuid::Uuid> = self
+            .conn
+            .query_row(
+                "SELECT id FROM issues WHERE identifier = ?1",
+                [identifier],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .map(|s| uuid::Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| crate::error::Error::InvalidSnapshot(format!("bad issue uuid: {e}")))?;
+        match id {
+            Some(id) => Ok(Some(self.query_issue_by_id(id)?)),
+            None => Ok(None),
+        }
+    }
+
     /// List issues matching `filter`, ordered as the filter directs.
     ///
     /// # Errors
