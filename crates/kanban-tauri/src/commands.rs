@@ -20,8 +20,7 @@ use crate::state::AppState;
 
 /// Resolve a project by its `prefix`, returning `None` if no project matches.
 fn project_by_prefix(ws: &Workspace, prefix: &str) -> Result<Option<Project>, ApiError> {
-    let projects = ws.query_projects()?;
-    Ok(projects.into_iter().find(|p| p.prefix == prefix))
+    Ok(ws.query_project_by_prefix(prefix)?)
 }
 
 /// List all projects.
