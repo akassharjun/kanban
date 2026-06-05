@@ -16,7 +16,7 @@ vi.mock("@/data/queries", () => ({
       description: "# body",
       status_id: "s1",
       priority: "medium",
-      due_date: null,
+      due_date: "2026-01-01",
     },
     isLoading: false,
     isError: false,
@@ -81,6 +81,18 @@ describe("IssuePanel", () => {
     const op = mutate.mock.calls.at(-1)?.[0] as { op: string; args: { change: unknown } };
     expect(op.op).toBe("UpdateIssueField");
     expect(op.args.change).toEqual({ field: "DueDate", value: "2026-12-31" });
+  });
+
+  it("clearing the due date dispatches a null value", () => {
+    mutate.mockReset();
+    render(<IssuePanel />, { wrapper });
+    fireEvent.change(screen.getByLabelText(/due date/i), {
+      target: { value: "" },
+    });
+    expect(mutate).toHaveBeenCalled();
+    const op = mutate.mock.calls.at(-1)?.[0] as { op: string; args: { change: unknown } };
+    expect(op.op).toBe("UpdateIssueField");
+    expect(op.args.change).toEqual({ field: "DueDate", value: null });
   });
 
   it("dispatches deleteIssue after confirming delete", async () => {

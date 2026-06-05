@@ -8,7 +8,8 @@
 //   - `ReorderIssue.new_sort_key` uses `serde_f64::bits` → a "0x"+16-hex string
 //     of the f64 big-endian bit pattern, NOT a plain JSON number.
 
-export type Priority = "none" | "low" | "medium" | "high" | "urgent";
+export const PRIORITIES = ["none", "low", "medium", "high", "urgent"] as const;
+export type Priority = (typeof PRIORITIES)[number];
 
 export type IssueFieldChange =
   | { field: "Title"; value: string }

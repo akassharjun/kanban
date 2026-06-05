@@ -2,12 +2,9 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useIssue, useStatuses } from "@/data/queries";
 import { useApply } from "@/data/mutations";
-import { ops, change } from "@/data/ops";
+import { ops, change, PRIORITIES, type Priority } from "@/data/ops";
 import { EditableField } from "./EditableField";
 import { EditableDescription } from "./EditableDescription";
-
-const PRIORITIES = ["none", "low", "medium", "high", "urgent"] as const;
-type Priority = (typeof PRIORITIES)[number];
 
 export function IssuePanel() {
   const { prefix = "", key = "" } = useParams();
