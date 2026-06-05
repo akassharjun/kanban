@@ -22,6 +22,10 @@ pub enum Operation {
     AttachLabel(AttachLabel),
     DetachLabel(DetachLabel),
 
+    CreateStatus(CreateStatus),
+    UpdateStatus(UpdateStatus),
+    DeleteStatus(DeleteStatus),
+
     ImportSnapshot(ImportSnapshot),
 }
 
@@ -142,6 +146,36 @@ pub struct AttachLabel {
 pub struct DetachLabel {
     pub issue_id: Uuid,
     pub label_id: Uuid,
+}
+
+// ----- Status ops -----
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateStatus {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+    pub category: crate::types::StatusCategory,
+    pub color: String,
+    pub position: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateStatus {
+    pub id: Uuid,
+    pub patch: StatusPatch,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct StatusPatch {
+    pub name: Option<String>,
+    pub category: Option<crate::types::StatusCategory>,
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeleteStatus {
+    pub id: Uuid,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

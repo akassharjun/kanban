@@ -7,6 +7,7 @@ pub(crate) mod issues;
 pub(crate) mod labels;
 pub(crate) mod projects;
 pub(crate) mod snapshot;
+pub(crate) mod statuses;
 
 impl Workspace {
     /// The single public mutator. Validates, executes, and records `op` in one transaction.
@@ -81,6 +82,9 @@ pub(crate) fn dispatch(
         Operation::DeleteLabel(args) => labels::delete(tx, args)?,
         Operation::AttachLabel(args) => labels::attach(tx, args)?,
         Operation::DetachLabel(args) => labels::detach(tx, args)?,
+        Operation::CreateStatus(args) => statuses::create(tx, args)?,
+        Operation::UpdateStatus(args) => statuses::update(tx, args)?,
+        Operation::DeleteStatus(args) => statuses::delete_plain(tx, args)?,
         Operation::ImportSnapshot(args) => snapshot::import(tx, args)?,
     }
     Ok(())
@@ -101,6 +105,9 @@ fn op_type_name(op: &Operation) -> &'static str {
         Operation::DeleteLabel(_) => "DeleteLabel",
         Operation::AttachLabel(_) => "AttachLabel",
         Operation::DetachLabel(_) => "DetachLabel",
+        Operation::CreateStatus(_) => "CreateStatus",
+        Operation::UpdateStatus(_) => "UpdateStatus",
+        Operation::DeleteStatus(_) => "DeleteStatus",
         Operation::ImportSnapshot(_) => "ImportSnapshot",
     }
 }
@@ -122,6 +129,9 @@ fn capture_inverse(tx: &rusqlite::Transaction<'_>, op: &Operation) -> Result<Ope
         Operation::UpdateLabel(args) => labels::inverse_of_update(tx, args),
         Operation::AttachLabel(args) => Ok(labels::inverse_of_attach(args)),
         Operation::DetachLabel(args) => Ok(labels::inverse_of_detach(args)),
+        Operation::CreateStatus(args) => Ok(statuses::inverse_of_create(args)),
+        Operation::UpdateStatus(args) => statuses::inverse_of_update(tx, args),
+        Operation::DeleteStatus(args) => statuses::inverse_of_delete(tx, args),
         Operation::ImportSnapshot(args) => snapshot::inverse_of_import(tx, args),
     }
 }
