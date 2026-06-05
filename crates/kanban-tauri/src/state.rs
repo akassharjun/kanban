@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use kanban_core::Workspace;
 
@@ -8,7 +8,7 @@ use kanban_core::Workspace;
 /// bound that Tauri's managed-state requires, and serialises DB access.
 pub struct AppState {
     #[allow(dead_code)] // consumed by command handlers added in later tasks
-    pub workspace: Mutex<Workspace>,
+    pub workspace: Arc<Mutex<Workspace>>,
 }
 
 impl AppState {
@@ -20,7 +20,7 @@ impl AppState {
     pub fn from_default() -> Result<Self, kanban_core::Error> {
         let workspace = Workspace::open_default()?;
         Ok(Self {
-            workspace: Mutex::new(workspace),
+            workspace: Arc::new(Mutex::new(workspace)),
         })
     }
 }

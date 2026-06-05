@@ -1,7 +1,4 @@
-mod error;
-mod state;
-
-use state::AppState;
+use kanban_tauri::state::AppState;
 
 // Startup `expect`s are intentional: a workspace that cannot open or a Tauri
 // event loop that fails to start are fatal, unrecoverable startup errors.
