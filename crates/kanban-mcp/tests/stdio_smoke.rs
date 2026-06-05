@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use kanban_core::Workspace;
 use kanban_core::operation::{CreateProject, Operation};
 use kanban_mcp::server::KanbanServer;
@@ -40,9 +40,17 @@ async fn lists_tools_and_calls_list_projects() {
         .call_tool(CallToolRequestParams::new("list_projects"))
         .await
         .unwrap();
-    let text = format!("{:?}", result.content);
-    assert!(text.contains("AUTH"), "got: {text}");
+    // The tool returns a JSON text block; parse it and assert on the structure
+    // so a field-name / nesting regression would fail the test.
+    let text = result.content[0]
+        .as_text()
+        .expect("first content block is text");
+    let parsed: serde_json::Value = serde_json::from_str(&text.text).unwrap();
+    assert_eq!(parsed[0]["prefix"], "AUTH", "got: {parsed}");
 
     client.cancel().await.unwrap();
-    let _ = server_handle.await;
+    server_handle
+        .await
+        .expect("server task panicked")
+        .expect("server task errored");
 }

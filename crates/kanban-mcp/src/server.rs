@@ -39,19 +39,19 @@ impl KanbanServer {
         }
     }
 
-    /// Run a sync closure against the workspace on a blocking thread; the mutex
-    /// guard never crosses `.await`. Core errors are mapped to MCP errors.
-    async fn blocking<T, F>(&self, f: F) -> Result<T, McpError>
+    /// Run a read-only sync closure against the workspace on a blocking thread.
+    /// The mutex guard never crosses `.await`. Core errors map to MCP errors.
+    async fn blocking_read<T, F>(&self, f: F) -> Result<T, McpError>
     where
         T: Send + 'static,
-        F: FnOnce(&mut Workspace) -> Result<T, kanban_core::Error> + Send + 'static,
+        F: FnOnce(&Workspace) -> Result<T, kanban_core::Error> + Send + 'static,
     {
         let ws = Arc::clone(&self.workspace);
         tokio::task::spawn_blocking(move || {
-            let mut guard = ws
+            let guard = ws
                 .lock()
                 .map_err(|_| kanban_core::Error::Conflict("workspace mutex poisoned".into()))?;
-            f(&mut guard)
+            f(&guard)
         })
         .await
         .map_err(|e| McpError::internal_error(format!("task join error: {e}"), None))?
@@ -70,7 +70,7 @@ pub(crate) fn json_content<T: serde::Serialize>(value: &T) -> Result<CallToolRes
 impl KanbanServer {
     #[tool(description = "List all projects (prefix, name, description).")]
     async fn list_projects(&self) -> Result<CallToolResult, McpError> {
-        let projects = self.blocking(|ws| ws.query_projects()).await?;
+        let projects = self.blocking_read(Workspace::query_projects).await?;
         let out: Vec<ProjectOut> = projects.into_iter().map(ProjectOut::from).collect();
         json_content(&out)
     }
