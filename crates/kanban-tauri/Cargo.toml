@@ -1,0 +1,33 @@
+[package]
+name = "kanban-tauri"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Tauri desktop GUI for kanban-core."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "kanban-tauri"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+kanban-core   = { path = "../kanban-core" }
+tauri         = { workspace = true }
+tauri-specta  = { workspace = true }
+specta        = { workspace = true }
+specta-typescript = { workspace = true }
+tauri-plugin-shell = { workspace = true }
+tokio         = { workspace = true }
+serde         = { workspace = true }
+serde_json    = { workspace = true }
+thiserror     = { workspace = true }
+anyhow        = { workspace = true }
+uuid          = { workspace = true }
+chrono        = { workspace = true }
