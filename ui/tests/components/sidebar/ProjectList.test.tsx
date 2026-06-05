@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import { ProjectList } from "@/components/sidebar/ProjectList";
 
+vi.mock("@/data/mutations", () => ({ useApply: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock("@/data/queries", () => ({
   useProjects: () => ({
     data: [
