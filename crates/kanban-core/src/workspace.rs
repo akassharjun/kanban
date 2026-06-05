@@ -177,6 +177,43 @@ impl Workspace {
         crate::store::read::log::for_issue(&self.conn, issue_id)
     }
 
+    /// Read a workspace setting by key (app-level preference, bypasses `Operation`/`apply`).
+    ///
+    /// Returns `Ok(Some(value))` if the key exists, or `Ok(None)` if it does not.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the read fails.
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        use rusqlite::OptionalExtension;
+        let value = self
+            .conn
+            .query_row(
+                "SELECT value FROM workspace_settings WHERE key = ?1",
+                [key],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        Ok(value)
+    }
+
+    /// Upsert a workspace setting (app-level preference, bypasses `Operation`/`apply`).
+    ///
+    /// Inserts the key/value pair if it does not exist, or updates the value and
+    /// `updated_at` timestamp if it does.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the write fails.
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO workspace_settings (key, value, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            (key, value, self.clock.now().to_rfc3339()),
+        )?;
+        Ok(())
+    }
+
     /// Doc-hidden accessor for integration tests in this crate's `tests/` folder.
     ///
     /// Stable for the duration of v1; do NOT rely on this from external crates.
@@ -292,7 +329,7 @@ mod tests {
             .conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 1);
+        assert_eq!(count, 2);
     }
 
     #[test]
