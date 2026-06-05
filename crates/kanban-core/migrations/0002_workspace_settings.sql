@@ -5,4 +5,4 @@ CREATE TABLE workspace_settings (
 ) STRICT;
 
 INSERT INTO workspace_settings (key, value, updated_at)
-  VALUES ('theme', 'system', datetime('now'));
+  VALUES ('theme', 'system', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));
