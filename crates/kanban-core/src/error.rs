@@ -44,6 +44,7 @@ pub enum EntityKind {
     Issue,
     Label,
     Status,
+    Member,
 }
 
 impl std::fmt::Display for EntityKind {
@@ -53,6 +54,7 @@ impl std::fmt::Display for EntityKind {
             EntityKind::Issue => f.write_str("Issue"),
             EntityKind::Label => f.write_str("Label"),
             EntityKind::Status => f.write_str("Status"),
+            EntityKind::Member => f.write_str("Member"),
         }
     }
 }

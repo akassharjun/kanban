@@ -39,11 +39,11 @@ pub(crate) fn list(conn: &Connection, filter: &crate::query::IssueFilter) -> Res
 }
 
 const ISSUE_SELECT: &str = "
-SELECT id,project_id,seq,identifier,title,description,status_id,priority,due_date,sort_key,created_at,updated_at
+SELECT id,project_id,seq,identifier,title,description,status_id,priority,due_date,sort_key,created_at,updated_at,assignee_id
 FROM issues WHERE id = ?1";
 
 pub(crate) const ISSUE_LIST_BASE: &str = "
-SELECT id,project_id,seq,identifier,title,description,status_id,priority,due_date,sort_key,created_at,updated_at
+SELECT id,project_id,seq,identifier,title,description,status_id,priority,due_date,sort_key,created_at,updated_at,assignee_id
 FROM issues";
 
 /// Same projection as [`ISSUE_LIST_BASE`] but with all columns qualified by
@@ -51,7 +51,7 @@ FROM issues";
 /// table also exposes `title`/`description`, making unqualified references
 /// ambiguous.
 pub(crate) const ISSUE_LIST_BASE_QUALIFIED: &str = "
-SELECT issues.id,issues.project_id,issues.seq,issues.identifier,issues.title,issues.description,issues.status_id,issues.priority,issues.due_date,issues.sort_key,issues.created_at,issues.updated_at
+SELECT issues.id,issues.project_id,issues.seq,issues.identifier,issues.title,issues.description,issues.status_id,issues.priority,issues.due_date,issues.sort_key,issues.created_at,issues.updated_at,issues.assignee_id
 FROM issues";
 
 pub(crate) fn row_to_issue(r: &rusqlite::Row<'_>) -> rusqlite::Result<Issue> {
@@ -62,6 +62,7 @@ pub(crate) fn row_to_issue(r: &rusqlite::Row<'_>) -> rusqlite::Result<Issue> {
     let due_s: Option<String> = r.get(8)?;
     let created_s: String = r.get(10)?;
     let updated_s: String = r.get(11)?;
+    let assignee_s: Option<String> = r.get(12)?;
     Ok(Issue {
         id: Uuid::from_str(&id).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
@@ -89,6 +90,17 @@ pub(crate) fn row_to_issue(r: &rusqlite::Row<'_>) -> rusqlite::Result<Issue> {
         due_date: due_s
             .map(|s| {
                 NaiveDate::parse_from_str(&s, "%Y-%m-%d").map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })
+            })
+            .transpose()?,
+        assignee_id: assignee_s
+            .map(|s| {
+                Uuid::from_str(&s).map_err(|e| {
                     rusqlite::Error::FromSqlConversionFailure(
                         0,
                         rusqlite::types::Type::Text,

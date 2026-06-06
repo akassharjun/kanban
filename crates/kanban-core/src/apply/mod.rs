@@ -5,6 +5,7 @@ use crate::workspace::Workspace;
 
 pub(crate) mod issues;
 pub(crate) mod labels;
+pub(crate) mod members;
 pub(crate) mod projects;
 pub(crate) mod snapshot;
 pub(crate) mod statuses;
@@ -86,6 +87,9 @@ pub(crate) fn dispatch(
         Operation::UpdateStatus(args) => statuses::update(tx, args)?,
         Operation::DeleteStatus(args) => statuses::delete(tx, args)?,
         Operation::ReorderStatus(args) => statuses::reorder(tx, args)?,
+        Operation::CreateMember(args) => members::create(tx, args, now)?,
+        Operation::UpdateMember(args) => members::update(tx, args)?,
+        Operation::DeleteMember(args) => members::delete(tx, args)?,
         Operation::ImportSnapshot(args) => snapshot::import(tx, args)?,
     }
     Ok(())
@@ -110,6 +114,9 @@ fn op_type_name(op: &Operation) -> &'static str {
         Operation::UpdateStatus(_) => "UpdateStatus",
         Operation::DeleteStatus(_) => "DeleteStatus",
         Operation::ReorderStatus(_) => "ReorderStatus",
+        Operation::CreateMember(_) => "CreateMember",
+        Operation::UpdateMember(_) => "UpdateMember",
+        Operation::DeleteMember(_) => "DeleteMember",
         Operation::ImportSnapshot(_) => "ImportSnapshot",
     }
 }
@@ -135,6 +142,9 @@ fn capture_inverse(tx: &rusqlite::Transaction<'_>, op: &Operation) -> Result<Ope
         Operation::UpdateStatus(args) => statuses::inverse_of_update(tx, args),
         Operation::DeleteStatus(args) => statuses::inverse_of_delete(tx, args),
         Operation::ReorderStatus(args) => statuses::inverse_of_reorder(tx, args),
+        Operation::CreateMember(args) => Ok(members::inverse_of_create(args)),
+        Operation::UpdateMember(args) => members::inverse_of_update(tx, args),
+        Operation::DeleteMember(args) => members::inverse_of_delete(tx, args),
         Operation::ImportSnapshot(args) => snapshot::inverse_of_import(tx, args),
     }
 }
@@ -228,9 +238,11 @@ fn export_snapshot_via_tx(
         out
     };
 
+    let mut members = Vec::new();
     let mut statuses = Vec::new();
     let mut labels = Vec::new();
     for p in &projects {
+        members.extend(crate::store::read::members::for_project_via_tx(tx, p.id)?);
         statuses.extend(crate::store::read::statuses::for_project_via_tx(tx, p.id)?);
         labels.extend(crate::store::read::labels::for_project_via_tx(tx, p.id)?);
     }
@@ -269,6 +281,7 @@ fn export_snapshot_via_tx(
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         exported_at: chrono::Utc::now(),
         projects,
+        members,
         statuses,
         issues,
         labels,

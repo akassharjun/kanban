@@ -29,7 +29,7 @@ fn export_snapshot_contains_all_entities() {
     }))
     .unwrap();
     let snap = ws.export_snapshot().unwrap();
-    assert_eq!(snap.schema_version, 1);
+    assert_eq!(snap.schema_version, kanban_core::SNAPSHOT_SCHEMA_VERSION);
     assert_eq!(snap.projects.len(), 1);
     assert_eq!(snap.statuses.len(), 7);
     assert_eq!(snap.issues.len(), 1);
