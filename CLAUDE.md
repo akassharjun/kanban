@@ -47,6 +47,8 @@ The GUI is `crates/kanban-tauri` (Rust shell) + `ui/` (Vite + React 19 + Tailwin
 
 - **Custom statuses (Spec #5).** Four undoable core ops — `CreateStatus`, `UpdateStatus` (via `StatusPatch`), `DeleteStatus`, `ReorderStatus` — mirroring the label ops (`apply/statuses.rs` + `store/{write,read}/statuses.rs` + `apply/mod.rs` arms; no migration, no DTO change). **`DeleteStatus` is guarded:** it refuses (`Error::Conflict`) if the status still has issues or is the project's last column (block-until-empty). `ReorderStatus` re-packs the project's columns to dense `0..n` positions; its undo inverse is an `ImportSnapshot` of the project's prior status ordering (delete's inverse snapshots the single row). Exposed in the GUI (board column add/rename/recolor/reorder/delete) and the CLI (`kanban status create/update/delete/reorder`); the generic Tauri `apply` and the MCP server need no changes.
 
+- **Members & assignees (Spec #6).** Migration `0003_members.sql` adds a per-project `members` table + a nullable `issues.assignee_id` (`REFERENCES members(id) ON DELETE SET NULL`). Ops `CreateMember`/`UpdateMember`/`DeleteMember` mirror the label ops; **assignment reuses `UpdateIssueField` via `IssueFieldChange::Assignee(Option<Uuid>)`** (validated: the member must be in the issue's project). `WorkspaceSnapshot` gained `members` and bumped to **schema v2**; `DeleteMember`'s undo inverse is an `ImportSnapshot` capturing the member + its assigned issues **and their `issue_labels`** (the Overwrite re-import tears down + restores those rows). `Issue` gained `assignee_id` — it threads through `row_to_issue`, every snapshot issue read/write, and `IssueDto`. Exposed in the GUI (assignee picker + member roster in the detail panel) and the CLI (`kanban member …`, `kanban issue assign`). MCP member tools are deferred to Spec #7.
+
 ## MCP layer (Spec #3)
 
 The MCP server is `crates/kanban-mcp` — a stdio server (on `rmcp`) exposing `kanban-core` to AI assistants (Claude Desktop/Code). Design: `docs/superpowers/specs/2026-06-05-kanban-v2-spec-3-mcp-server-design.md`.
@@ -97,5 +99,6 @@ These don't block v1 but should be addressed before broader release:
 - `docs/superpowers/specs/2026-06-05-kanban-v2-spec-3-mcp-server-design.md` — Spec #3 (MCP server).
 - `docs/superpowers/specs/2026-06-06-kanban-v2-spec-4-gui-product-completeness-design.md` — Spec #4 (GUI product completeness).
 - `docs/superpowers/specs/2026-06-06-kanban-v2-spec-5-custom-statuses-design.md` — Spec #5 (custom statuses).
+- `docs/superpowers/specs/2026-06-06-kanban-v2-spec-6-members-assignees-design.md` — Spec #6 (members & assignees).
 
-Each spec has a matching plan in `docs/superpowers/plans/`. Members/assignee (Spec #6) and AI-agent orchestration will live alongside.
+Each spec has a matching plan in `docs/superpowers/plans/`. AI-agent orchestration, MCP member tools, and other follow-ups (Spec #7+) will live alongside.

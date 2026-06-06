@@ -21,9 +21,9 @@ By default the workspace lives at `~/.kanban/data.db`. Override with `KANBAN_DB=
 A macOS desktop GUI (Tauri + React) ships alongside the CLI, built on the same
 `kanban-core` library: a drag-and-drop kanban board with editable columns
 (add / rename / recolor / reorder / delete), a markdown issue detail panel
-with priority / due-date / label editing and delete, a project sidebar with
-rename / archive / delete, ⌘Z / ⌘⇧Z undo-redo, and light/dark/system
-theming.
+with priority / due-date / label / assignee editing and delete, a per-project
+member roster, a project sidebar with rename / archive / delete, ⌘Z / ⌘⇧Z
+undo-redo, and light/dark/system theming.
 
 Download the latest macOS DMG from
 [GitHub Releases](https://github.com/akassharjun/kanban/releases). The first
