@@ -469,7 +469,7 @@ pub(crate) fn export_member_subtree(
     tx: &Transaction<'_>,
     member_id: uuid::Uuid,
 ) -> Result<crate::snapshot::WorkspaceSnapshot> {
-    use crate::snapshot::{SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
+    use crate::snapshot::{IssueLabelLink, SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
 
     let member = crate::store::read::members::by_id_via_tx(tx, member_id)?;
 
@@ -489,6 +489,26 @@ pub(crate) fn export_member_subtree(
         }
     }
 
+    // Capture the assigned issues' label attachments too: undoing the delete
+    // re-imports those issues under Overwrite, which deletes+reinserts each issue
+    // row and cascades away its `issue_labels` — so they must be restored here.
+    let mut issue_labels = Vec::new();
+    {
+        let mut stmt = tx.prepare("SELECT label_id FROM issue_labels WHERE issue_id = ?1")?;
+        for issue in &issues {
+            let rows = stmt.query_map(params![issue.id.to_string()], |r| r.get::<_, String>(0))?;
+            for r in rows {
+                let label_id = uuid::Uuid::parse_str(&r?).map_err(|e| {
+                    Error::InvalidSnapshot(format!("issue_labels.label_id is not a uuid: {e}"))
+                })?;
+                issue_labels.push(IssueLabelLink {
+                    issue_id: issue.id,
+                    label_id,
+                });
+            }
+        }
+    }
+
     Ok(WorkspaceSnapshot {
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         exported_at: chrono::Utc::now(),
@@ -497,6 +517,6 @@ pub(crate) fn export_member_subtree(
         statuses: Vec::new(),
         labels: Vec::new(),
         issues,
-        issue_labels: Vec::new(),
+        issue_labels,
     })
 }
