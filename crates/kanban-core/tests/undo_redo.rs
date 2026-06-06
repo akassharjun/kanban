@@ -97,3 +97,68 @@ fn undo_persists_across_workspace_open() {
         assert_eq!(p.prefix, "PER");
     }
 }
+
+#[test]
+fn forward_op_after_undoing_an_activity_emitting_op_succeeds() {
+    // Regression: a new forward op truncates the redo branch by deleting the
+    // undone `operation_log` rows. Ops like `UpdateIssueField` also write an
+    // `activity_log` row (FK `op_id -> operation_log`, NO ACTION). Those
+    // children must be removed before their parent rows, or the truncation
+    // fails with "FOREIGN KEY constraint failed". `CreateProject` emits no
+    // activity row, which is why the existing truncation test missed this.
+    use kanban_core::operation::{CreateIssue, IssueFieldChange, UpdateIssueField};
+    use kanban_core::types::Priority;
+
+    let mut ws = Workspace::open_in_memory().unwrap();
+    let pid = new_id();
+    ws.apply(Operation::CreateProject(CreateProject {
+        id: pid,
+        name: "P".into(),
+        prefix: "PRJ".into(),
+        description: None,
+        icon: None,
+    }))
+    .unwrap();
+    let status_id = ws.query_statuses_for_project(pid).unwrap()[0].id;
+
+    let iid = new_id();
+    ws.apply(Operation::CreateIssue(CreateIssue {
+        id: iid,
+        project_id: pid,
+        title: "v1".into(),
+        description: None,
+        status_id,
+        priority: Priority::Medium,
+        due_date: None,
+        label_ids: vec![],
+    }))
+    .unwrap();
+
+    // An UpdateIssueField writes an activity_log row linked to its op_id.
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: iid,
+        change: IssueFieldChange::Title("v2".into()),
+    }))
+    .unwrap();
+
+    // Undo marks that op as a redo-branch entry; its activity row remains.
+    ws.undo().unwrap();
+
+    // A new forward op must truncate the redo branch without an FK error.
+    let iid2 = new_id();
+    ws.apply(Operation::CreateIssue(CreateIssue {
+        id: iid2,
+        project_id: pid,
+        title: "another".into(),
+        description: None,
+        status_id,
+        priority: Priority::Medium,
+        due_date: None,
+        label_ids: vec![],
+    }))
+    .unwrap();
+
+    // The new issue exists and the redo branch is gone.
+    assert!(ws.query_issue_by_id(iid2).is_ok());
+    assert!(ws.redo().is_err());
+}

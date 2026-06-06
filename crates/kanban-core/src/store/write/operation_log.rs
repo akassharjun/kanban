@@ -63,6 +63,15 @@ pub(crate) fn set_op_undone(tx: &Transaction<'_>, op_id: i64, undone: bool) -> R
 // Used by Tasks 10+ (applier). Allow dead_code until wired up.
 #[allow(dead_code)]
 pub(crate) fn truncate_redo_branch(tx: &Transaction<'_>) -> Result<()> {
+    // `activity_log.op_id` references `operation_log(id)` with NO ACTION, so the
+    // dependent activity rows for the discarded branch must be removed before
+    // their operation rows — otherwise the parent delete trips the FK. A redo
+    // branch can never be redone, so its forward-change activity entries go too.
+    tx.execute(
+        "DELETE FROM activity_log WHERE op_id IN \
+         (SELECT id FROM operation_log WHERE undone = 1)",
+        [],
+    )?;
     tx.execute("DELETE FROM operation_log WHERE undone = 1", [])?;
     Ok(())
 }
@@ -153,5 +162,28 @@ mod tests {
             .unwrap();
         assert_eq!(live_exists, 1);
         assert_eq!(dead_exists, 0);
+    }
+
+    #[test]
+    fn truncate_redo_branch_removes_dependent_activity_rows() {
+        // activity_log.op_id -> operation_log is NO ACTION, so truncation must
+        // delete the branch's activity rows first or the parent delete trips
+        // the FK (foreign_keys is ON for in-memory connections).
+        let mut c = fresh_tx_owner();
+        let now = Utc::now();
+        let tx = c.transaction().unwrap();
+        let dead = insert_operation(&tx, "D", "{}", "{}", now).unwrap();
+        insert_activity(&tx, dead, None, "title", Some("a"), Some("b"), now).unwrap();
+        set_op_undone(&tx, dead, true).unwrap();
+        truncate_redo_branch(&tx).unwrap();
+        tx.commit().unwrap();
+        let activities: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM activity_log WHERE op_id = ?1",
+                params![dead],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(activities, 0);
     }
 }
