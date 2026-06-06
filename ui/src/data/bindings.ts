@@ -105,6 +105,22 @@ async listLabels(project: string) : Promise<Result<LabelDto[], ApiError>> {
 }
 },
 /**
+ * Tauri command: list the members of the project identified by `project` (its prefix).
+ * 
+ * # Errors
+ * 
+ * Returns an error if the workspace mutex is poisoned, the blocking task fails
+ * to join, or the underlying query fails.
+ */
+async listMembers(project: string) : Promise<Result<MemberDto[], ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_members", { project }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Tauri command: read the GUI settings.
  * 
  * # Errors
@@ -213,9 +229,10 @@ export type ApiError =
  * Result of applying an operation: the new `operation_log` row id.
  */
 export type ApplyResult = { op_id: number }
-export type IssueDto = { id: string; project_id: string; seq: number; identifier: string; title: string; description: string | null; status_id: string; priority: string; due_date: string | null; sort_key: number; created_at: string; updated_at: string; labels: LabelDto[] | null }
+export type IssueDto = { id: string; project_id: string; seq: number; identifier: string; title: string; description: string | null; status_id: string; priority: string; due_date: string | null; assignee_id: string | null; sort_key: number; created_at: string; updated_at: string; labels: LabelDto[] | null }
 export type JsonValue = null | boolean | number | string | JsonValue[] | Partial<{ [key in string]: JsonValue }>
 export type LabelDto = { id: string; project_id: string; name: string; color: string }
+export type MemberDto = { id: string; project_id: string; name: string }
 export type ProjectDto = { id: string; name: string; prefix: string; description: string | null; icon: string | null; status: string; created_at: string; updated_at: string }
 /**
  * App-level settings surfaced to the GUI.

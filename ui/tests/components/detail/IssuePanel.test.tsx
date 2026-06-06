@@ -18,6 +18,7 @@ vi.mock("@/data/queries", () => ({
       status_id: "s1",
       priority: "medium",
       due_date: "2026-01-01",
+      assignee_id: "m1",
       labels: [{ id: "l1", project_id: "p1", name: "bug", color: "#f00" }],
     },
     isLoading: false,
@@ -30,6 +31,12 @@ vi.mock("@/data/queries", () => ({
     ],
   }),
   useLabels: () => ({ data: [{ id: "l1", project_id: "p1", name: "bug", color: "#f00" }] }),
+  useMembers: () => ({
+    data: [
+      { id: "m1", project_id: "p1", name: "Ada" },
+      { id: "m2", project_id: "p1", name: "Grace" },
+    ],
+  }),
 }));
 vi.mock("@tauri-apps/plugin-shell", () => ({ open: vi.fn() }));
 
@@ -107,6 +114,11 @@ describe("IssuePanel", () => {
     const op = mutate.mock.calls.at(-1)?.[0] as { op: string; args: Record<string, unknown> };
     expect(op.op).toBe("DetachLabel");
     expect(op.args).toEqual({ issue_id: "u1", label_id: "l1" });
+  });
+
+  it("renders the assignee control", () => {
+    render(<IssuePanel />, { wrapper });
+    expect(screen.getByLabelText(/assignee/i)).toBeInTheDocument();
   });
 
   it("dispatches deleteIssue after confirming delete", async () => {

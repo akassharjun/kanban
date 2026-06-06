@@ -26,7 +26,8 @@ export type IssueFieldChange =
   | { field: "Description"; value: string | null }
   | { field: "Status"; value: string } // status_id (uuid)
   | { field: "Priority"; value: Priority }
-  | { field: "DueDate"; value: string | null }; // "YYYY-MM-DD" or null
+  | { field: "DueDate"; value: string | null } // "YYYY-MM-DD" or null
+  | { field: "Assignee"; value: string | null }; // member_id (uuid) or null
 
 export interface Operation {
   op: string;
@@ -150,6 +151,19 @@ export const ops = {
   archiveProject: (args: { id: string }): Operation => ({ op: "ArchiveProject", args }),
 
   deleteProject: (args: { id: string }): Operation => ({ op: "DeleteProject", args }),
+
+  createMember: (args: { id: string; project_id: string; name: string }): Operation => ({
+    op: "CreateMember",
+    args,
+  }),
+
+  updateMember: (args: { id: string; name?: string }): Operation => {
+    const patch: Record<string, unknown> = {};
+    if (args.name !== undefined) patch.name = args.name;
+    return { op: "UpdateMember", args: { id: args.id, patch } };
+  },
+
+  deleteMember: (args: { id: string }): Operation => ({ op: "DeleteMember", args }),
 } as const;
 
 export const change = {
@@ -158,4 +172,5 @@ export const change = {
   status: (v: string): IssueFieldChange => ({ field: "Status", value: v }),
   priority: (v: Priority): IssueFieldChange => ({ field: "Priority", value: v }),
   dueDate: (v: string | null): IssueFieldChange => ({ field: "DueDate", value: v }),
+  assignee: (v: string | null): IssueFieldChange => ({ field: "Assignee", value: v }),
 } as const;

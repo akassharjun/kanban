@@ -43,6 +43,7 @@ fn run(args: Cli) -> kanban_core::Result<()> {
         Cmd::Issue(c) => cmd::issue::run(c, &mut ws, &out),
         Cmd::Label(c) => cmd::label::run(c, &mut ws, &out),
         Cmd::Status(c) => cmd::status::run(c, &mut ws, &out),
+        Cmd::Member(c) => cmd::member::run(c, &mut ws, &out),
         Cmd::Search(c) => cmd::search::run(c, &ws, &out),
         Cmd::Export(c) => cmd::export::run(c, &ws, &out),
         Cmd::Import(c) => cmd::import::run(c, &mut ws, &out),

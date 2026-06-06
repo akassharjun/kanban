@@ -20,6 +20,6 @@ pub use operation::{Operation, OperationOutcome};
 pub use snapshot::{IssueLabelLink, SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
 pub use time::{Clock, FixedClock, SystemClock, system_clock};
 pub use types::{
-    ActivityEntry, Issue, Label, Priority, Project, ProjectStatus, Status, StatusCategory,
+    ActivityEntry, Issue, Label, Member, Priority, Project, ProjectStatus, Status, StatusCategory,
 };
 pub use workspace::{Workspace, WorkspacePath};

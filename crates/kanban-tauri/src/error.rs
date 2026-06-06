@@ -31,6 +31,7 @@ impl From<kanban_core::Error> for ApiError {
                     EntityKind::Issue => "issue",
                     EntityKind::Label => "label",
                     EntityKind::Status => "status",
+                    EntityKind::Member => "member",
                 }
                 .to_string(),
                 key: id,

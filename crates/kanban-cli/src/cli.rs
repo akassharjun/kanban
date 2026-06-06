@@ -43,6 +43,8 @@ pub enum Cmd {
     Label(crate::cmd::label::LabelCmd),
     /// Manage statuses.
     Status(crate::cmd::status::StatusCmd),
+    /// Manage project members.
+    Member(crate::cmd::member::MemberCmd),
     /// Full-text search across issues.
     Search(crate::cmd::search::SearchArgs),
     /// Export the workspace as a JSON snapshot.

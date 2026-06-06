@@ -14,6 +14,10 @@ pub(crate) fn import(tx: &Transaction<'_>, args: &ImportSnapshot) -> Result<()> 
     for p in &args.snapshot.projects {
         upsert_project(tx, p, args.policy)?;
     }
+    // Members must exist before issues that reference them via assignee_id.
+    for m in &args.snapshot.members {
+        upsert_member(tx, m, args.policy)?;
+    }
     for s in &args.snapshot.statuses {
         upsert_status(tx, s, args.policy)?;
     }
@@ -160,6 +164,42 @@ fn upsert_label(
     Ok(())
 }
 
+fn upsert_member(
+    tx: &Transaction<'_>,
+    m: &crate::types::Member,
+    policy: ConflictPolicy,
+) -> Result<()> {
+    let id = m.id.to_string();
+    let pid = m.project_id.to_string();
+    // A member row collides on either its primary key OR the (project_id, name)
+    // unique constraint. Both have to be considered before the policy gate.
+    let id_clash = exists(tx, "members", &id)?;
+    let name_clash: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM members WHERE project_id = ?1 AND name = ?2",
+        params![pid, m.name],
+        |r| r.get(0),
+    )?;
+    if id_clash || name_clash > 0 {
+        if handle_conflict(policy, crate::EntityKind::Member, &id)? {
+            return Ok(());
+        }
+        if id_clash {
+            tx.execute("DELETE FROM members WHERE id = ?1", params![id])?;
+        }
+        if name_clash > 0 {
+            tx.execute(
+                "DELETE FROM members WHERE project_id = ?1 AND name = ?2",
+                params![pid, m.name],
+            )?;
+        }
+    }
+    tx.execute(
+        "INSERT INTO members(id,project_id,name,created_at) VALUES (?1,?2,?3,?4)",
+        params![id, pid, m.name, m.created_at.to_rfc3339()],
+    )?;
+    Ok(())
+}
+
 fn upsert_issue(
     tx: &Transaction<'_>,
     i: &crate::types::Issue,
@@ -174,8 +214,8 @@ fn upsert_issue(
     }
     tx.execute(
         "INSERT INTO issues(id,project_id,seq,identifier,title,description,status_id,priority,
-                            due_date,sort_key,created_at,updated_at)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                            due_date,sort_key,created_at,updated_at,assignee_id)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
         params![
             id,
             i.project_id.to_string(),
@@ -189,6 +229,7 @@ fn upsert_issue(
             i.sort_key,
             i.created_at.to_rfc3339(),
             i.updated_at.to_rfc3339(),
+            i.assignee_id.map(|a| a.to_string()),
         ],
     )?;
     Ok(())
@@ -228,6 +269,7 @@ pub(crate) fn export_project_subtree_via_tx(
     use crate::snapshot::{IssueLabelLink, SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
 
     let project = crate::store::read::projects::by_id_via_tx(tx, project_id)?;
+    let members = crate::store::read::members::for_project_via_tx(tx, project_id)?;
     let statuses = crate::store::read::statuses::for_project_via_tx(tx, project_id)?;
     let labels = crate::store::read::labels::for_project_via_tx(tx, project_id)?;
 
@@ -235,7 +277,7 @@ pub(crate) fn export_project_subtree_via_tx(
     {
         let mut stmt = tx.prepare(
             "SELECT id,project_id,seq,identifier,title,description,status_id,priority,
-                    due_date,sort_key,created_at,updated_at
+                    due_date,sort_key,created_at,updated_at,assignee_id
              FROM issues WHERE project_id = ?1",
         )?;
         let rows = stmt.query_map(
@@ -276,6 +318,7 @@ pub(crate) fn export_project_subtree_via_tx(
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         exported_at: chrono::Utc::now(),
         projects: vec![project],
+        members,
         statuses,
         labels,
         issues,
@@ -320,6 +363,7 @@ pub(crate) fn export_issue_subtree_via_tx(
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         exported_at: chrono::Utc::now(),
         projects: Vec::new(),
+        members: Vec::new(),
         statuses: Vec::new(),
         labels: Vec::new(),
         issues: vec![issue],
@@ -342,6 +386,7 @@ pub(crate) fn export_status_row(
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         exported_at: chrono::Utc::now(),
         projects: Vec::new(),
+        members: Vec::new(),
         statuses: vec![status],
         labels: Vec::new(),
         issues: Vec::new(),
@@ -363,6 +408,7 @@ pub(crate) fn export_project_statuses(
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         exported_at: chrono::Utc::now(),
         projects: Vec::new(),
+        members: Vec::new(),
         statuses,
         labels: Vec::new(),
         issues: Vec::new(),
@@ -407,9 +453,70 @@ pub(crate) fn export_label_subtree_via_tx(
         schema_version: SNAPSHOT_SCHEMA_VERSION,
         exported_at: chrono::Utc::now(),
         projects: Vec::new(),
+        members: Vec::new(),
         statuses: Vec::new(),
         labels: vec![label],
         issues: Vec::new(),
+        issue_labels,
+    })
+}
+
+/// Capture the member row + every issue in the member's project whose
+/// `assignee_id` references it. Used to build the inverse of `DeleteMember` so
+/// undo restores the member AND re-applies the assignments that the
+/// `ON DELETE SET NULL` foreign key cleared.
+pub(crate) fn export_member_subtree(
+    tx: &Transaction<'_>,
+    member_id: uuid::Uuid,
+) -> Result<crate::snapshot::WorkspaceSnapshot> {
+    use crate::snapshot::{IssueLabelLink, SNAPSHOT_SCHEMA_VERSION, WorkspaceSnapshot};
+
+    let member = crate::store::read::members::by_id_via_tx(tx, member_id)?;
+
+    let mut issues = Vec::new();
+    {
+        let mut stmt = tx.prepare(
+            "SELECT id,project_id,seq,identifier,title,description,status_id,priority,
+                    due_date,sort_key,created_at,updated_at,assignee_id
+             FROM issues WHERE assignee_id = ?1",
+        )?;
+        let rows = stmt.query_map(
+            params![member_id.to_string()],
+            crate::store::read::issues::row_to_issue,
+        )?;
+        for r in rows {
+            issues.push(r?);
+        }
+    }
+
+    // Capture the assigned issues' label attachments too: undoing the delete
+    // re-imports those issues under Overwrite, which deletes+reinserts each issue
+    // row and cascades away its `issue_labels` — so they must be restored here.
+    let mut issue_labels = Vec::new();
+    {
+        let mut stmt = tx.prepare("SELECT label_id FROM issue_labels WHERE issue_id = ?1")?;
+        for issue in &issues {
+            let rows = stmt.query_map(params![issue.id.to_string()], |r| r.get::<_, String>(0))?;
+            for r in rows {
+                let label_id = uuid::Uuid::parse_str(&r?).map_err(|e| {
+                    Error::InvalidSnapshot(format!("issue_labels.label_id is not a uuid: {e}"))
+                })?;
+                issue_labels.push(IssueLabelLink {
+                    issue_id: issue.id,
+                    label_id,
+                });
+            }
+        }
+    }
+
+    Ok(WorkspaceSnapshot {
+        schema_version: SNAPSHOT_SCHEMA_VERSION,
+        exported_at: chrono::Utc::now(),
+        projects: Vec::new(),
+        members: vec![member],
+        statuses: Vec::new(),
+        labels: Vec::new(),
+        issues,
         issue_labels,
     })
 }

@@ -1,0 +1,365 @@
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::panic)]
+
+use kanban_core::operation::{
+    AttachLabel, ConflictPolicy, CreateIssue, CreateLabel, CreateMember, CreateProject,
+    DeleteMember, ImportSnapshot, IssueFieldChange, MemberPatch, Operation, UpdateIssueField,
+    UpdateMember,
+};
+use kanban_core::types::Priority;
+use kanban_core::{Workspace, new_id};
+
+fn make_issue(ws: &mut Workspace, pid: uuid::Uuid) -> uuid::Uuid {
+    let id = new_id();
+    let status_id = ws.query_statuses_for_project(pid).unwrap()[0].id;
+    ws.apply(Operation::CreateIssue(CreateIssue {
+        id,
+        project_id: pid,
+        title: "task".into(),
+        description: None,
+        status_id,
+        priority: Priority::Medium,
+        due_date: None,
+        label_ids: vec![],
+    }))
+    .unwrap();
+    id
+}
+
+fn assignee_of(ws: &Workspace, id: uuid::Uuid) -> Option<uuid::Uuid> {
+    ws.query_issue_by_id(id).unwrap().assignee_id
+}
+
+fn fresh_with_project() -> (Workspace, uuid::Uuid) {
+    let mut ws = Workspace::open_in_memory().unwrap();
+    let pid = new_id();
+    ws.apply(Operation::CreateProject(CreateProject {
+        id: pid,
+        name: "M".into(),
+        prefix: "MBR".into(),
+        description: None,
+        icon: None,
+    }))
+    .unwrap();
+    (ws, pid)
+}
+
+#[test]
+fn create_member_inserts() {
+    let (mut ws, pid) = fresh_with_project();
+    let id = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id,
+        project_id: pid,
+        name: "Ada".into(),
+    }))
+    .unwrap();
+    let members = ws.query_members_for_project(pid).unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].name, "Ada");
+    assert_eq!(members[0].id, id);
+    assert_eq!(members[0].project_id, pid);
+}
+
+#[test]
+fn create_member_rejects_empty_name() {
+    let (mut ws, pid) = fresh_with_project();
+    let err = ws
+        .apply(Operation::CreateMember(CreateMember {
+            id: new_id(),
+            project_id: pid,
+            name: String::new(),
+        }))
+        .unwrap_err();
+    assert!(err.to_string().contains("name"), "{err}");
+}
+
+#[test]
+fn create_member_rejects_duplicate_name_per_project() {
+    let (mut ws, pid) = fresh_with_project();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id: new_id(),
+        project_id: pid,
+        name: "dup".into(),
+    }))
+    .unwrap();
+    let err = ws
+        .apply(Operation::CreateMember(CreateMember {
+            id: new_id(),
+            project_id: pid,
+            name: "dup".into(),
+        }))
+        .unwrap_err();
+    assert!(err.to_string().to_lowercase().contains("conflict"), "{err}");
+}
+
+#[test]
+fn update_member_renames() {
+    let (mut ws, pid) = fresh_with_project();
+    let id = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id,
+        project_id: pid,
+        name: "old".into(),
+    }))
+    .unwrap();
+    ws.apply(Operation::UpdateMember(UpdateMember {
+        id,
+        patch: MemberPatch {
+            name: Some("new".into()),
+        },
+    }))
+    .unwrap();
+    let members = ws.query_members_for_project(pid).unwrap();
+    assert_eq!(members[0].name, "new");
+}
+
+#[test]
+fn create_member_undo_removes_it() {
+    let (mut ws, pid) = fresh_with_project();
+    let id = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id,
+        project_id: pid,
+        name: "temp".into(),
+    }))
+    .unwrap();
+    assert_eq!(ws.query_members_for_project(pid).unwrap().len(), 1);
+    ws.undo().unwrap();
+    assert!(ws.query_members_for_project(pid).unwrap().is_empty());
+}
+
+#[test]
+fn update_member_undo_restores_name() {
+    let (mut ws, pid) = fresh_with_project();
+    let id = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id,
+        project_id: pid,
+        name: "original".into(),
+    }))
+    .unwrap();
+    ws.apply(Operation::UpdateMember(UpdateMember {
+        id,
+        patch: MemberPatch {
+            name: Some("changed".into()),
+        },
+    }))
+    .unwrap();
+    ws.undo().unwrap();
+    let members = ws.query_members_for_project(pid).unwrap();
+    assert_eq!(members[0].name, "original");
+}
+
+#[test]
+fn delete_member_undo_restores_member() {
+    let (mut ws, pid) = fresh_with_project();
+    let id = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id,
+        project_id: pid,
+        name: "kept".into(),
+    }))
+    .unwrap();
+    ws.apply(Operation::DeleteMember(DeleteMember { id }))
+        .unwrap();
+    assert!(ws.query_members_for_project(pid).unwrap().is_empty());
+    ws.undo().unwrap();
+    let members = ws.query_members_for_project(pid).unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].id, id);
+    assert_eq!(members[0].name, "kept");
+}
+
+#[test]
+fn snapshot_round_trips_member() {
+    let (mut ws, pid) = fresh_with_project();
+    let id = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id,
+        project_id: pid,
+        name: "Grace".into(),
+    }))
+    .unwrap();
+
+    let snap = ws.export_snapshot().unwrap();
+    assert!(snap.members.iter().any(|m| m.id == id && m.name == "Grace"));
+
+    // Import into a fresh workspace; the member must come across.
+    let mut fresh = Workspace::open_in_memory().unwrap();
+    fresh
+        .apply(Operation::ImportSnapshot(ImportSnapshot {
+            snapshot: snap,
+            policy: ConflictPolicy::Overwrite,
+        }))
+        .unwrap();
+    let members = fresh.query_members_for_project(pid).unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].name, "Grace");
+}
+
+#[test]
+fn assign_and_unassign_issue() {
+    let (mut ws, pid) = fresh_with_project();
+    let member = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id: member,
+        project_id: pid,
+        name: "Ada".into(),
+    }))
+    .unwrap();
+    let issue = make_issue(&mut ws, pid);
+
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: issue,
+        change: IssueFieldChange::Assignee(Some(member)),
+    }))
+    .unwrap();
+    assert_eq!(assignee_of(&ws, issue), Some(member));
+
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: issue,
+        change: IssueFieldChange::Assignee(None),
+    }))
+    .unwrap();
+    assert_eq!(assignee_of(&ws, issue), None);
+}
+
+#[test]
+fn assign_foreign_member_rejected() {
+    let (mut ws, pid) = fresh_with_project();
+    let issue = make_issue(&mut ws, pid);
+    // A member in a DIFFERENT project must not be assignable.
+    let other = new_id();
+    ws.apply(Operation::CreateProject(CreateProject {
+        id: other,
+        name: "O".into(),
+        prefix: "OTH".into(),
+        description: None,
+        icon: None,
+    }))
+    .unwrap();
+    let foreign = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id: foreign,
+        project_id: other,
+        name: "Bob".into(),
+    }))
+    .unwrap();
+    let err = ws
+        .apply(Operation::UpdateIssueField(UpdateIssueField {
+            id: issue,
+            change: IssueFieldChange::Assignee(Some(foreign)),
+        }))
+        .unwrap_err();
+    assert!(err.to_string().to_lowercase().contains("project"), "{err}");
+}
+
+#[test]
+fn assign_undo_restores_prior_assignee() {
+    let (mut ws, pid) = fresh_with_project();
+    let m1 = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id: m1,
+        project_id: pid,
+        name: "Ada".into(),
+    }))
+    .unwrap();
+    let issue = make_issue(&mut ws, pid);
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: issue,
+        change: IssueFieldChange::Assignee(Some(m1)),
+    }))
+    .unwrap();
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: issue,
+        change: IssueFieldChange::Assignee(None),
+    }))
+    .unwrap();
+    ws.undo().unwrap(); // undo the unassign -> back to m1
+    assert_eq!(assignee_of(&ws, issue), Some(m1));
+}
+
+#[test]
+fn delete_member_undo_restores_assignment_and_labels() {
+    let (mut ws, pid) = fresh_with_project();
+    let member = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id: member,
+        project_id: pid,
+        name: "Ada".into(),
+    }))
+    .unwrap();
+    let issue = make_issue(&mut ws, pid);
+    // Attach a label to the assigned issue (exercises the issue_labels capture).
+    let label = new_id();
+    ws.apply(Operation::CreateLabel(CreateLabel {
+        id: label,
+        project_id: pid,
+        name: "bug".into(),
+        color: "#ff0000".into(),
+    }))
+    .unwrap();
+    ws.apply(Operation::AttachLabel(AttachLabel {
+        issue_id: issue,
+        label_id: label,
+    }))
+    .unwrap();
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: issue,
+        change: IssueFieldChange::Assignee(Some(member)),
+    }))
+    .unwrap();
+
+    // Deleting the member nulls the assignment (ON DELETE SET NULL).
+    ws.apply(Operation::DeleteMember(DeleteMember { id: member }))
+        .unwrap();
+    assert_eq!(assignee_of(&ws, issue), None);
+
+    // Undo restores the member, the assignment, AND the label attachment.
+    ws.undo().unwrap();
+    assert_eq!(ws.query_members_for_project(pid).unwrap().len(), 1);
+    assert_eq!(assignee_of(&ws, issue), Some(member));
+    assert_eq!(ws.query_labels_for_issue(issue).unwrap().len(), 1);
+}
+
+#[test]
+fn migration_0003_applied_and_issue_allows_null_assignee() {
+    let ws = Workspace::open_in_memory().unwrap();
+    let conn = ws._conn_for_integration_tests();
+    let has_v3: bool = conn
+        .query_row(
+            "SELECT 1 FROM schema_migrations WHERE version = 3",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap();
+    assert!(has_v3);
+
+    // Insert a project/status/issue with a NULL assignee_id directly to prove
+    // the column exists and is nullable.
+    conn.execute(
+        "INSERT INTO projects(id,name,prefix,status,next_seq,created_at,updated_at)
+         VALUES('p','P','PPP','active',1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO statuses(id,project_id,name,category,color,position)
+         VALUES('s','p','Todo','unstarted','#000000',0)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO issues(id,project_id,seq,identifier,title,description,status_id,priority,due_date,sort_key,created_at,updated_at,assignee_id)
+         VALUES('i','p',1,'PPP-1','t',NULL,'s','none',NULL,1.0,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z',NULL)",
+        [],
+    )
+    .unwrap();
+    let assignee: Option<String> = conn
+        .query_row("SELECT assignee_id FROM issues WHERE id = 'i'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert!(assignee.is_none());
+}

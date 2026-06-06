@@ -9,6 +9,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "workspace_settings",
         include_str!("../../migrations/0002_workspace_settings.sql"),
     ),
+    (
+        3,
+        "members",
+        include_str!("../../migrations/0003_members.sql"),
+    ),
 ];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
@@ -87,6 +92,7 @@ mod tests {
             "issue_search",
             "issues",
             "labels",
+            "members",
             "operation_log",
             "projects",
             "schema_migrations",
@@ -108,7 +114,7 @@ mod tests {
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 2);
+        assert_eq!(count, 3);
     }
 
     #[test]

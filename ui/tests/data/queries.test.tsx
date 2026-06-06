@@ -12,12 +12,15 @@ vi.mock("@/data/bindings", () => ({
     getIssue: vi.fn(),
     listStatuses: vi.fn(),
     listLabels: vi.fn(),
+    listMembers: vi
+      .fn()
+      .mockResolvedValue({ status: "ok", data: [{ id: "m1", project_id: "p1", name: "Ada" }] }),
     getSettings: vi.fn(),
     updateSettings: vi.fn(),
   },
 }));
 
-import { useProjects } from "@/data/queries";
+import { useMembers, useProjects } from "@/data/queries";
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -40,5 +43,18 @@ describe("useProjects", () => {
     const { result } = renderHook(() => useProjects(), { wrapper });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect((result.current.error as { kind?: string })?.kind).toBe("Internal");
+  });
+});
+
+describe("useMembers", () => {
+  it("returns the member roster for a project prefix", async () => {
+    const { result } = renderHook(() => useMembers("AUTH"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].name).toBe("Ada");
+  });
+
+  it("is disabled when prefix is empty", () => {
+    const { result } = renderHook(() => useMembers(""), { wrapper });
+    expect(result.current.fetchStatus).toBe("idle");
   });
 });

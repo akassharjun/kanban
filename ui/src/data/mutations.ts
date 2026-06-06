@@ -74,6 +74,11 @@ function invalidateFor(qc: QueryClient, op: Operation, prefix?: string): void {
       void qc.invalidateQueries({ queryKey: qk.issues(prefix) });
     }
   }
+  if (["CreateMember", "UpdateMember", "DeleteMember"].includes(tag)) {
+    if (prefix) void qc.invalidateQueries({ queryKey: qk.members(prefix) });
+    // A member delete nulls out assignees, so refresh issues + any open detail panel.
+    void qc.invalidateQueries({ queryKey: ["issues"] });
+  }
   if (tag === "ImportSnapshot") void qc.invalidateQueries();
 }
 

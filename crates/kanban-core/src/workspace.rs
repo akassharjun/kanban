@@ -117,6 +117,18 @@ impl Workspace {
         crate::store::read::labels::for_project(&self.conn, project_id)
     }
 
+    /// List all members for `project_id` ordered by name.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the read fails.
+    pub fn query_members_for_project(
+        &self,
+        project_id: uuid::Uuid,
+    ) -> crate::error::Result<Vec<crate::types::Member>> {
+        crate::store::read::members::for_project(&self.conn, project_id)
+    }
+
     /// List all labels attached to `issue_id` ordered by name.
     ///
     /// # Errors
@@ -322,9 +334,11 @@ impl Workspace {
 
         let projects = crate::store::read::projects::list_all(&self.conn)?;
 
+        let mut members = Vec::new();
         let mut statuses = Vec::new();
         let mut labels = Vec::new();
         for p in &projects {
+            members.extend(crate::store::read::members::for_project(&self.conn, p.id)?);
             statuses.extend(crate::store::read::statuses::for_project(&self.conn, p.id)?);
             labels.extend(crate::store::read::labels::for_project(&self.conn, p.id)?);
         }
@@ -361,6 +375,7 @@ impl Workspace {
             schema_version: SNAPSHOT_SCHEMA_VERSION,
             exported_at: chrono::Utc::now(),
             projects,
+            members,
             statuses,
             issues,
             labels,
@@ -395,7 +410,7 @@ mod tests {
             .conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 2);
+        assert_eq!(count, 3);
     }
 
     #[test]

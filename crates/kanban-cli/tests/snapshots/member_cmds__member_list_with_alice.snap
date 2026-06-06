@@ -1,0 +1,5 @@
+---
+source: crates/kanban-cli/tests/member_cmds.rs
+expression: stdout
+---
+Alice

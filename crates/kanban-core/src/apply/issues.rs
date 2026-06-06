@@ -163,6 +163,27 @@ pub(crate) fn update_field(
             };
             crate::store::write::issues::update_field(tx, args.id, "due_date", v, now)?;
         }
+        IssueFieldChange::Assignee(new) => {
+            let v = match new {
+                Some(member_id) => {
+                    // The member must belong to the same project as the issue.
+                    let same_project: bool = tx.query_row(
+                        "SELECT COUNT(*) FROM members WHERE id = ?1 AND project_id = ?2",
+                        params![member_id.to_string(), issue.project_id.to_string()],
+                        |r| r.get::<_, i64>(0).map(|n| n > 0),
+                    )?;
+                    if !same_project {
+                        return Err(Error::Validation(crate::error::ValidationError {
+                            field: "assignee".into(),
+                            reason: "must be a member of the same project".into(),
+                        }));
+                    }
+                    Value::Text(member_id.to_string())
+                }
+                None => Value::Null,
+            };
+            crate::store::write::issues::update_field(tx, args.id, "assignee_id", v, now)?;
+        }
     }
     Ok(())
 }
@@ -178,6 +199,7 @@ pub(crate) fn inverse_of_update_field(
         IssueFieldChange::Status(_) => IssueFieldChange::Status(issue.status_id),
         IssueFieldChange::Priority(_) => IssueFieldChange::Priority(issue.priority),
         IssueFieldChange::DueDate(_) => IssueFieldChange::DueDate(issue.due_date),
+        IssueFieldChange::Assignee(_) => IssueFieldChange::Assignee(issue.assignee_id),
     };
     Ok(Operation::UpdateIssueField(UpdateIssueField {
         id: args.id,

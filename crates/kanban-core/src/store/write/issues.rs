@@ -69,6 +69,7 @@ pub(crate) fn insert(
         status_id,
         priority,
         due_date,
+        assignee_id: None,
         sort_key,
         created_at: now,
         updated_at: now,

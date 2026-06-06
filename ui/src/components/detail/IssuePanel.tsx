@@ -6,6 +6,7 @@ import { ops, change, PRIORITIES, type Priority } from "@/data/ops";
 import { EditableField } from "./EditableField";
 import { EditableDescription } from "./EditableDescription";
 import { LabelPicker } from "./LabelPicker";
+import { AssigneePicker } from "./AssigneePicker";
 
 export function IssuePanel() {
   const { prefix = "", key = "" } = useParams();
@@ -101,6 +102,15 @@ export function IssuePanel() {
               className="rounded border border-black/15 bg-transparent px-1.5 py-0.5 text-xs dark:border-white/15"
             />
           </label>
+        </div>
+
+        <div className="border-b border-black/10 px-5 py-2.5 text-xs dark:border-white/10">
+          <AssigneePicker
+            prefix={prefix}
+            issueId={issue.id}
+            projectId={issue.project_id}
+            assigneeId={issue.assignee_id}
+          />
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 border-b border-black/10 px-5 py-2.5 text-xs dark:border-white/10">

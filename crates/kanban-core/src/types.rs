@@ -134,6 +134,9 @@ pub struct Issue {
     pub status_id: Uuid,
     pub priority: Priority,
     pub due_date: Option<NaiveDate>,
+    /// Optional single assignee (a project [`Member`]). Nulled by the DB
+    /// (`ON DELETE SET NULL`) when the referenced member is deleted.
+    pub assignee_id: Option<Uuid>,
     /// Stored losslessly as the `f64`'s `u64` bit pattern in JSON so snapshots
     /// (`WorkspaceSnapshot`) round-trip bit-exactly through `ImportSnapshot`.
     /// Mirrors the same wrapper applied to `ReorderIssue::new_sort_key`.
@@ -149,6 +152,14 @@ pub struct Label {
     pub project_id: Uuid,
     pub name: String,
     pub color: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Member {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

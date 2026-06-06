@@ -27,6 +27,10 @@ pub enum Operation {
     DeleteStatus(DeleteStatus),
     ReorderStatus(ReorderStatus),
 
+    CreateMember(CreateMember),
+    UpdateMember(UpdateMember),
+    DeleteMember(DeleteMember),
+
     ImportSnapshot(ImportSnapshot),
 }
 
@@ -93,6 +97,8 @@ pub enum IssueFieldChange {
     Status(Uuid),
     Priority(Priority),
     DueDate(Option<NaiveDate>),
+    /// The assigned member, or `None` to unassign.
+    Assignee(Option<Uuid>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -183,6 +189,31 @@ pub struct DeleteStatus {
 pub struct ReorderStatus {
     pub id: Uuid,
     pub new_position: i64,
+}
+
+// ----- Member ops -----
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateMember {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateMember {
+    pub id: Uuid,
+    pub patch: MemberPatch,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct MemberPatch {
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeleteMember {
+    pub id: Uuid,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

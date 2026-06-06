@@ -1,15 +1,16 @@
-use crate::types::{Issue, Label, Project, Status};
+use crate::types::{Issue, Label, Member, Project, Status};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub const SNAPSHOT_SCHEMA_VERSION: u32 = 1;
+pub const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkspaceSnapshot {
     pub schema_version: u32,
     pub exported_at: DateTime<Utc>,
     pub projects: Vec<Project>,
+    pub members: Vec<Member>,
     pub statuses: Vec<Status>,
     pub issues: Vec<Issue>,
     pub labels: Vec<Label>,
@@ -33,6 +34,7 @@ mod tests {
             schema_version: SNAPSHOT_SCHEMA_VERSION,
             exported_at: Utc::now(),
             projects: vec![],
+            members: vec![],
             statuses: vec![],
             issues: vec![],
             labels: vec![],
@@ -40,6 +42,6 @@ mod tests {
         };
         let s = serde_json::to_string(&snap).unwrap();
         let back: WorkspaceSnapshot = serde_json::from_str(&s).unwrap();
-        assert_eq!(back.schema_version, 1);
+        assert_eq!(back.schema_version, SNAPSHOT_SCHEMA_VERSION);
     }
 }
