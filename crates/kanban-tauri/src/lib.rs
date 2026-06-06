@@ -19,6 +19,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::get_issue,
             commands::list_statuses,
             commands::list_labels,
+            commands::list_members,
             commands::get_settings,
             commands::update_settings,
             commands::apply,

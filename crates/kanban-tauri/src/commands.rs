@@ -13,7 +13,7 @@ use kanban_core::operation::Operation;
 use kanban_core::query::IssueFilter;
 use kanban_core::types::Project;
 
-use crate::dto::{IssueDto, LabelDto, ProjectDto, StatusDto};
+use crate::dto::{IssueDto, LabelDto, MemberDto, ProjectDto, StatusDto};
 use crate::error::ApiError;
 use crate::settings::{Settings, ThemeChoice};
 use crate::state::AppState;
@@ -127,6 +127,24 @@ pub fn list_labels_inner(ws: &Workspace, prefix: &str) -> Result<Vec<LabelDto>, 
         .query_labels_for_project(project.id)?
         .into_iter()
         .map(LabelDto::from)
+        .collect())
+}
+
+/// List the members of the project identified by `prefix`.
+///
+/// An unknown prefix yields an empty list (not an error).
+///
+/// # Errors
+///
+/// Returns an error if the underlying query fails.
+pub fn list_members_inner(ws: &Workspace, prefix: &str) -> Result<Vec<MemberDto>, ApiError> {
+    let Some(project) = project_by_prefix(ws, prefix)? else {
+        return Ok(Vec::new());
+    };
+    Ok(ws
+        .query_members_for_project(project.id)?
+        .into_iter()
+        .map(MemberDto::from)
         .collect())
 }
 
@@ -266,6 +284,27 @@ pub async fn list_labels(
     tokio::task::spawn_blocking(move || {
         let guard = lock_workspace(&ws)?;
         list_labels_inner(&guard, &project)
+    })
+    .await
+    .map_err(|e| join_error(&e))?
+}
+
+/// Tauri command: list the members of the project identified by `project` (its prefix).
+///
+/// # Errors
+///
+/// Returns an error if the workspace mutex is poisoned, the blocking task fails
+/// to join, or the underlying query fails.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_members(
+    state: tauri::State<'_, AppState>,
+    project: String,
+) -> Result<Vec<MemberDto>, ApiError> {
+    let ws = std::sync::Arc::clone(&state.workspace);
+    tokio::task::spawn_blocking(move || {
+        let guard = lock_workspace(&ws)?;
+        list_members_inner(&guard, &project)
     })
     .await
     .map_err(|e| join_error(&e))?

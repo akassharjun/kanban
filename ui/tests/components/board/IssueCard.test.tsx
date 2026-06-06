@@ -16,6 +16,7 @@ const issue: IssueDto = {
   status_id: "s1",
   priority: "high",
   due_date: null,
+  assignee_id: null,
   sort_key: 1,
   created_at: "",
   updated_at: "",

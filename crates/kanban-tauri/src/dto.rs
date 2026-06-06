@@ -5,7 +5,7 @@
 //! ids, timestamps, dates, and enums as plain strings, and `sort_key` as a
 //! plain `f64`, so the generated TypeScript bindings stay simple.
 
-use kanban_core::types::{Issue, Label, Project, Status};
+use kanban_core::types::{Issue, Label, Member, Project, Status};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -70,6 +70,7 @@ pub struct IssueDto {
     pub status_id: String,
     pub priority: String,
     pub due_date: Option<String>,
+    pub assignee_id: Option<String>,
     pub sort_key: f64,
     pub created_at: String,
     pub updated_at: String,
@@ -88,6 +89,7 @@ impl From<Issue> for IssueDto {
             status_id: i.status_id.to_string(),
             priority: i.priority.as_str().to_owned(),
             due_date: i.due_date.map(|d| d.to_string()),
+            assignee_id: i.assignee_id.map(|a| a.to_string()),
             sort_key: i.sort_key,
             created_at: i.created_at.to_rfc3339(),
             updated_at: i.updated_at.to_rfc3339(),
@@ -111,6 +113,23 @@ impl From<Label> for LabelDto {
             project_id: l.project_id.to_string(),
             name: l.name,
             color: l.color,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct MemberDto {
+    pub id: String,
+    pub project_id: String,
+    pub name: String,
+}
+
+impl From<Member> for MemberDto {
+    fn from(m: Member) -> Self {
+        Self {
+            id: m.id.to_string(),
+            project_id: m.project_id.to_string(),
+            name: m.name,
         }
     }
 }
