@@ -57,6 +57,10 @@ async fn e2e_create_move_update_undo_flow() {
     .await;
     assert_eq!(issue["key"], "AUTH-1", "got: {issue}");
     assert_eq!(issue["status"], "Todo", "got: {issue}");
+    assert!(
+        issue["assignee"].is_null(),
+        "a new issue is unassigned: {issue}"
+    );
 
     // move it to another column
     call(

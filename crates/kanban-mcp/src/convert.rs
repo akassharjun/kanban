@@ -2,7 +2,7 @@
 //! never UUIDs or sort keys.
 use std::collections::HashMap;
 
-use kanban_core::types::{Issue, Label, Project, Status};
+use kanban_core::types::{Issue, Label, Member, Project, Status};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -10,6 +10,12 @@ use uuid::Uuid;
 #[must_use]
 pub fn status_name_map(statuses: &[Status]) -> HashMap<Uuid, String> {
     statuses.iter().map(|s| (s.id, s.name.clone())).collect()
+}
+
+/// Map member id -> member name for a project's members.
+#[must_use]
+pub fn member_name_map(members: &[Member]) -> HashMap<Uuid, String> {
+    members.iter().map(|m| (m.id, m.name.clone())).collect()
 }
 
 #[derive(Serialize)]
@@ -57,25 +63,38 @@ impl From<Label> for LabelOut {
 }
 
 #[derive(Serialize)]
+pub struct MemberOut {
+    pub name: String,
+}
+impl From<Member> for MemberOut {
+    fn from(m: Member) -> Self {
+        Self { name: m.name }
+    }
+}
+
+#[derive(Serialize)]
 pub struct IssueOut {
     pub key: String,
     pub title: String,
     pub status: String,
     pub priority: String,
     pub due_date: Option<String>,
+    pub assignee: Option<String>,
     pub description: Option<String>,
 }
 
 impl IssueOut {
-    /// Build from a core `Issue` plus a resolved status NAME.
+    /// Build from a core `Issue` plus a resolved status NAME and an optional
+    /// resolved assignee member NAME (`None` when the issue is unassigned).
     #[must_use]
-    pub fn from_issue(i: Issue, status_name: &str) -> Self {
+    pub fn from_issue(i: Issue, status_name: &str, assignee: Option<String>) -> Self {
         Self {
             key: i.identifier,
             title: i.title,
             status: status_name.to_owned(),
             priority: i.priority.as_str().to_owned(),
             due_date: i.due_date.map(|d| d.to_string()),
+            assignee,
             description: i.description,
         }
     }

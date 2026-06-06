@@ -104,3 +104,38 @@ pub struct SearchIssues {
     #[serde(default)]
     pub project: Option<String>,
 }
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateMemberInput {
+    /// Project prefix, e.g. "AUTH".
+    pub project: String,
+    /// Member display name, e.g. "Alice".
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateMemberInput {
+    /// Project prefix, e.g. "AUTH".
+    pub project: String,
+    /// Current member name to rename.
+    pub name: String,
+    /// New member name.
+    pub new_name: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MemberRef {
+    /// Project prefix, e.g. "AUTH".
+    pub project: String,
+    /// Member name, e.g. "Alice".
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AssignIssueInput {
+    /// Issue key, e.g. "AUTH-12".
+    pub key: String,
+    /// Member name to assign (within the issue's project). Omit to unassign.
+    #[serde(default)]
+    pub member: Option<String>,
+}

@@ -9,7 +9,7 @@ use rmcp::{ErrorData as McpError, ServerHandler, tool, tool_handler, tool_router
 
 use kanban_core::Workspace;
 
-use crate::convert::ProjectOut;
+use crate::convert::{MemberOut, ProjectOut};
 use crate::error::to_mcp;
 
 #[derive(Clone)]
@@ -105,6 +105,34 @@ impl KanbanServer {
             .await?;
         out.ok_or_else(|| crate::error::not_found("project", &for_err))
     }
+
+    /// Resolve a member by name within a project prefix to its UUID. An unknown
+    /// prefix maps to `not_found`; an unknown name maps to `unknown_name` listing
+    /// the project's members.
+    async fn resolve_member(&self, prefix: &str, name: &str) -> Result<uuid::Uuid, McpError> {
+        let owned_prefix = prefix.to_string();
+        let resolved = self
+            .blocking_read(move |ws| {
+                let Some(p) = ws.query_project_by_prefix(&owned_prefix)? else {
+                    return Ok(None);
+                };
+                Ok(Some(ws.query_members_for_project(p.id)?))
+            })
+            .await?;
+        let members = resolved.ok_or_else(|| crate::error::not_found("project", prefix))?;
+        members
+            .iter()
+            .find(|m| m.name == name)
+            .map(|m| m.id)
+            .ok_or_else(|| {
+                crate::error::unknown_name(
+                    "member",
+                    name,
+                    prefix,
+                    &members.iter().map(|m| m.name.clone()).collect::<Vec<_>>(),
+                )
+            })
+    }
 }
 
 /// Fractional sort-key midpoint between two optional neighbours.
@@ -178,7 +206,7 @@ impl KanbanServer {
         use kanban_core::query::IssueFilter;
         use kanban_core::types::Priority;
 
-        // phase 1: resolve project id + its statuses
+        // phase 1: resolve project id + its statuses + its members
         let prefix = args.project.clone();
         let resolved = self
             .blocking_read(move |ws| {
@@ -186,10 +214,11 @@ impl KanbanServer {
                     return Ok(None);
                 };
                 let statuses = ws.query_statuses_for_project(p.id)?;
-                Ok(Some((p.id, statuses)))
+                let members = ws.query_members_for_project(p.id)?;
+                Ok(Some((p.id, statuses, members)))
             })
             .await?;
-        let (project_id, statuses) =
+        let (project_id, statuses, members) =
             resolved.ok_or_else(|| crate::error::not_found("project", &args.project))?;
 
         // phase 2: build filter (name/priority resolution -> McpError here)
@@ -221,11 +250,13 @@ impl KanbanServer {
             .blocking_read(move |ws| ws.query_issues(filter))
             .await?;
         let map = crate::convert::status_name_map(&statuses);
+        let mmap = crate::convert::member_name_map(&members);
         let out: Vec<crate::convert::IssueOut> = issues
             .into_iter()
             .map(|i| {
                 let name = map.get(&i.status_id).cloned().unwrap_or_default();
-                crate::convert::IssueOut::from_issue(i, &name)
+                let assignee = i.assignee_id.and_then(|id| mmap.get(&id).cloned());
+                crate::convert::IssueOut::from_issue(i, &name, assignee)
             })
             .collect();
         json_content(&out)
@@ -245,17 +276,23 @@ impl KanbanServer {
                     return Ok(None);
                 };
                 let statuses = ws.query_statuses_for_project(issue.project_id)?;
-                Ok(Some((issue, statuses)))
+                let members = ws.query_members_for_project(issue.project_id)?;
+                Ok(Some((issue, statuses, members)))
             })
             .await?;
-        let (issue, statuses) =
+        let (issue, statuses, members) =
             resolved.ok_or_else(|| crate::error::not_found("issue", &args.key))?;
         let name = statuses
             .iter()
             .find(|s| s.id == issue.status_id)
             .map(|s| s.name.clone())
             .unwrap_or_default();
-        json_content(&crate::convert::IssueOut::from_issue(issue, &name))
+        let assignee = issue
+            .assignee_id
+            .and_then(|id| members.iter().find(|m| m.id == id).map(|m| m.name.clone()));
+        json_content(&crate::convert::IssueOut::from_issue(
+            issue, &name, assignee,
+        ))
     }
 
     #[tool(
@@ -278,29 +315,33 @@ impl KanbanServer {
                     },
                     None => None,
                 };
-                // collect all statuses so we can name statuses across projects
+                // collect all statuses + members so we can name them across projects
                 let projects = ws.query_projects()?;
                 let mut statuses = Vec::new();
+                let mut members = Vec::new();
                 for p in &projects {
                     statuses.extend(ws.query_statuses_for_project(p.id)?);
+                    members.extend(ws.query_members_for_project(p.id)?);
                 }
                 let filter = match pid {
                     Some(id) => IssueFilter::for_project(id),
                     None => IssueFilter::default(),
                 };
                 let issues = ws.search(&query, filter)?;
-                Ok(Some((issues, statuses)))
+                Ok(Some((issues, statuses, members)))
             })
             .await?;
-        let (issues, statuses) = resolved.ok_or_else(|| {
+        let (issues, statuses, members) = resolved.ok_or_else(|| {
             crate::error::not_found("project", args.project.as_deref().unwrap_or(""))
         })?;
         let map = crate::convert::status_name_map(&statuses);
+        let mmap = crate::convert::member_name_map(&members);
         let out: Vec<crate::convert::IssueOut> = issues
             .into_iter()
             .map(|i| {
                 let name = map.get(&i.status_id).cloned().unwrap_or_default();
-                crate::convert::IssueOut::from_issue(i, &name)
+                let assignee = i.assignee_id.and_then(|id| mmap.get(&id).cloned());
+                crate::convert::IssueOut::from_issue(i, &name, assignee)
             })
             .collect();
         json_content(&out)
@@ -413,7 +454,8 @@ impl KanbanServer {
 
         let map = crate::convert::status_name_map(&statuses);
         let name = map.get(&issue.status_id).cloned().unwrap_or_default();
-        json_content(&crate::convert::IssueOut::from_issue(issue, &name))
+        // a newly created issue is always unassigned
+        json_content(&crate::convert::IssueOut::from_issue(issue, &name, None))
     }
 
     #[tool(
@@ -438,7 +480,7 @@ impl KanbanServer {
             ));
         }
 
-        // phase 1: resolve issue id + its project's statuses
+        // phase 1: resolve issue id + its project's statuses + members
         let key = args.key.clone();
         let resolved = self
             .blocking_read(move |ws| {
@@ -446,10 +488,11 @@ impl KanbanServer {
                     return Ok(None);
                 };
                 let statuses = ws.query_statuses_for_project(issue.project_id)?;
-                Ok(Some((issue.id, statuses)))
+                let members = ws.query_members_for_project(issue.project_id)?;
+                Ok(Some((issue.id, statuses, members)))
             })
             .await?;
-        let (issue_id, statuses) =
+        let (issue_id, statuses, members) =
             resolved.ok_or_else(|| crate::error::not_found("issue", &args.key))?;
 
         // phase 2: build the list of field changes (McpError resolution here)
@@ -500,8 +543,12 @@ impl KanbanServer {
             .await?;
 
         let map = crate::convert::status_name_map(&statuses);
+        let mmap = crate::convert::member_name_map(&members);
         let name = map.get(&issue.status_id).cloned().unwrap_or_default();
-        json_content(&crate::convert::IssueOut::from_issue(issue, &name))
+        let assignee = issue.assignee_id.and_then(|id| mmap.get(&id).cloned());
+        json_content(&crate::convert::IssueOut::from_issue(
+            issue, &name, assignee,
+        ))
     }
 
     #[tool(
@@ -545,10 +592,11 @@ impl KanbanServer {
                 };
                 let statuses = ws.query_statuses_for_project(issue.project_id)?;
                 let issues = ws.query_issues(IssueFilter::for_project(issue.project_id))?;
-                Ok(Some((issue, statuses, issues)))
+                let members = ws.query_members_for_project(issue.project_id)?;
+                Ok(Some((issue, statuses, issues, members)))
             })
             .await?;
-        let (issue, statuses, project_issues) =
+        let (issue, statuses, project_issues, members) =
             resolved.ok_or_else(|| crate::error::not_found("issue", &args.key))?;
 
         // target status: named, else keep current
@@ -621,8 +669,163 @@ impl KanbanServer {
             .await?;
 
         let map = crate::convert::status_name_map(&statuses);
+        let mmap = crate::convert::member_name_map(&members);
         let name = map.get(&moved.status_id).cloned().unwrap_or_default();
-        json_content(&crate::convert::IssueOut::from_issue(moved, &name))
+        let assignee = moved.assignee_id.and_then(|id| mmap.get(&id).cloned());
+        json_content(&crate::convert::IssueOut::from_issue(
+            moved, &name, assignee,
+        ))
+    }
+
+    #[tool(
+        description = "List the members (people) of a project. `project` is the prefix, e.g. AUTH."
+    )]
+    async fn list_members(
+        &self,
+        Parameters(args): Parameters<crate::inputs::ProjectRef>,
+    ) -> Result<CallToolResult, McpError> {
+        let members: Vec<kanban_core::types::Member> = self
+            .with_project(&args.project, |ws, id, _statuses| {
+                ws.query_members_for_project(id)
+            })
+            .await?;
+        let out: Vec<MemberOut> = members.into_iter().map(MemberOut::from).collect();
+        json_content(&out)
+    }
+
+    #[tool(
+        description = "Add a member to a project. `project` is the prefix; `name` must be unique within the project."
+    )]
+    async fn create_member(
+        &self,
+        Parameters(args): Parameters<crate::inputs::CreateMemberInput>,
+    ) -> Result<CallToolResult, McpError> {
+        use kanban_core::operation::{CreateMember, Operation};
+
+        let prefix = args.project.clone();
+        let project_id = self
+            .blocking_read(move |ws| Ok(ws.query_project_by_prefix(&prefix)?.map(|p| p.id)))
+            .await?
+            .ok_or_else(|| crate::error::not_found("project", &args.project))?;
+
+        let id = uuid::Uuid::now_v7();
+        let name = args.name.clone();
+        self.blocking_mut(move |ws| {
+            ws.apply(Operation::CreateMember(CreateMember {
+                id,
+                project_id,
+                name: args.name,
+            }))
+            .map(|_| ())
+        })
+        .await?;
+        json_content(&serde_json::json!({ "name": name }))
+    }
+
+    #[tool(
+        description = "Rename a member of a project. Identify the member by its current `name` within `project`."
+    )]
+    async fn update_member(
+        &self,
+        Parameters(args): Parameters<crate::inputs::UpdateMemberInput>,
+    ) -> Result<CallToolResult, McpError> {
+        use kanban_core::operation::{MemberPatch, Operation, UpdateMember};
+
+        let member_id = self.resolve_member(&args.project, &args.name).await?;
+        let new_name = args.new_name.clone();
+        self.blocking_mut(move |ws| {
+            ws.apply(Operation::UpdateMember(UpdateMember {
+                id: member_id,
+                patch: MemberPatch {
+                    name: Some(args.new_name),
+                },
+            }))
+            .map(|_| ())
+        })
+        .await?;
+        json_content(&serde_json::json!({ "name": new_name }))
+    }
+
+    #[tool(
+        description = "Remove a member from a project (by `name`). Any issues assigned to them become unassigned. Undoable."
+    )]
+    async fn delete_member(
+        &self,
+        Parameters(args): Parameters<crate::inputs::MemberRef>,
+    ) -> Result<CallToolResult, McpError> {
+        use kanban_core::operation::{DeleteMember, Operation};
+
+        let member_id = self.resolve_member(&args.project, &args.name).await?;
+        let name = args.name.clone();
+        self.blocking_mut(move |ws| {
+            ws.apply(Operation::DeleteMember(DeleteMember { id: member_id }))
+                .map(|_| ())
+        })
+        .await?;
+        json_content(&serde_json::json!({ "deleted": name }))
+    }
+
+    #[tool(
+        description = "Assign an issue (by key) to a member of its project (by name), or unassign it by omitting `member`. Returns the updated issue."
+    )]
+    async fn assign_issue(
+        &self,
+        Parameters(args): Parameters<crate::inputs::AssignIssueInput>,
+    ) -> Result<CallToolResult, McpError> {
+        use kanban_core::operation::{IssueFieldChange, Operation, UpdateIssueField};
+
+        // phase 1: resolve the issue + its project's statuses + members
+        let key = args.key.clone();
+        let resolved = self
+            .blocking_read(move |ws| {
+                let Some(issue) = ws.query_issue_by_identifier(&key)? else {
+                    return Ok(None);
+                };
+                let statuses = ws.query_statuses_for_project(issue.project_id)?;
+                let members = ws.query_members_for_project(issue.project_id)?;
+                Ok(Some((issue.id, statuses, members)))
+            })
+            .await?;
+        let (issue_id, statuses, members) =
+            resolved.ok_or_else(|| crate::error::not_found("issue", &args.key))?;
+
+        // phase 2: resolve the member name within the issue's project (None = unassign)
+        let assignee_id = match args.member.as_deref().filter(|m| !m.is_empty()) {
+            Some(name) => Some(
+                members
+                    .iter()
+                    .find(|m| m.name == name)
+                    .ok_or_else(|| {
+                        crate::error::unknown_name(
+                            "member",
+                            name,
+                            &args.key,
+                            &members.iter().map(|m| m.name.clone()).collect::<Vec<_>>(),
+                        )
+                    })?
+                    .id,
+            ),
+            None => None,
+        };
+
+        // phase 3: apply the assignment, then re-read
+        let issue = self
+            .blocking_mut(move |ws| {
+                ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+                    id: issue_id,
+                    change: IssueFieldChange::Assignee(assignee_id),
+                }))?;
+                ws.query_issue_by_id(issue_id)
+            })
+            .await?;
+
+        let map = crate::convert::status_name_map(&statuses);
+        let mmap = crate::convert::member_name_map(&members);
+        let name = map.get(&issue.status_id).cloned().unwrap_or_default();
+        let assignee = issue.assignee_id.and_then(|id| mmap.get(&id).cloned());
+        json_content(&crate::convert::IssueOut::from_issue(
+            issue, &name, assignee,
+        ))
     }
 }
 

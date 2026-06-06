@@ -90,10 +90,12 @@ Apple Developer signing lands in a later spec.
 exposing `kanban-core` to AI assistants. It opens the default workspace
 (`~/.kanban/data.db`, or `$KANBAN_DB`) — the same DB as the CLI and GUI — and
 serves these tools: `list_projects`, `list_statuses`, `list_labels`,
-`list_issues`, `get_issue`, `search_issues`, `create_project`, `create_issue`,
-`update_issue`, `move_issue`, `undo`, `redo`. Projects are addressed by prefix
-(`AUTH`), issues by key (`AUTH-12`), statuses/labels by name. Every write goes
-through `Workspace::apply`.
+`list_members`, `list_issues`, `get_issue`, `search_issues`, `create_project`,
+`create_issue`, `update_issue`, `move_issue`, `create_member`, `update_member`,
+`delete_member`, `assign_issue`, `undo`, `redo`. Projects are addressed by prefix
+(`AUTH`), issues by key (`AUTH-12`), statuses/labels/members by name. Every issue
+the server returns carries its current `assignee` (the member name, or `null`).
+Every write goes through `Workspace::apply`.
 
 ```sh
 cargo build -p kanban-mcp --release   # target/release/kanban-mcp
