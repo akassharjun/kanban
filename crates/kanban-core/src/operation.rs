@@ -97,6 +97,8 @@ pub enum IssueFieldChange {
     Status(Uuid),
     Priority(Priority),
     DueDate(Option<NaiveDate>),
+    /// The assigned member, or `None` to unassign.
+    Assignee(Option<Uuid>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

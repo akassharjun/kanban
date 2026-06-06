@@ -2,10 +2,33 @@
 #![allow(clippy::panic)]
 
 use kanban_core::operation::{
-    ConflictPolicy, CreateMember, CreateProject, DeleteMember, ImportSnapshot, MemberPatch,
-    Operation, UpdateMember,
+    AttachLabel, ConflictPolicy, CreateIssue, CreateLabel, CreateMember, CreateProject,
+    DeleteMember, ImportSnapshot, IssueFieldChange, MemberPatch, Operation, UpdateIssueField,
+    UpdateMember,
 };
+use kanban_core::types::Priority;
 use kanban_core::{Workspace, new_id};
+
+fn make_issue(ws: &mut Workspace, pid: uuid::Uuid) -> uuid::Uuid {
+    let id = new_id();
+    let status_id = ws.query_statuses_for_project(pid).unwrap()[0].id;
+    ws.apply(Operation::CreateIssue(CreateIssue {
+        id,
+        project_id: pid,
+        title: "task".into(),
+        description: None,
+        status_id,
+        priority: Priority::Medium,
+        due_date: None,
+        label_ids: vec![],
+    }))
+    .unwrap();
+    id
+}
+
+fn assignee_of(ws: &Workspace, id: uuid::Uuid) -> Option<uuid::Uuid> {
+    ws.query_issue_by_id(id).unwrap().assignee_id
+}
 
 fn fresh_with_project() -> (Workspace, uuid::Uuid) {
     let mut ws = Workspace::open_in_memory().unwrap();
@@ -173,6 +196,131 @@ fn snapshot_round_trips_member() {
     let members = fresh.query_members_for_project(pid).unwrap();
     assert_eq!(members.len(), 1);
     assert_eq!(members[0].name, "Grace");
+}
+
+#[test]
+fn assign_and_unassign_issue() {
+    let (mut ws, pid) = fresh_with_project();
+    let member = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id: member,
+        project_id: pid,
+        name: "Ada".into(),
+    }))
+    .unwrap();
+    let issue = make_issue(&mut ws, pid);
+
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: issue,
+        change: IssueFieldChange::Assignee(Some(member)),
+    }))
+    .unwrap();
+    assert_eq!(assignee_of(&ws, issue), Some(member));
+
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: issue,
+        change: IssueFieldChange::Assignee(None),
+    }))
+    .unwrap();
+    assert_eq!(assignee_of(&ws, issue), None);
+}
+
+#[test]
+fn assign_foreign_member_rejected() {
+    let (mut ws, pid) = fresh_with_project();
+    let issue = make_issue(&mut ws, pid);
+    // A member in a DIFFERENT project must not be assignable.
+    let other = new_id();
+    ws.apply(Operation::CreateProject(CreateProject {
+        id: other,
+        name: "O".into(),
+        prefix: "OTH".into(),
+        description: None,
+        icon: None,
+    }))
+    .unwrap();
+    let foreign = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id: foreign,
+        project_id: other,
+        name: "Bob".into(),
+    }))
+    .unwrap();
+    let err = ws
+        .apply(Operation::UpdateIssueField(UpdateIssueField {
+            id: issue,
+            change: IssueFieldChange::Assignee(Some(foreign)),
+        }))
+        .unwrap_err();
+    assert!(err.to_string().to_lowercase().contains("project"), "{err}");
+}
+
+#[test]
+fn assign_undo_restores_prior_assignee() {
+    let (mut ws, pid) = fresh_with_project();
+    let m1 = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id: m1,
+        project_id: pid,
+        name: "Ada".into(),
+    }))
+    .unwrap();
+    let issue = make_issue(&mut ws, pid);
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: issue,
+        change: IssueFieldChange::Assignee(Some(m1)),
+    }))
+    .unwrap();
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: issue,
+        change: IssueFieldChange::Assignee(None),
+    }))
+    .unwrap();
+    ws.undo().unwrap(); // undo the unassign -> back to m1
+    assert_eq!(assignee_of(&ws, issue), Some(m1));
+}
+
+#[test]
+fn delete_member_undo_restores_assignment_and_labels() {
+    let (mut ws, pid) = fresh_with_project();
+    let member = new_id();
+    ws.apply(Operation::CreateMember(CreateMember {
+        id: member,
+        project_id: pid,
+        name: "Ada".into(),
+    }))
+    .unwrap();
+    let issue = make_issue(&mut ws, pid);
+    // Attach a label to the assigned issue (exercises the issue_labels capture).
+    let label = new_id();
+    ws.apply(Operation::CreateLabel(CreateLabel {
+        id: label,
+        project_id: pid,
+        name: "bug".into(),
+        color: "#ff0000".into(),
+    }))
+    .unwrap();
+    ws.apply(Operation::AttachLabel(AttachLabel {
+        issue_id: issue,
+        label_id: label,
+    }))
+    .unwrap();
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: issue,
+        change: IssueFieldChange::Assignee(Some(member)),
+    }))
+    .unwrap();
+
+    // Deleting the member nulls the assignment (ON DELETE SET NULL).
+    ws.apply(Operation::DeleteMember(DeleteMember { id: member }))
+        .unwrap();
+    assert_eq!(assignee_of(&ws, issue), None);
+
+    // Undo restores the member, the assignment, AND the label attachment.
+    ws.undo().unwrap();
+    assert_eq!(ws.query_members_for_project(pid).unwrap().len(), 1);
+    assert_eq!(assignee_of(&ws, issue), Some(member));
+    assert_eq!(ws.query_labels_for_issue(issue).unwrap().len(), 1);
 }
 
 #[test]

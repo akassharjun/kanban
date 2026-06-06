@@ -201,6 +201,11 @@ fn emit_activity(
                 pre_issue.due_date.map(|d| d.to_string()),
                 v.map(|d| d.to_string()),
             ),
+            crate::operation::IssueFieldChange::Assignee(v) => (
+                "assignee",
+                pre_issue.assignee_id.map(|a| a.to_string()),
+                v.map(|a| a.to_string()),
+            ),
         };
         let issue_id_s = args.id.to_string();
         crate::store::write::operation_log::insert_activity(
