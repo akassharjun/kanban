@@ -149,4 +149,37 @@ describe("ops builders", () => {
     expect(ops.deleteProject({ id: "p1" })).toEqual({ op: "DeleteProject", args: { id: "p1" } });
     expect(ops.deleteLabel({ id: "l1" })).toEqual({ op: "DeleteLabel", args: { id: "l1" } });
   });
+
+  it("createMember wraps args under {op,args}", () => {
+    expect(ops.createMember({ id: "m1", project_id: "p1", name: "Ada" })).toEqual({
+      op: "CreateMember",
+      args: { id: "m1", project_id: "p1", name: "Ada" },
+    });
+  });
+
+  it("updateMember wraps a sparse name patch", () => {
+    expect(ops.updateMember({ id: "m1", name: "Grace" })).toEqual({
+      op: "UpdateMember",
+      args: { id: "m1", patch: { name: "Grace" } },
+    });
+  });
+
+  it("updateMember omits undefined name from the patch", () => {
+    expect(ops.updateMember({ id: "m1" })).toEqual({
+      op: "UpdateMember",
+      args: { id: "m1", patch: {} },
+    });
+  });
+
+  it("deleteMember takes just id", () => {
+    expect(ops.deleteMember({ id: "m1" })).toEqual({ op: "DeleteMember", args: { id: "m1" } });
+  });
+
+  it("change.assignee assigns a member id", () => {
+    expect(change.assignee("m1")).toEqual({ field: "Assignee", value: "m1" });
+  });
+
+  it("change.assignee unassigns with null", () => {
+    expect(change.assignee(null)).toEqual({ field: "Assignee", value: null });
+  });
 });

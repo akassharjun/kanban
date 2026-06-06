@@ -85,6 +85,35 @@ describe("useApply optimistic dispatcher", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: qk.issues("AUTH") });
   });
 
+  it("invalidates members + issues on CreateMember", async () => {
+    applyMock.mockResolvedValueOnce({ status: "ok", data: { op_id: 10 } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+
+    const { result } = renderHook(() => useApply("AUTH"), { wrapper: makeWrapper(client) });
+    await act(async () => {
+      result.current.mutate(ops.createMember({ id: "m1", project_id: "p1", name: "Ada" }));
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: qk.members("AUTH") });
+  });
+
+  it("invalidates members + issues on DeleteMember (assignees cleared)", async () => {
+    applyMock.mockResolvedValueOnce({ status: "ok", data: { op_id: 11 } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+
+    const { result } = renderHook(() => useApply("AUTH"), { wrapper: makeWrapper(client) });
+    await act(async () => {
+      result.current.mutate(ops.deleteMember({ id: "m1" }));
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: qk.members("AUTH") });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["issues"] });
+  });
+
   it("optimistically adds a created project to the cache on success", async () => {
     applyMock.mockResolvedValueOnce({ status: "ok", data: { op_id: 7 } });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

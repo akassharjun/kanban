@@ -1,7 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { commands } from "./bindings";
 import { asApiError } from "./client";
-import type { IssueDto, LabelDto, ProjectDto, Settings, StatusDto, ThemeChoice } from "./bindings";
+import type {
+  IssueDto,
+  LabelDto,
+  MemberDto,
+  ProjectDto,
+  Settings,
+  StatusDto,
+  ThemeChoice,
+} from "./bindings";
 
 /** Query-key factory — keeps invalidation keys consistent across hooks. */
 export const qk = {
@@ -11,6 +19,7 @@ export const qk = {
   issue: (key: string) => ["issues", key] as const,
   statuses: (prefix: string) => ["projects", prefix, "statuses"] as const,
   labels: (prefix: string) => ["projects", prefix, "labels"] as const,
+  members: (prefix: string) => ["projects", prefix, "members"] as const,
   settings: () => ["settings"] as const,
 } as const;
 
@@ -51,6 +60,13 @@ export const useLabels = (prefix: string) =>
   useQuery({
     queryKey: qk.labels(prefix),
     queryFn: () => unwrap<LabelDto[]>(commands.listLabels(prefix)),
+    enabled: !!prefix,
+  });
+
+export const useMembers = (prefix: string) =>
+  useQuery({
+    queryKey: qk.members(prefix),
+    queryFn: () => unwrap<MemberDto[]>(commands.listMembers(prefix)),
     enabled: !!prefix,
   });
 
