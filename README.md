@@ -42,8 +42,9 @@ watcher yet).
 
 `kanban-mcp` is a stdio [MCP](https://modelcontextprotocol.io) server that lets an
 AI assistant (Claude Desktop, Claude Code) read and manage your board in natural
-language — list/create/update/move issues, search, undo. It shares the same
-`~/.kanban/data.db` as the CLI and GUI.
+language — list/create/update/move issues, search, manage the per-project member
+roster, assign work, and undo. It shares the same `~/.kanban/data.db` as the CLI
+and GUI.
 
 ```sh
 cargo build -p kanban-mcp --release   # binary at target/release/kanban-mcp
