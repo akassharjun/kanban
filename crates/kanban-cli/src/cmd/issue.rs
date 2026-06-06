@@ -98,6 +98,15 @@ pub enum IssueSub {
         #[arg(long, conflicts_with = "before")]
         after: Option<String>,
     },
+    /// Assign (or unassign) an issue to a project member by name.
+    Assign {
+        identifier: String,
+        /// Member name within the issue's project. Omit with `--unassign`.
+        member: Option<String>,
+        /// Clear the assignee instead of setting one.
+        #[arg(long)]
+        unassign: bool,
+    },
     /// Delete an issue (requires `--yes`).
     Delete {
         identifier: String,
@@ -182,6 +191,11 @@ pub fn run(cmd: IssueCmd, ws: &mut Workspace, out: &Out) -> Result<()> {
             before,
             after,
         } => reorder(ws, out, &identifier, before.as_deref(), after.as_deref()),
+        IssueSub::Assign {
+            identifier,
+            member,
+            unassign,
+        } => assign(ws, out, &identifier, member.as_deref(), unassign),
         IssueSub::Delete { identifier, yes } => delete(ws, out, &identifier, yes),
         IssueSub::History { identifier } => history(ws, out, &identifier),
     }
@@ -487,6 +501,55 @@ fn move_status(ws: &mut Workspace, out: &Out, identifier: &str, status: &str) ->
         println!("moved {} to {}", after.identifier, status);
     }
     Ok(())
+}
+
+fn assign(
+    ws: &mut Workspace,
+    out: &Out,
+    identifier: &str,
+    member: Option<&str>,
+    unassign: bool,
+) -> Result<()> {
+    let issue = resolve_issue(ws, identifier)?;
+    let change = if unassign {
+        IssueFieldChange::Assignee(None)
+    } else {
+        let name = member.ok_or_else(|| {
+            kanban_core::Error::Validation(kanban_core::ValidationError {
+                field: "member".into(),
+                reason: "supply a member name or pass --unassign".into(),
+            })
+        })?;
+        let m = resolve_member(ws, issue.project_id, name)?;
+        IssueFieldChange::Assignee(Some(m.id))
+    };
+    ws.apply(Operation::UpdateIssueField(UpdateIssueField {
+        id: issue.id,
+        change,
+    }))?;
+    let after = ws.query_issue_by_id(issue.id)?;
+    if out.json {
+        out.print_json(&after)?;
+    } else if unassign {
+        println!("unassigned {}", after.identifier);
+    } else {
+        println!(
+            "assigned {} to {}",
+            after.identifier,
+            member.unwrap_or_default()
+        );
+    }
+    Ok(())
+}
+
+fn resolve_member(ws: &Workspace, project_id: Uuid, name: &str) -> Result<kanban_core::Member> {
+    ws.query_members_for_project(project_id)?
+        .into_iter()
+        .find(|m| m.name == name)
+        .ok_or(kanban_core::Error::NotFound {
+            kind: kanban_core::EntityKind::Member,
+            id: name.to_string(),
+        })
 }
 
 fn reorder(

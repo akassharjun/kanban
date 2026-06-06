@@ -6,6 +6,7 @@ pub mod export;
 pub mod import;
 pub mod issue;
 pub mod label;
+pub mod member;
 pub mod project;
 pub mod search;
 pub mod status;
